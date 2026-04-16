@@ -217,8 +217,9 @@ html, body {
   writing-mode: vertical-rl; text-orientation: mixed;
   font-family: var(--font-read); font-size: 12px; font-weight: 400;
   color: white; letter-spacing: 0.5px;
-  padding: 12px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  max-height: calc(100% - 16px);
+  padding: 16px 0; overflow: hidden; text-overflow: ellipsis;
+  max-height: calc(100% - 24px);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
 .spine-prog {
   position: absolute; bottom: 0; left: 0; right: 0;
@@ -531,7 +532,7 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s; re
 function saveLibrary() { localStorage.setItem('tomen_library', JSON.stringify(library)); }
 function $(id) { return document.getElementById(id); }
 
-// Generate a color from a string (for spine/placeholder backgrounds)
+// Generate a color from a string (fallback for books without covers)
 function strColor(str) {
   const colors = [
     ['#C45D3E','#A94E33'], ['#2C4A6E','#1A3350'], ['#3A7D5E','#2A5D44'],
@@ -544,11 +545,76 @@ function strColor(str) {
   return colors[Math.abs(hash) % colors.length];
 }
 
-// Estimate "thickness" from chapter count
+// Extract dominant color from a cover image data URL
+function extractColor(dataUrl) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const size = 16;
+      canvas.width = size; canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, size, size);
+      const data = ctx.getImageData(0, 0, size, size).data;
+      let r = 0, g = 0, b = 0, count = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        // Skip very light and very dark pixels
+        const brightness = data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114;
+        if (brightness > 30 && brightness < 220) {
+          r += data[i]; g += data[i+1]; b += data[i+2]; count++;
+        }
+      }
+      if (count === 0) { resolve(null); return; }
+      r = Math.round(r / count); g = Math.round(g / count); b = Math.round(b / count);
+      // Make it slightly darker for the gradient bottom
+      const dr = Math.max(0, r - 30), dg = Math.max(0, g - 30), db = Math.max(0, b - 30);
+      resolve([`rgb(${r},${g},${b})`, `rgb(${dr},${dg},${db})`]);
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
+// Cache extracted colors
+const colorCache = {};
+async function getSpineColor(book) {
+  if (colorCache[book.id]) return colorCache[book.id];
+  if (book.cover) {
+    const extracted = await extractColor(book.cover);
+    if (extracted) {
+      colorCache[book.id] = extracted;
+      return extracted;
+    }
+  }
+  const fallback = strColor(book.title);
+  colorCache[book.id] = fallback;
+  return fallback;
+}
+
+// Estimate "thickness" from total text content
 function spineWidth(book) {
   const total = (book.chapters || []).reduce((s, c) => s + (c.html?.length || 0), 0);
-  const w = Math.max(28, Math.min(64, Math.round(total / 4000) + 28));
-  return w;
+  // Range: 32px (short story) to 80px (epic novel)
+  return Math.max(32, Math.min(80, Math.round(total / 3000) + 32));
+}
+
+// Compute spine text style — varies size and weight based on width and title length
+function spineTextStyle(width, titleLen) {
+  // Wider spines can hold larger text
+  let size, weight;
+  if (width >= 64) {
+    size = titleLen > 25 ? 11 : titleLen > 15 ? 13 : 15;
+    weight = 600;
+  } else if (width >= 48) {
+    size = titleLen > 25 ? 10 : titleLen > 15 ? 12 : 13;
+    weight = 500;
+  } else {
+    size = titleLen > 20 ? 9 : 10;
+    weight = 400;
+  }
+  // Vary letter-spacing: tighter for larger text, looser for small
+  const spacing = size >= 13 ? '0.3px' : size >= 11 ? '0.8px' : '1.2px';
+  return `font-size:${size}px;font-weight:${weight};letter-spacing:${spacing}`;
 }
 
 // ===== LIBRARY RENDERING =====
@@ -607,16 +673,30 @@ function renderGridView(el) {
   }).join('') + '</div>';
 }
 
-function renderSpineView(el) {
-  el.innerHTML = '<div class="view-spine-wrap"><div class="view-spine">' + library.map((b, i) => {
-    const w = spineWidth(b);
-    const c = strColor(b.title);
-    const p = b.progress || 0;
-    return `<div class="spine" style="width:${w}px;background:linear-gradient(180deg,${c[0]},${c[1]})" onclick="openBook(${i})" title="${esc(b.title)}">
-      <span class="spine-text" style="font-size:${w > 36 ? 12 : 10}px">${esc(b.title)}</span>
-      ${p > 0 ? '<div class="spine-prog"><div class="spine-prog-fill" style="width:' + p + '%"></div></div>' : ''}
-    </div>`;
-  }).join('') + '</div></div>';
+async function renderSpineView(el) {
+  // Build spines with placeholder colors first, then update with extracted colors
+  const spineData = library.map((b, i) => ({
+    book: b, index: i, width: spineWidth(b),
+    fallback: strColor(b.title), progress: b.progress || 0
+  }));
+
+  el.innerHTML = '<div class="view-spine-wrap"><div class="view-spine" id="spine-row">' +
+    spineData.map(s => {
+      const ts = spineTextStyle(s.width, s.book.title.length);
+      return `<div class="spine" id="spine-${s.index}" style="width:${s.width}px;background:linear-gradient(180deg,${s.fallback[0]},${s.fallback[1]})" onclick="openBook(${s.index})" title="${esc(s.book.title)}">
+        <span class="spine-text" style="${ts}">${esc(s.book.title)}</span>
+        ${s.progress > 0 ? '<div class="spine-prog"><div class="spine-prog-fill" style="width:' + s.progress + '%"></div></div>' : ''}
+      </div>`;
+    }).join('') + '</div></div>';
+
+  // Extract colors from covers async and update
+  for (const s of spineData) {
+    if (s.book.cover) {
+      const color = await getSpineColor(s.book);
+      const spineEl = $('spine-' + s.index);
+      if (spineEl) spineEl.style.background = `linear-gradient(180deg,${color[0]},${color[1]})`;
+    }
+  }
 }
 
 // ===== FILE HANDLING =====
