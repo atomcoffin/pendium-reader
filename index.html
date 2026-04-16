@@ -209,50 +209,35 @@ html, body {
   border-radius: 2px 5px 5px 2px;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; position: relative; overflow: hidden;
-  /* Layered shadows for realism */
-  box-shadow:
-    inset -3px 0 6px rgba(0,0,0,0.2),
-    inset 2px 0 3px rgba(255,255,255,0.08),
-    2px 0 8px rgba(0,0,0,0.1),
-    0 2px 4px rgba(0,0,0,0.08);
+  /* Single combined shadow — cheaper than multiple inset layers */
+  box-shadow: inset -3px 0 6px rgba(0,0,0,0.2), 2px 0 6px rgba(0,0,0,0.12);
+  /* Promote to its own compositor layer */
+  will-change: transform;
 }
 .spine:hover { filter: brightness(1.08); }
 
-/* Top and bottom edge caps */
+/* Use a single pseudo-element for both top+bottom edge effects */
 .spine::before {
   content: '';
-  position: absolute; top: 0; left: 0; right: 0;
-  height: 6px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.15), transparent);
-  border-radius: 2px 5px 0 0;
-}
-.spine::after {
-  content: '';
-  position: absolute; bottom: 0; left: 0; right: 0;
-  height: 6px;
-  background: linear-gradient(0deg, rgba(0,0,0,0.2), transparent);
-  border-radius: 0 0 5px 2px;
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.12) 0%, transparent 8px),
+    linear-gradient(0deg, rgba(0,0,0,0.18) 0%, transparent 8px);
+  pointer-events: none;
+  border-radius: inherit;
 }
 
-/* Page edge detail — thin light line on the left side */
+/* Page edge — simpler gradient */
 .spine-pages {
-  position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px;
-  background: linear-gradient(180deg,
-    rgba(255,255,255,0.06) 0%,
-    rgba(255,255,255,0.12) 20%,
-    rgba(255,255,255,0.06) 40%,
-    rgba(255,255,255,0.1) 60%,
-    rgba(255,255,255,0.04) 100%
-  );
+  position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px;
+  background: rgba(255,255,255,0.08);
   border-radius: 1px 0 0 1px;
 }
 
-/* Horizontal band detail — like a real spine crease */
 .spine-band {
   position: absolute; left: 0; right: 0;
   height: 1px;
-  background: rgba(0,0,0,0.1);
-  box-shadow: 0 1px 0 rgba(255,255,255,0.06);
+  background: rgba(0,0,0,0.12);
 }
 
 .spine-text {
@@ -638,7 +623,8 @@ async function saveBookMeta(book) {
     id: book.id, title: book.title, author: book.author, cover: book.cover,
     progress: book.progress || 0, chapterIndex: book.chapterIndex || 0,
     scrollPos: book.scrollPos || 0, chapterCount: (book.chapters || []).length,
-    contentSize: (book.chapters || []).reduce((s, c) => s + (c.html?.length || 0), 0)
+    contentSize: (book.chapters || []).reduce((s, c) => s + (c.html?.length || 0), 0),
+    spineColor: book.spineColor || null  // persist the extracted cover color
   };
   await dbPut('books', meta);
 }
@@ -880,24 +866,25 @@ function renderGridView(el) {
   }).join('') + '</div>';
 }
 
-async function renderSpineView(el) {
+function renderSpineView(el) {
   const spineData = library.map((b, i) => {
     const w = spineWidth(b);
     const h = spineHeight(b);
     // Seed a band position from title for variety
     let seed = 0;
     for (let j = 0; j < b.title.length; j++) seed += b.title.charCodeAt(j);
-    const bandTop = 15 + (seed % 25); // 15-40% from top
-    const bandBottom = 65 + ((seed * 7) % 20); // 65-85% from top
+    const bandTop = 15 + (seed % 25);
+    const bandBottom = 65 + ((seed * 7) % 20);
+    // Use persisted color or fallback immediately — no extraction at render time
+    const color = b.spineColor || strColor(b.title);
     return { book: b, index: i, width: w, height: h,
-      fallback: strColor(b.title), progress: b.progress || 0,
-      bandTop, bandBottom };
+      color, progress: b.progress || 0, bandTop, bandBottom };
   });
 
   el.innerHTML = '<div class="view-spine-wrap"><div class="view-spine" id="spine-row">' +
     spineData.map(s => {
       const ts = spineTextStyle(s.width, s.book.title.length, s.height);
-      return `<div class="spine" id="spine-${s.index}" style="width:${s.width}px;height:${s.height}%;background:linear-gradient(180deg,${s.fallback[0]},${s.fallback[1]})" onclick="openBook(${s.index})" title="${esc(s.book.title)}">
+      return `<div class="spine" id="spine-${s.index}" style="width:${s.width}px;height:${s.height}%;background:linear-gradient(180deg,${s.color[0]},${s.color[1]})" onclick="openBook(${s.index})" title="${esc(s.book.title)}">
         <div class="spine-pages"></div>
         <div class="spine-band" style="top:${s.bandTop}%"></div>
         <div class="spine-band" style="top:${s.bandBottom}%"></div>
@@ -906,13 +893,39 @@ async function renderSpineView(el) {
       </div>`;
     }).join('') + '</div></div>';
 
-  for (const s of spineData) {
-    if (s.book.cover) {
-      const color = await getSpineColor(s.book);
-      const spineEl = $('spine-' + s.index);
-      if (spineEl) spineEl.style.background = `linear-gradient(180deg,${color[0]},${color[1]})`;
-    }
+  // Backfill missing colors in background — non-blocking
+  backfillSpineColors();
+}
+
+// Backfill spineColor for any books that don't have it yet (one-time migration)
+let backfillRunning = false;
+async function backfillSpineColors() {
+  if (backfillRunning) return;
+  const missing = library.filter(b => !b.spineColor && b.cover);
+  if (missing.length === 0) return;
+  backfillRunning = true;
+
+  // Process in parallel batches of 4 to avoid blocking
+  const batchSize = 4;
+  for (let i = 0; i < missing.length; i += batchSize) {
+    const batch = missing.slice(i, i + batchSize);
+    await Promise.all(batch.map(async (book) => {
+      const color = await extractColor(book.cover);
+      if (color) {
+        book.spineColor = color;
+        await saveBookMeta(book);
+        // Update the spine in the DOM if we're still on spine view
+        if (currentView === 'spine') {
+          const idx = library.findIndex(b => b.id === book.id);
+          const el = $('spine-' + idx);
+          if (el) el.style.background = `linear-gradient(180deg,${color[0]},${color[1]})`;
+        }
+      }
+    }));
+    // Yield between batches so the UI stays responsive
+    await new Promise(r => setTimeout(r, 0));
   }
+  backfillRunning = false;
 }
 
 // ===== FILE HANDLING =====
@@ -1115,17 +1128,25 @@ async function loadEpub(file, batch = false) {
 
     const finalToc = bookToc.length > 0 ? bookToc : bookChapters.map((ch, i) => ({ title: ch.title, index: i }));
     const contentSize = bookChapters.reduce((s, c) => s + (c.html?.length || 0), 0);
+
+    // Extract spine color from cover during import (once) so it persists
+    let spineColor = null;
+    if (cover) {
+      spineColor = await extractColor(cover);
+    }
+    if (!spineColor) spineColor = strColor(title);
+
     const book = {
       id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
       title, author, cover, chapters: bookChapters, toc: finalToc,
-      progress: 0, chapterIndex: 0, scrollPos: 0
+      progress: 0, chapterIndex: 0, scrollPos: 0, spineColor
     };
     await saveBookMeta(book);
     await saveBookContent(book);
     library.push({
       id: book.id, title: book.title, author: book.author, cover: book.cover,
       progress: 0, chapterIndex: 0, scrollPos: 0,
-      chapterCount: bookChapters.length, contentSize
+      chapterCount: bookChapters.length, contentSize, spineColor
     });
     if (!batch) renderLibrary();
   } catch (err) {

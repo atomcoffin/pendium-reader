@@ -1,5 +1,5 @@
 // Bump this version string every time you push an update.
-const CACHE_VERSION = 'tomen-v1.2.0';
+const CACHE_VERSION = 'tomen-v1.3.0';
 
 const ASSETS = [
   './',
