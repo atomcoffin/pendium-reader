@@ -594,17 +594,27 @@ async function getSpineColor(book) {
 // Estimate "thickness" from total text content
 function spineWidth(book) {
   const total = (book.chapters || []).reduce((s, c) => s + (c.html?.length || 0), 0);
-  // Range: 40px (short) to 120px (massive tome)
-  return Math.max(40, Math.min(120, Math.round(total / 2000) + 40));
+  // Real EPUBs range from ~100k (novella) to 2M+ (epic)
+  // Use logarithmic scale so differences are visible across the whole range
+  const log = Math.log10(Math.max(1000, total));
+  // log10(100k)=5, log10(500k)=5.7, log10(1M)=6, log10(2M)=6.3
+  // Map range 4.5–6.5 to 44–120px
+  const w = Math.round(((log - 4.5) / 2) * 76 + 44);
+  return Math.max(44, Math.min(120, w));
 }
 
-// Estimate height — varies from 82% to 100% of container
+// Estimate height — varies from 75% to 100% of container
 function spineHeight(book) {
   const total = (book.chapters || []).reduce((s, c) => s + (c.html?.length || 0), 0);
-  // Short books are shorter, long books reach full height
-  // Normalize: under 20k chars = short, over 200k = tall
-  const ratio = Math.min(1, Math.max(0, (total - 10000) / 200000));
-  return 82 + Math.round(ratio * 18); // 82% to 100%
+  // Also use a title-seeded offset so books of similar length still differ slightly
+  let titleSeed = 0;
+  for (let i = 0; i < book.title.length; i++) titleSeed += book.title.charCodeAt(i);
+  const jitter = (titleSeed % 8) - 4; // -4 to +3 percent
+
+  const log = Math.log10(Math.max(1000, total));
+  // Map log range 4.5–6.5 to 75%–100%
+  const pct = Math.round(((log - 4.5) / 2) * 25 + 75) + jitter;
+  return Math.max(72, Math.min(100, pct));
 }
 
 // Compute spine text style — fills the spine but stays refined
@@ -622,22 +632,22 @@ function spineTextStyle(width, titleLen, heightPct) {
   let size = Math.min(maxFromWidth, fillSize);
   size = Math.max(9, Math.min(40, size));
 
-  // Short titles: go uppercase but pull size DOWN for refinement
+  // Short titles (<=12 chars): go uppercase but pull size down for elegance
   let transform = '';
-  if (titleLen <= 10 && size >= 18) {
+  if (titleLen <= 12 && size >= 16) {
     transform = 'text-transform:uppercase;';
-    size = Math.round(size * 0.7); // smaller uppercase reads more elegant
+    size = Math.round(size * 0.65);
   }
 
-  // Weight scales with size but not too heavy
+  // Weight scales with size
   let weight;
   if (size >= 24) weight = 600;
   else if (size >= 16) weight = 500;
   else weight = 400;
 
-  // Letter-spacing: uppercase gets wide tracking, large gets tight, small gets airy
+  // Letter-spacing
   let spacing;
-  if (transform) spacing = '2px';
+  if (transform) spacing = '2.5px';
   else if (size >= 20) spacing = '-0.3px';
   else if (size >= 14) spacing = '0.3px';
   else spacing = '0.8px';
