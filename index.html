@@ -128,12 +128,12 @@ html, body {
 /* Library body */
 .lib-body { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 0 28px 28px; min-height: 0; }
 .lib-body.spine-active {
-  overflow: hidden;
+  overflow: visible;
   padding: 0;
   display: flex;
   min-height: 0;
 }
-.lib-body.spine-active > .view-spine-wrap { flex: 1; }
+.lib-body.spine-active > .view-spine-wrap { flex: 1; min-height: 0; }
 .lib-body::-webkit-scrollbar { width: 4px; }
 .lib-body::-webkit-scrollbar-thumb { background: var(--fog); border-radius: 2px; opacity: 0.3; }
 
