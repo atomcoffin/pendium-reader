@@ -848,8 +848,8 @@ function spineTitle(title) {
 function spineTextStyle(width, title, heightPct) {
   const displayTitle = spineTitle(title);
   const len = displayTitle.length;
-  const maxH = Math.round((heightPct / 100) * 550 * 0.88); // 88% of spine height
-  const maxW = Math.round(width * 0.82); // 82% of spine width
+  const maxH = Math.round((heightPct / 100) * 550 * 0.75); // 75% of spine height
+  const maxW = Math.round(width * 0.70); // 70% of spine width
 
   function measure(text, fontSize, fontWeight, uppercase) {
     const el = document.createElement('span');
