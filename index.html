@@ -1377,6 +1377,16 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Escape') showLibrary();
 });
 
+// ===== SPINE SCROLL — translate vertical wheel to horizontal =====
+document.addEventListener('wheel', e => {
+  const wrap = document.querySelector('.view-spine-wrap');
+  if (!wrap || !wrap.contains(e.target)) return;
+  if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+    e.preventDefault();
+    wrap.scrollLeft += e.deltaY;
+  }
+}, { passive: false });
+
 // ===== GREETING =====
 function getGreeting() {
   const h = new Date().getHours();
