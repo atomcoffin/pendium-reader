@@ -253,14 +253,17 @@ html, body {
 .spine-text {
   writing-mode: vertical-rl; text-orientation: mixed;
   font-family: var(--font-read);
-  color: white; line-height: 1.05;
-  padding: 20px 4px; overflow: hidden;
-  max-height: calc(100% - 32px);
+  color: white; line-height: 1.1;
+  padding: 0 4px; overflow: hidden;
+  max-height: calc(100% - 24px);
   max-width: calc(100% - 4px);
   text-shadow: 0 1px 3px rgba(0,0,0,0.4);
   z-index: 1;
   word-break: break-word;
   hyphens: auto;
+  text-wrap: balance;
+  display: flex;
+  align-items: center;
 }
 .spine-prog {
   position: absolute; bottom: 0; left: 0; right: 0;
@@ -598,7 +601,7 @@ let currentChapterIndex = 0;
 let chapters = [];
 let toc = [];
 let uiVisible = true;
-let currentView = localStorage.getItem('tomen_view') || 'text';
+let currentView = localStorage.getItem('tomen_view') || 'spine';
 let currentSort = localStorage.getItem('tomen_sort') || 'title';
 
 // ===== INDEXEDDB STORAGE =====
@@ -827,73 +830,68 @@ function spineHeight(book) {
   return Math.max(72, Math.min(100, pct));
 }
 
-// Compute spine text style — fill the available space as much as possible
+// Compute spine text style — scale off height, width, and character count
 function spineTextStyle(width, title, heightPct) {
-  const titleLen = title.length;
-  // Word count matters for wrapping — titles with spaces can wrap
+  const len = title.length;
   const words = title.split(/\s+/).length;
-  const longestWord = Math.max(...title.split(/\s+/).map(w => w.length));
 
-  // Available dimensions
-  const availHeight = (heightPct / 100) * 550; // vertical text = this is the "width" for text flow
-  const availWidth = width - 8; // horizontal = this is the "line height" direction
+  // Available space in pixels
+  const H = (heightPct / 100) * 550; // height of spine in px
+  const W = width - 8; // usable width in px
 
-  // In vertical-rl writing mode:
-  //   font-size determines character height (which flows along the spine height)
-  //   line wrapping happens in the width direction (across the spine width)
+  // Three constraints on font size:
+  // 1. Height constraint: chars must fit vertically (single column)
+  const fromH = H / (len * 0.7);
+  // 2. Width constraint: text shouldn't be wider than spine
+  const fromW = W * 0.42;
+  // 3. Combined: use whichever is smaller as baseline
+  let size = Math.min(fromH, fromW);
 
-  // Strategy: find the largest font size where the text fits
-  // Single-line fit: all chars in one column, each char ~0.75x font-size tall
-  const singleLineSize = Math.round(availHeight / (titleLen * 0.72));
-
-  // Multi-line fit: for long titles, allow wrapping into 2-3 columns
-  // Each line can be ~availWidth / (fontSize * lineHeight) lines
-  // With wrapping, we can use a larger font
-  let size;
-  if (titleLen <= 6) {
-    // Very short titles: go big, single line
-    size = Math.min(Math.round(width * 0.6), singleLineSize);
-    size = Math.max(size, 24); // minimum big for tiny titles
-  } else if (titleLen <= 15) {
-    // Short-medium: fill aggressively
-    size = Math.min(Math.round(width * 0.5), singleLineSize);
-  } else if (titleLen <= 30) {
-    // Medium: allow 2 columns of text
-    const charsPerCol = Math.round(availHeight / (longestWord * 0.72));
-    const colsNeeded = Math.ceil(titleLen / Math.max(1, charsPerCol));
-    const sizeFromWidth = Math.round(availWidth / (Math.min(colsNeeded, 3) * 1.1));
-    size = Math.min(sizeFromWidth, Math.round(availHeight / (longestWord * 0.72)));
-    size = Math.max(size, singleLineSize); // at least as big as single line
-  } else {
-    // Long titles: allow 2-3 columns, size to fit
-    const targetCols = words >= 6 ? 3 : 2;
-    const charsPerCol = Math.ceil(titleLen / targetCols);
-    const sizeFromHeight = Math.round(availHeight / (charsPerCol * 0.65));
-    const sizeFromWidth = Math.round(availWidth / (targetCols * 1.1));
-    size = Math.min(sizeFromHeight, sizeFromWidth);
+  // For very short titles (1-6 chars), push size up — they should dominate
+  if (len <= 4) {
+    size = Math.min(W * 0.65, H / (len * 0.6));
+    size = Math.max(size, 28);
+  } else if (len <= 8) {
+    size = Math.min(W * 0.52, H / (len * 0.65));
+    size = Math.max(size, 20);
   }
 
-  // Clamp
-  size = Math.max(9, Math.min(48, size));
+  // For longer titles that would be tiny single-column, allow multi-line
+  // In vertical-rl, "lines" wrap horizontally across the spine width
+  if (len > 15 && size < 12) {
+    // How many columns can we fit?
+    const cols = Math.min(3, Math.floor(W / 14)); // each col needs ~14px min
+    if (cols >= 2) {
+      const charsPerCol = Math.ceil(len / cols);
+      const fromHMulti = H / (charsPerCol * 0.7);
+      const fromWMulti = W / (cols * 1.15);
+      size = Math.min(fromHMulti, fromWMulti);
+    }
+  }
 
-  // Short titles: uppercase with slightly reduced size
+  // Clamp: slightly lower max than before
+  size = Math.round(Math.max(9, Math.min(42, size)));
+
+  // Uppercase for short titles — reduce less for very short
   let transform = '';
-  if (titleLen <= 12 && size >= 14) {
+  if (len <= 12 && size >= 13) {
     transform = 'text-transform:uppercase;';
-    size = Math.round(size * 0.85);
+    if (len <= 6) size = Math.round(size * 0.9);
+    else size = Math.round(size * 0.82);
   }
 
   // Weight
   let weight;
-  if (size >= 28) weight = 600;
-  else if (size >= 18) weight = 500;
+  if (size >= 26) weight = 600;
+  else if (size >= 16) weight = 500;
   else weight = 400;
 
   // Letter-spacing
   let spacing;
-  if (transform) spacing = '2px';
-  else if (size >= 24) spacing = '-0.3px';
-  else if (size >= 14) spacing = '0.2px';
+  if (transform && len <= 6) spacing = '3px';
+  else if (transform) spacing = '1.5px';
+  else if (size >= 20) spacing = '-0.2px';
+  else if (size >= 13) spacing = '0.2px';
   else spacing = '0.5px';
 
   return `font-size:${size}px;font-weight:${weight};letter-spacing:${spacing};${transform}`;
