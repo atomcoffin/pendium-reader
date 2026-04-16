@@ -1,11 +1,15 @@
 // Bump this version string every time you push an update.
-const CACHE_VERSION = 'tomen-v1.0.0';
+const CACHE_VERSION = 'tomen-v1.1.0';
 
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  'https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,300;0,7..72,400;0,7..72,500;0,7..72,600;1,7..72,300;1,7..72,400&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap',
+  './fonts/Thow0.3-Regular.woff2',
+  './fonts/Thow0.3-Italic.woff2',
+  './fonts/Thow0.3-Medium.woff2',
+  './fonts/Thow0.3-SemiBold.woff2',
+  './fonts/ThowMono0.3-Regular.woff2',
   'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'
 ];
 
