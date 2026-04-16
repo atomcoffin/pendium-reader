@@ -826,16 +826,36 @@ async function importFiles(files) {
   const newFiles = files.filter(f => !existingTitles.has(f.name.replace(/\.[^.]+$/, '').toLowerCase()));
   if (newFiles.length === 0) { alert('All books in this folder are already in your library.'); return; }
   showLoading(true, `Importing 0 / ${newFiles.length}…`);
-  let n = 0;
+  let n = 0, skipped = 0;
+
   for (const file of newFiles) {
-    try {
+    // Per-file timeout so one bad file can't hang the whole import
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('timeout after 30s')), 30000)
+    );
+    const importPromise = (async () => {
       if (file.name.toLowerCase().endsWith('.epub')) await loadEpub(file, true);
       else await loadTextFile(file, true);
+    })();
+
+    try {
+      await Promise.race([importPromise, timeoutPromise]);
       n++;
-      showLoading(true, `Importing ${n} / ${newFiles.length}…`);
-    } catch (err) { console.warn(`Skipped ${file.name}:`, err); }
+    } catch (err) {
+      console.warn(`Skipped ${file.name}:`, err);
+      skipped++;
+    }
+    showLoading(true, `Importing ${n} / ${newFiles.length}…`);
+    // Yield to the event loop briefly so UI can update
+    await new Promise(r => setTimeout(r, 0));
   }
-  saveLibrary(); renderLibrary(); showLoading(false);
+
+  saveLibrary();
+  renderLibrary();
+  showLoading(false);
+  if (skipped > 0) {
+    setTimeout(() => alert(`Imported ${n} books. ${skipped} could not be read (likely DRM-protected or corrupt).`), 100);
+  }
 }
 
 async function handleFiles(e) {
@@ -863,11 +883,17 @@ async function loadEpub(file, batch = false) {
   if (!batch) showLoading(true);
   try {
     const zip = await JSZip.loadAsync(file);
-    const containerXml = await zip.file('META-INF/container.xml').async('text');
+    const containerFile = zip.file('META-INF/container.xml');
+    if (!containerFile) throw new Error('Missing container.xml — not a valid EPUB');
+    const containerXml = await containerFile.async('text');
     const containerDoc = new DOMParser().parseFromString(containerXml, 'application/xml');
-    const rootfilePath = containerDoc.querySelector('rootfile').getAttribute('full-path');
+    const rootfileEl = containerDoc.querySelector('rootfile');
+    if (!rootfileEl) throw new Error('Missing rootfile reference');
+    const rootfilePath = rootfileEl.getAttribute('full-path');
     const rootDir = rootfilePath.includes('/') ? rootfilePath.substring(0, rootfilePath.lastIndexOf('/') + 1) : '';
-    const opfXml = await zip.file(rootfilePath).async('text');
+    const opfFile = zip.file(rootfilePath);
+    if (!opfFile) throw new Error('Missing OPF file');
+    const opfXml = await opfFile.async('text');
     const opfDoc = new DOMParser().parseFromString(opfXml, 'application/xml');
 
     const titleEl = opfDoc.querySelector('metadata title');
