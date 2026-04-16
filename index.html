@@ -830,12 +830,26 @@ function spineHeight(book) {
   return Math.max(72, Math.min(100, pct));
 }
 
+// Shorten a title for spine display — truncate at first colon or dash subtitle
+function spineTitle(title) {
+  // Truncate at ": " or " — " or " - " (subtitle separators)
+  const separators = [': ', ' — ', ' - '];
+  for (const sep of separators) {
+    const idx = title.indexOf(sep);
+    if (idx > 0 && idx < title.length - 3) {
+      return title.substring(0, idx);
+    }
+  }
+  return title;
+}
+
 // Compute spine text style — binary search for largest size that fits
-// Rule: text should grow as large as possible without exceeding 80% of height or 60% of width
+// Text should fill as much of the spine as possible
 function spineTextStyle(width, title, heightPct) {
-  const len = title.length;
-  const maxH = Math.round((heightPct / 100) * 550 * 0.80); // 80% of spine height in px
-  const maxW = Math.round(width * 0.60); // 60% of spine width in px
+  const displayTitle = spineTitle(title);
+  const len = displayTitle.length;
+  const maxH = Math.round((heightPct / 100) * 550 * 0.88); // 88% of spine height
+  const maxW = Math.round(width * 0.82); // 82% of spine width
 
   function measure(text, fontSize, fontWeight, uppercase) {
     const el = document.createElement('span');
@@ -850,9 +864,6 @@ function spineTextStyle(width, title, heightPct) {
     `;
     el.textContent = text;
     document.body.appendChild(el);
-    // In vertical-rl with max-height set:
-    //   offsetHeight = constrained to maxH (or less if text is short)
-    //   offsetWidth = how many "columns" the text wraps into
     const w = el.offsetWidth;
     const h = el.offsetHeight;
     document.body.removeChild(el);
@@ -860,14 +871,12 @@ function spineTextStyle(width, title, heightPct) {
   }
 
   function findBest(text, uppercase) {
-    let lo = 8, hi = 56, best = 8;
+    let lo = 8, hi = 60, best = 8;
     for (let i = 0; i < 12; i++) {
       const mid = Math.round((lo + hi) / 2);
       if (lo > hi) break;
       const fw = mid >= 26 ? 600 : mid >= 16 ? 500 : 400;
       const m = measure(text, mid, fw, uppercase);
-      // Text fits if its wrapped width doesn't exceed our max
-      // and the height used is within bounds
       if (m.w <= maxW && m.h <= maxH) {
         best = mid;
         lo = mid + 1;
@@ -878,12 +887,12 @@ function spineTextStyle(width, title, heightPct) {
     return best;
   }
 
-  let size = findBest(title, false);
+  let size = findBest(displayTitle, false);
 
   // Try uppercase for short titles
   let transform = '';
-  if (len <= 12) {
-    const upperSize = findBest(title, true);
+  if (len <= 14) {
+    const upperSize = findBest(displayTitle, true);
     if (upperSize >= 11) {
       size = upperSize;
       transform = 'text-transform:uppercase;';
@@ -904,7 +913,7 @@ function spineTextStyle(width, title, heightPct) {
   else if (size >= 13) spacing = '0.2px';
   else spacing = '0.4px';
 
-  return `font-size:${size}px;font-weight:${weight};letter-spacing:${spacing};${transform}`;
+  return { style: `font-size:${size}px;font-weight:${weight};letter-spacing:${spacing};${transform}`, displayTitle };
 }
 
 // ===== LIBRARY RENDERING =====
@@ -1008,12 +1017,12 @@ function renderSpineView(el, books) {
 
   el.innerHTML = '<div class="view-spine-wrap"><div class="view-spine" id="spine-row">' +
     spineData.map(s => {
-      const ts = spineTextStyle(s.width, s.book.title, s.height);
+      const { style: ts, displayTitle } = spineTextStyle(s.width, s.book.title, s.height);
       return `<div class="spine" id="spine-${s.index}" style="width:${s.width}px;height:${s.height}%;background:linear-gradient(180deg,${s.color[0]},${s.color[1]})" onclick="openBookById('${s.book.id}')" title="${esc(s.book.title)}">
         <div class="spine-pages"></div>
         <div class="spine-band" style="top:${s.bandTop}%"></div>
         <div class="spine-band" style="top:${s.bandBottom}%"></div>
-        <span class="spine-text" style="${ts}">${esc(s.book.title)}</span>
+        <span class="spine-text" style="${ts}">${esc(displayTitle)}</span>
         ${s.progress > 0 ? '<div class="spine-prog"><div class="spine-prog-fill" style="width:' + s.progress + '%"></div></div>' : ''}
       </div>`;
     }).join('') + '</div></div>';
