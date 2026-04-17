@@ -238,8 +238,7 @@ html, body {
   box-shadow:
     inset 1px 0 0 rgba(255,255,255,0.06),           /* subtle left-edge page glint */
     inset -3px 0 6px rgba(0,0,0,0.22),              /* right-edge curvature shadow */
-    inset 0 -1px 0 rgba(0,0,0,0.5),                 /* crisp bottom contact line */
-    0 3px 8px rgba(0,0,0,0.35),                     /* shelf drop shadow */
+    0 2px 6px rgba(0,0,0,0.22),                     /* soft shelf drop shadow */
     2px 0 5px rgba(0,0,0,0.15);                     /* neighbor separation */
   will-change: transform;
 }
@@ -250,15 +249,15 @@ html, body {
   margin-right: 4px;
 }
 
-/* Layered lighting + cloth texture. Light from above, weight at the bottom. */
+/* Layered lighting + cloth texture. Light from above, subtle weight at the bottom. */
 .spine::before {
   content: '';
   position: absolute; inset: 0;
   background:
     /* Top highlight — soft light wash on the upper portion */
     linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.06) 14%, transparent 32%),
-    /* Bottom weight — deeper, sharper shadow at the base, as if sitting on a shelf */
-    linear-gradient(0deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.28) 8%, rgba(0,0,0,0.08) 22%, transparent 45%),
+    /* Bottom weight — much softer, just a hint of settling */
+    linear-gradient(0deg, rgba(0,0,0,0.22) 0%, rgba(0,0,0,0.08) 12%, transparent 35%),
     /* Cloth / linen weave texture — fine horizontal + vertical threads */
     repeating-linear-gradient(90deg, transparent 0 1px, rgba(0,0,0,0.035) 1px 2px),
     repeating-linear-gradient(0deg, transparent 0 1px, rgba(255,255,255,0.025) 1px 2px);
@@ -291,25 +290,22 @@ html, body {
   z-index: 1;
 }
 
-.spine-band {
-  position: absolute; left: 0; right: 0;
-  height: 1px;
-  background: rgba(0,0,0,0.18);
-  box-shadow: 0 1px 0 rgba(255,255,255,0.05);
-  z-index: 1;
-}
+/* Horizontal bands disabled — they intersect title text awkwardly.
+   Kept render logic intact in case we reintroduce with better positioning. */
+.spine-band { display: none; }
 
 .spine-text {
   writing-mode: vertical-rl; text-orientation: mixed;
   font-family: var(--font-read);
-  color: rgba(255,255,255,0.94); line-height: 1.1;
+  color: rgba(0,0,0,0.38); line-height: 1.1;
   padding: 0 4px; overflow: hidden;
   max-height: calc(100% - 24px);
   max-width: calc(100% - 4px);
+  /* Debossed into fabric: light from above means top edge of recess is in shadow,
+     bottom edge catches a highlight rim. */
   text-shadow:
-    0 1px 1.5px rgba(0,0,0,0.55),
-    0 0 2px rgba(0,0,0,0.35),
-    0 0 8px rgba(0,0,0,0.2);
+    0 -1px 0 rgba(0,0,0,0.3),
+    0 1px 0 rgba(255,255,255,0.22);
   z-index: 2;
   word-break: break-word;
   hyphens: auto;
@@ -317,6 +313,7 @@ html, body {
   display: flex;
   align-items: center;
   letter-spacing: 0.01em;
+  mix-blend-mode: multiply;
 }
 .spine-prog {
   position: absolute; bottom: 0; left: 0; right: 0;
@@ -337,24 +334,19 @@ html, body {
   letter-spacing: 0;
 }
 
-/* Bookmark ribbon — fabric sitting on top of the spine */
+/* Bookmark ribbon — fabric sitting on top of the spine, lit from above */
 .spine-bookmark {
   position: absolute;
   top: -3px;
   left: 17.5%;
   width: 65%;
   height: 110px;
-  background:
-    linear-gradient(90deg,
-      rgba(0,0,0,0.18) 0%,
-      rgba(0,0,0,0) 12%,
-      rgba(255,255,255,0.1) 50%,
-      rgba(0,0,0,0) 88%,
-      rgba(0,0,0,0.22) 100%),
-    linear-gradient(180deg,
-      color-mix(in srgb, var(--brand), white 8%) 0%,
-      var(--brand) 30%,
-      color-mix(in srgb, var(--brand), black 12%) 100%);
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--brand), black 22%) 0%,
+    color-mix(in srgb, var(--brand), black 8%) 15%,
+    color-mix(in srgb, var(--brand), white 10%) 50%,
+    color-mix(in srgb, var(--brand), black 8%) 85%,
+    color-mix(in srgb, var(--brand), black 22%) 100%);
   z-index: 2;
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 82%, 0 100%);
   filter: drop-shadow(1px 2px 2px rgba(0,0,0,0.45)) drop-shadow(0 1px 0 rgba(0,0,0,0.2));
@@ -363,10 +355,10 @@ html, body {
 .spine-bookmark::after {
   content: '';
   position: absolute;
-  top: 4px; left: 0; right: 0;
-  height: 2px;
-  background: linear-gradient(180deg, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0.08) 60%, transparent 100%);
-  box-shadow: 0 2px 0 rgba(255,255,255,0.14);
+  top: 3px; left: 0; right: 0;
+  height: 1px;
+  background: rgba(0,0,0,0.18);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.1);
 }
 
 /* Last-read separator */
