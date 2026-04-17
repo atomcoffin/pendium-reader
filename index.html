@@ -258,28 +258,25 @@ html, body {
 .view-spine {
   display: flex; align-items: flex-end; gap: 3px; height: 100%;
   width: max-content;
-  padding: 40px 40px 28px 28px;
+  /* Bottom padding reduced so books sit deeper — their bottoms get occluded by the plank's front lip,
+     which sells the "books are planted in the shelf" perspective. */
+  padding: 40px 40px 14px 28px;
   position: relative;
-  /* Shelf environment:
-     - Back wall: subtle vertical gradient from recessed-dark at top to shelf-meeting at bottom
-     - Shelf plank: horizontal wood band at bottom
-     - Front edge: sharp contact line where plank meets the viewer */
+  /* Only the wood plank — no back wall, let page background show above */
   background:
-    /* Plank top highlight — thin glint of light on the front edge */
-    linear-gradient(180deg, transparent calc(100% - 26px), rgba(255,255,255,0.04) calc(100% - 26px), rgba(255,255,255,0.04) calc(100% - 25px), transparent calc(100% - 25px)),
-    /* Plank shadow — sharp contact line where books meet wood */
-    linear-gradient(180deg, transparent calc(100% - 28px), rgba(0,0,0,0.45) calc(100% - 28px), rgba(0,0,0,0.25) calc(100% - 24px), transparent calc(100% - 20px)),
-    /* Wood plank — warm bottom band */
-    linear-gradient(180deg, transparent 0, transparent calc(100% - 28px), var(--shelf-wood-top) calc(100% - 28px), var(--shelf-wood-bot) 100%),
-    /* Back wall — recessed area above the shelf */
-    linear-gradient(180deg, var(--shelf-wall-top) 0%, var(--shelf-wall-bot) 100%);
+    /* Plank top highlight — thin glint of light on the front edge (the shelf's front lip) */
+    linear-gradient(180deg, transparent calc(100% - 42px), rgba(255,255,255,0.05) calc(100% - 42px), rgba(255,255,255,0.05) calc(100% - 41px), transparent calc(100% - 41px)),
+    /* Plank cast shadow — where the shelf's recessed area meets the front lip */
+    linear-gradient(180deg, transparent calc(100% - 44px), rgba(0,0,0,0.28) calc(100% - 44px), rgba(0,0,0,0.12) calc(100% - 40px), transparent calc(100% - 36px)),
+    /* Wood plank — warm bottom band, now 42px tall so it reads past the books' feet */
+    linear-gradient(180deg, transparent 0, transparent calc(100% - 42px), var(--shelf-wood-top) calc(100% - 42px), var(--shelf-wood-bot) 100%);
 }
 
-/* Fine wood grain on the plank — animated with position but uses pseudo-element so it layers over the gradient */
+/* Fine wood grain on the plank — irregular spacing so it doesn't read as a pattern */
 .view-spine::before {
   content: '';
   position: absolute;
-  left: 0; right: 0; bottom: 0; height: 28px;
+  left: 0; right: 0; bottom: 0; height: 42px;
   background:
     repeating-linear-gradient(90deg,
       transparent 0 23px,
@@ -359,11 +356,9 @@ html, body {
    Positioned in top/bottom zones via inline `top`, out of the title area. */
 .spine-band {
   position: absolute; left: 0; right: 0;
-  height: 2px;
-  background: rgba(0,0,0,0.22);
-  box-shadow:
-    0 -1px 0 rgba(0,0,0,0.12),
-    0 1px 0 rgba(255,255,255,0.06);
+  height: 1px;
+  background: rgba(0,0,0,0.12);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04);
   z-index: 1;
   pointer-events: none;
 }
@@ -404,31 +399,18 @@ html, body {
   letter-spacing: 0;
 }
 
-/* Bookmark ribbon — fabric sitting on top of the spine, lit from above */
+/* Bookmark ribbon — thin fabric strip hanging over the spine */
 .spine-bookmark {
   position: absolute;
   top: -3px;
   left: 17.5%;
   width: 65%;
   height: 110px;
-  background: linear-gradient(90deg,
-    color-mix(in srgb, var(--brand), black 22%) 0%,
-    color-mix(in srgb, var(--brand), black 8%) 15%,
-    color-mix(in srgb, var(--brand), white 10%) 50%,
-    color-mix(in srgb, var(--brand), black 8%) 85%,
-    color-mix(in srgb, var(--brand), black 22%) 100%);
+  background: var(--brand);
   z-index: 2;
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 82%, 0 100%);
-  filter: drop-shadow(1px 2px 2px rgba(0,0,0,0.45)) drop-shadow(0 1px 0 rgba(0,0,0,0.2));
-}
-/* Fold crease near top — subtle fabric fold where it wraps over the spine */
-.spine-bookmark::after {
-  content: '';
-  position: absolute;
-  top: 3px; left: 0; right: 0;
-  height: 1px;
-  background: rgba(0,0,0,0.18);
-  box-shadow: 0 1px 0 rgba(255,255,255,0.1);
+  /* Soft drop shadow on the spine surface — this is what makes it feel like it's hanging on top */
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3));
 }
 
 /* Last-read separator */
