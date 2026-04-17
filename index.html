@@ -238,12 +238,9 @@ html, body {
 }
 .spine:hover { filter: brightness(1.08); }
 
-/* Pinned / last-read book leans against the shelf */
+/* Pinned / last-read book — first in shelf */
 .spine.pinned {
-  transform: rotate(4deg);
-  transform-origin: bottom left;
-  margin-right: 8px;
-  z-index: 2;
+  margin-right: 4px;
 }
 
 /* Use a single pseudo-element for both top+bottom edge effects */
@@ -943,8 +940,8 @@ function spineTitle(title) {
 function spineTextStyle(width, title, spineHeightPx) {
   const displayTitle = spineTitle(title);
   const len = displayTitle.length;
-  const maxH = Math.round(spineHeightPx * 0.65); // 65% of actual spine height in px
-  const maxW = Math.round(width * 0.60); // 60% of spine width
+  const maxH = Math.round(spineHeightPx * 0.55); // 55% of actual spine height
+  const maxW = Math.round(width * 0.50); // 50% of spine width
 
   function measure(text, fontSize, fontWeight, uppercase) {
     const el = document.createElement('span');
@@ -966,7 +963,7 @@ function spineTextStyle(width, title, spineHeightPx) {
   }
 
   function findBest(text, uppercase) {
-    let lo = 8, hi = 60, best = 8;
+    let lo = 8, hi = 42, best = 8;
     for (let i = 0; i < 12; i++) {
       const mid = Math.round((lo + hi) / 2);
       if (lo > hi) break;
