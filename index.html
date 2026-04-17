@@ -988,14 +988,13 @@ function spineTitle(title) {
 }
 
 // Compute spine text style — binary search for largest size that fits
-// Text should fill as much of the spine as possible
+// Primary constraint: spine width. Text should not dominate the spine.
 function spineTextStyle(width, title, spineHeightPx) {
   const displayTitle = spineTitle(title);
-  const len = displayTitle.length;
-  const maxH = Math.round(spineHeightPx * 0.55); // 55% of actual spine height
-  const maxW = Math.round(width * 0.50); // 50% of spine width
+  const maxH = Math.round(spineHeightPx * 0.70); // 70% of height
+  const maxW = Math.round(width * 0.45); // 45% of width — this is the main constraint
 
-  function measure(text, fontSize, fontWeight, uppercase) {
+  function measure(text, fontSize, fontWeight) {
     const el = document.createElement('span');
     el.style.cssText = `
       position:absolute;top:-9999px;left:-9999px;visibility:hidden;
@@ -1003,7 +1002,6 @@ function spineTextStyle(width, title, spineHeightPx) {
       font-family:Thow,Georgia,serif;line-height:1.1;
       word-break:break-word;hyphens:auto;white-space:normal;
       font-size:${fontSize}px;font-weight:${fontWeight};
-      ${uppercase ? 'text-transform:uppercase;' : ''}
       max-height:${maxH}px;
     `;
     el.textContent = text;
@@ -1014,50 +1012,30 @@ function spineTextStyle(width, title, spineHeightPx) {
     return { w, h };
   }
 
-  function findBest(text, uppercase) {
-    let lo = 8, hi = 42, best = 8;
-    for (let i = 0; i < 12; i++) {
-      const mid = Math.round((lo + hi) / 2);
-      if (lo > hi) break;
-      const fw = mid >= 26 ? 600 : mid >= 16 ? 500 : 400;
-      const m = measure(text, mid, fw, uppercase);
-      if (m.w <= maxW && m.h <= maxH) {
-        best = mid;
-        lo = mid + 1;
-      } else {
-        hi = mid - 1;
-      }
-    }
-    return best;
-  }
-
-  let size = findBest(displayTitle, false);
-
-  // Try uppercase for short titles
-  let transform = '';
-  if (len <= 14) {
-    const upperSize = findBest(displayTitle, true);
-    if (upperSize >= 11) {
-      size = upperSize;
-      transform = 'text-transform:uppercase;';
+  // Binary search for largest fitting size
+  let lo = 8, hi = 36, best = 8;
+  for (let i = 0; i < 12; i++) {
+    const mid = Math.round((lo + hi) / 2);
+    if (lo > hi) break;
+    const fw = mid >= 22 ? 500 : 400;
+    const m = measure(displayTitle, mid, fw);
+    if (m.w <= maxW && m.h <= maxH) {
+      best = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
     }
   }
 
-  // Weight
-  let weight;
-  if (size >= 26) weight = 600;
-  else if (size >= 16) weight = 500;
-  else weight = 400;
+  let size = best;
+
+  // Weight — lighter overall
+  let weight = size >= 22 ? 500 : 400;
 
   // Letter-spacing
-  let spacing;
-  if (transform && len <= 6) spacing = '3px';
-  else if (transform) spacing = '1.5px';
-  else if (size >= 20) spacing = '-0.2px';
-  else if (size >= 13) spacing = '0.2px';
-  else spacing = '0.4px';
+  let spacing = size >= 18 ? '-0.2px' : size >= 12 ? '0.2px' : '0.4px';
 
-  return { style: `font-size:${size}px;font-weight:${weight};letter-spacing:${spacing};${transform}`, displayTitle };
+  return { style: `font-size:${size}px;font-weight:${weight};letter-spacing:${spacing}`, displayTitle };
 }
 
 // ===== LIBRARY RENDERING =====
