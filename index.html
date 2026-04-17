@@ -41,16 +41,6 @@
   --reading-width: 680px;
   --font-size: 18px;
   --line-height: 1.8;
-  /* Shelf palette — light theme: warm honey-oak plank, soft recessed wall */
-  --shelf-wall-top: #E5DCD0;
-  --shelf-wall-bot: #D4C7B6;
-  --shelf-wood-top: #9A7856;
-  --shelf-wood-bot: #6B4F38;
-  /* Spine lighting overrides — light theme needs subtler top, stronger bottom */
-  --spine-light-top: 0.14;
-  --spine-light-mid: 0.04;
-  --spine-dark-base: 0.32;
-  --spine-dark-mid: 0.14;
 }
 
 .dark {
@@ -60,16 +50,6 @@
   --border: rgba(232, 224, 216, 0.06);
   --shadow-cover: 0 4px 16px rgba(0,0,0,0.25);
   --shadow-float: 0 8px 32px rgba(0,0,0,0.4);
-  /* Shelf palette — dark walnut */
-  --shelf-wall-top: #0E0C0B;
-  --shelf-wall-bot: #1A1513;
-  --shelf-wood-top: #3A2A1F;
-  --shelf-wood-bot: #1F1610;
-  /* Spine lighting — original tuning, light hits cloth strongly */
-  --spine-light-top: 0.22;
-  --spine-light-mid: 0.06;
-  --spine-dark-base: 0.22;
-  --spine-dark-mid: 0.08;
 }
 
 .sepia {
@@ -77,16 +57,6 @@
   --ink: #3E3228; --stone: #7A6E5E; --fog: #A89880;
   --ember: #B85A3A; --clay: #9A4C2E; --brand: #C4604A;
   --border: rgba(62, 50, 40, 0.06);
-  /* Shelf palette — amber-toned antique oak */
-  --shelf-wall-top: #DCD0B5;
-  --shelf-wall-bot: #C8B897;
-  --shelf-wood-top: #8E6D45;
-  --shelf-wood-bot: #5E4328;
-  /* Spine lighting — between light and dark */
-  --spine-light-top: 0.16;
-  --spine-light-mid: 0.05;
-  --spine-dark-base: 0.28;
-  --spine-dark-mid: 0.12;
 }
 
 html, body {
@@ -262,32 +232,6 @@ html, body {
   width: max-content;
   min-width: 100%;
   padding: 40px 40px 28px 28px;
-  position: relative;
-  /* Wood plank — no back wall, let page background show above */
-  background:
-    /* Plank top highlight — thin glint of light on the front edge (the shelf's front lip) */
-    linear-gradient(180deg, transparent calc(100% - 66px), rgba(255,255,255,0.05) calc(100% - 66px), rgba(255,255,255,0.05) calc(100% - 65px), transparent calc(100% - 65px)),
-    /* Plank cast shadow — where the shelf's recessed area meets the front lip */
-    linear-gradient(180deg, transparent calc(100% - 68px), rgba(0,0,0,0.28) calc(100% - 68px), rgba(0,0,0,0.12) calc(100% - 64px), transparent calc(100% - 60px)),
-    /* Wood plank — 66px tall, deeper shelf for more room */
-    linear-gradient(180deg, transparent 0, transparent calc(100% - 66px), var(--shelf-wood-top) calc(100% - 66px), var(--shelf-wood-bot) 100%);
-}
-
-/* Fine wood grain on the plank — irregular spacing so it doesn't read as a pattern */
-.view-spine::before {
-  content: '';
-  position: absolute;
-  left: 0; right: 0; bottom: 0; height: 66px;
-  background:
-    repeating-linear-gradient(90deg,
-      transparent 0 23px,
-      rgba(0,0,0,0.06) 23px 24px,
-      transparent 24px 47px,
-      rgba(0,0,0,0.04) 47px 48px,
-      transparent 48px 91px,
-      rgba(255,255,255,0.03) 91px 92px);
-  pointer-events: none;
-  z-index: 0;
 }
 .spine {
   flex-shrink: 0;
@@ -297,7 +241,6 @@ html, body {
   box-shadow:
     inset 1px 0 0 rgba(255,255,255,0.06),           /* subtle left-edge page glint */
     inset -3px 0 6px rgba(0,0,0,0.22),              /* right-edge curvature shadow */
-    0 6px 6px -4px rgba(0,0,0,0.35),                /* downward-only shadow onto the shelf */
     2px 0 5px rgba(0,0,0,0.18);                     /* neighbor separation */
   will-change: transform;
 }
@@ -308,14 +251,7 @@ html, body {
   margin-right: 4px;
 }
 
-/* Single subtle shadow at the bottom — just enough to ground the book. No top highlight, no cloth weave. */
-.spine::before {
-  content: '';
-  position: absolute; inset: 0;
-  background: linear-gradient(0deg, rgba(0,0,0,var(--spine-dark-base)) 0%, rgba(0,0,0,var(--spine-dark-mid)) 10%, transparent 28%);
-  pointer-events: none;
-  border-radius: inherit;
-}
+/* No lighting overlay — clean flat spine colors. */
 
 /* Page edge — crisp paper sliver running the full left edge, following the corner radius */
 .spine-pages {
