@@ -39,6 +39,16 @@
   --reading-width: 680px;
   --font-size: 18px;
   --line-height: 1.8;
+  /* Shelf palette — light theme: warm honey-oak plank, soft recessed wall */
+  --shelf-wall-top: #E5DCD0;
+  --shelf-wall-bot: #D4C7B6;
+  --shelf-wood-top: #9A7856;
+  --shelf-wood-bot: #6B4F38;
+  /* Spine lighting overrides — light theme needs subtler top, stronger bottom */
+  --spine-light-top: 0.14;
+  --spine-light-mid: 0.04;
+  --spine-dark-base: 0.32;
+  --spine-dark-mid: 0.14;
 }
 
 .dark {
@@ -48,6 +58,16 @@
   --border: rgba(232, 224, 216, 0.06);
   --shadow-cover: 0 4px 16px rgba(0,0,0,0.25);
   --shadow-float: 0 8px 32px rgba(0,0,0,0.4);
+  /* Shelf palette — dark walnut */
+  --shelf-wall-top: #0E0C0B;
+  --shelf-wall-bot: #1A1513;
+  --shelf-wood-top: #3A2A1F;
+  --shelf-wood-bot: #1F1610;
+  /* Spine lighting — original tuning, light hits cloth strongly */
+  --spine-light-top: 0.22;
+  --spine-light-mid: 0.06;
+  --spine-dark-base: 0.22;
+  --spine-dark-mid: 0.08;
 }
 
 .sepia {
@@ -55,6 +75,16 @@
   --ink: #3E3228; --stone: #7A6E5E; --fog: #A89880;
   --ember: #B85A3A; --clay: #9A4C2E; --brand: #C4604A;
   --border: rgba(62, 50, 40, 0.06);
+  /* Shelf palette — amber-toned antique oak */
+  --shelf-wall-top: #DCD0B5;
+  --shelf-wall-bot: #C8B897;
+  --shelf-wood-top: #8E6D45;
+  --shelf-wood-bot: #5E4328;
+  /* Spine lighting — between light and dark */
+  --spine-light-top: 0.16;
+  --spine-light-mid: 0.05;
+  --spine-dark-base: 0.28;
+  --spine-dark-mid: 0.12;
 }
 
 html, body {
@@ -229,6 +259,37 @@ html, body {
   display: flex; align-items: flex-end; gap: 3px; height: 100%;
   width: max-content;
   padding: 40px 40px 28px 28px;
+  position: relative;
+  /* Shelf environment:
+     - Back wall: subtle vertical gradient from recessed-dark at top to shelf-meeting at bottom
+     - Shelf plank: horizontal wood band at bottom
+     - Front edge: sharp contact line where plank meets the viewer */
+  background:
+    /* Plank top highlight — thin glint of light on the front edge */
+    linear-gradient(180deg, transparent calc(100% - 26px), rgba(255,255,255,0.04) calc(100% - 26px), rgba(255,255,255,0.04) calc(100% - 25px), transparent calc(100% - 25px)),
+    /* Plank shadow — sharp contact line where books meet wood */
+    linear-gradient(180deg, transparent calc(100% - 28px), rgba(0,0,0,0.45) calc(100% - 28px), rgba(0,0,0,0.25) calc(100% - 24px), transparent calc(100% - 20px)),
+    /* Wood plank — warm bottom band */
+    linear-gradient(180deg, transparent 0, transparent calc(100% - 28px), var(--shelf-wood-top) calc(100% - 28px), var(--shelf-wood-bot) 100%),
+    /* Back wall — recessed area above the shelf */
+    linear-gradient(180deg, var(--shelf-wall-top) 0%, var(--shelf-wall-bot) 100%);
+}
+
+/* Fine wood grain on the plank — animated with position but uses pseudo-element so it layers over the gradient */
+.view-spine::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0; height: 28px;
+  background:
+    repeating-linear-gradient(90deg,
+      transparent 0 23px,
+      rgba(0,0,0,0.06) 23px 24px,
+      transparent 24px 47px,
+      rgba(0,0,0,0.04) 47px 48px,
+      transparent 48px 91px,
+      rgba(255,255,255,0.03) 91px 92px);
+  pointer-events: none;
+  z-index: 0;
 }
 .spine {
   flex-shrink: 0;
@@ -238,8 +299,8 @@ html, body {
   box-shadow:
     inset 1px 0 0 rgba(255,255,255,0.06),           /* subtle left-edge page glint */
     inset -3px 0 6px rgba(0,0,0,0.22),              /* right-edge curvature shadow */
-    0 2px 6px rgba(0,0,0,0.22),                     /* soft shelf drop shadow */
-    2px 0 5px rgba(0,0,0,0.15);                     /* neighbor separation */
+    0 3px 10px rgba(0,0,0,0.3),                     /* soft shelf drop shadow */
+    2px 0 5px rgba(0,0,0,0.18);                     /* neighbor separation */
   will-change: transform;
 }
 .spine:hover { filter: brightness(1.08); }
@@ -249,21 +310,20 @@ html, body {
   margin-right: 4px;
 }
 
-/* Layered lighting + cloth texture. Light from above, subtle weight at the bottom. */
+/* Layered lighting + cloth texture. Values tuned per theme via CSS vars. */
 .spine::before {
   content: '';
   position: absolute; inset: 0;
   background:
-    /* Top highlight — soft light wash on the upper portion */
-    linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.06) 14%, transparent 32%),
-    /* Bottom weight — much softer, just a hint of settling */
-    linear-gradient(0deg, rgba(0,0,0,0.22) 0%, rgba(0,0,0,0.08) 12%, transparent 35%),
+    /* Top highlight — light from above */
+    linear-gradient(180deg, rgba(255,255,255,var(--spine-light-top)) 0%, rgba(255,255,255,var(--spine-light-mid)) 14%, transparent 32%),
+    /* Bottom weight — stronger on light themes where shelf contrast is weaker */
+    linear-gradient(0deg, rgba(0,0,0,var(--spine-dark-base)) 0%, rgba(0,0,0,var(--spine-dark-mid)) 12%, transparent 35%),
     /* Cloth / linen weave texture — fine horizontal + vertical threads */
     repeating-linear-gradient(90deg, transparent 0 1px, rgba(0,0,0,0.035) 1px 2px),
     repeating-linear-gradient(0deg, transparent 0 1px, rgba(255,255,255,0.025) 1px 2px);
   pointer-events: none;
   border-radius: inherit;
-  mix-blend-mode: normal;
 }
 
 /* Grain overlay for depth — film-grain-style noise via layered radial gradients */
