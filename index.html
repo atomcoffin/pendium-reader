@@ -1160,16 +1160,20 @@ function spineLayout(book, widthPx, heightPx) {
   const titleMaxW = Math.round(widthPx * widthFactor);
   const titleMaxH = topZoneH;
 
-  const titleCap = parsed.primary.length <= 4  ? 44 :
-                   parsed.primary.length <= 8  ? 36 :
-                   parsed.primary.length <= 16 ? 28 :
-                   parsed.primary.length <= 30 ? 22 : 18;
+  // Title size caps — generous upper bounds. Binary search will shrink to fit
+  // the actual zone; these just prevent ridiculous oversizing on very tall spines.
+  // For a ~1100px-tall spine with ~750px title zone, a short title can be HUGE.
+  const titleCap = parsed.primary.length <= 4  ? 80 :
+                   parsed.primary.length <= 8  ? 60 :
+                   parsed.primary.length <= 16 ? 44 :
+                   parsed.primary.length <= 30 ? 32 : 26;
 
   let title = fitVertical(parsed.primary, titleMaxW, titleMaxH, 10, titleCap);
 
-  if (title.size < 13 && parsed.primary.length > 18) {
-    const wideW = Math.round(widthPx * (hasSecondary ? 0.55 : 0.75));
-    const wrapped = fitVertical(parsed.primary, wideW, titleMaxH, 11, Math.max(title.size + 2, 20));
+  // If single-column forced an unreadable size on a long title, try wrapping.
+  if (title.size < 14 && parsed.primary.length > 18) {
+    const wideW = Math.round(widthPx * (hasSecondary ? 0.55 : 0.80));
+    const wrapped = fitVertical(parsed.primary, wideW, titleMaxH, title.size + 1, Math.max(title.size + 4, 22));
     if (wrapped.size > title.size) title = wrapped;
   }
 
@@ -1180,11 +1184,6 @@ function spineLayout(book, widthPx, heightPx) {
       const secSize = Math.max(9, Math.round(title.size * 0.72));
       secondary = { text: parsed.secondary, size: secSize, weight: 400 };
     }
-  }
-
-  // DEBUG — remove after diagnosis
-  if (window._spineDebug !== false) {
-    console.log(`[spine] "${parsed.primary}" w=${widthPx} h=${heightPx} | titleMaxW=${titleMaxW} titleMaxH=${titleMaxH} cap=${titleCap} → size=${title.size} measuredW=${title.width} measuredH=${title.height}`);
   }
 
   const titleCenter = title.height < titleMaxH * 0.55;
