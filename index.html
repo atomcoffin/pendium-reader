@@ -70,9 +70,6 @@ html, body {
 /* ===== SCREENS ===== */
 .screen { height: 100%; display: none; flex-direction: column; overflow: hidden; }
 .screen.active { display: flex; }
-/* When spine view is active, bottom-anchor the library body so empty vertical
-   space accumulates above (where the header lives) rather than below the books. */
-.screen#screen-lib:has(.lib-body.spine-active) { justify-content: space-between; }
 
 /* ===== LIBRARY ===== */
 .lib-header {
@@ -152,12 +149,17 @@ html, body {
   overflow: hidden;
   padding: 0;
   display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
   min-height: 0;
-  max-height: 66vh;
 }
-.lib-body.spine-active > .view-spine-wrap { flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; }
+.lib-body.spine-active > .view-spine-wrap {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  display: flex;
+  align-items: flex-end;  /* bottom-anchor the inner view-spine when it's shorter than the wrap */
+}
 .lib-body::-webkit-scrollbar { width: 4px; }
 .lib-body::-webkit-scrollbar-thumb { background: var(--fog); border-radius: 2px; opacity: 0.3; }
 
@@ -234,7 +236,9 @@ html, body {
 .view-spine-wrap::-webkit-scrollbar-track { background: transparent; }
 .view-spine-wrap::-webkit-scrollbar-thumb { background: var(--fog); border-radius: 3px; opacity: 0.3; }
 .view-spine {
-  display: flex; align-items: flex-end; gap: 3px; height: 100%;
+  display: flex; align-items: flex-end; gap: 3px;
+  height: 100%;
+  max-height: 85vh;
   width: max-content;
   min-width: 100%;
   padding: 40px 40px 28px 28px;
@@ -307,6 +311,10 @@ html, body {
   padding: 0 3px;
   z-index: 2;
   pointer-events: none;
+}
+/* When the title is short enough to float, center it vertically in its zone */
+.spine-top-zone.centered {
+  align-items: center;
 }
 
 /* Author zone — lives in the lower portion of the spine, above the bottom band. */
@@ -1087,6 +1095,7 @@ function measureVertical(text, fontSize, fontWeight, maxHeightPx) {
 }
 
 // Measure horizontal text dimensions at a given size, allowing word-wrap within maxWidth.
+// Returns width and height; overflowed tells us if a long unbreakable word blew past maxWidth.
 function measureHorizontal(text, fontSize, fontWeight, maxWidthPx) {
   const el = document.createElement('span');
   el.style.cssText = `
@@ -1101,8 +1110,9 @@ function measureHorizontal(text, fontSize, fontWeight, maxWidthPx) {
   document.body.appendChild(el);
   const w = el.offsetWidth;
   const h = el.offsetHeight;
+  const intrinsicW = el.scrollWidth;  // actual content width ignoring max-width
   document.body.removeChild(el);
-  return { w, h };
+  return { w, h, overflowed: intrinsicW > maxWidthPx + 0.5 };
 }
 
 // Count lines of horizontal text by measuring height against single-line height.
@@ -1161,10 +1171,23 @@ function spineLayout(book, widthPx, heightPx) {
 
   // Primary title sizing — max grows with shortness.
   // Very short titles can go big (36–42), medium titles cap around 24, long titles float down as needed.
-  const titleMaxSize = parsed.primary.length <= 4 ? 42 :
-                       parsed.primary.length <= 8 ? 32 :
-                       parsed.primary.length <= 20 ? 24 : 20;
-  const title = fitVertical(parsed.primary, titleMaxW, titleMaxH, 9, titleMaxSize);
+  const titleMaxSize = parsed.primary.length <= 4 ? 44 :
+                       parsed.primary.length <= 8 ? 36 :
+                       parsed.primary.length <= 20 ? 26 : 22;
+
+  // First try to fit the title in a single vertical column.
+  let title = fitVertical(parsed.primary, titleMaxW, titleMaxH, 9, titleMaxSize);
+
+  // If single-column forced it below a readable size (14px),
+  // allow it to wrap to two columns by increasing the horizontal budget.
+  // This only helps when the title is long enough that wrapping is balanced.
+  if (title.size < 14 && parsed.primary.length > 20) {
+    const wideW = Math.round(widthPx * 0.75);  // allow up to 75% of width for 2-column wrap
+    const titleWrapped = fitVertical(parsed.primary, wideW, titleMaxH, 10, 22);
+    if (titleWrapped.size > title.size) {
+      title = titleWrapped;
+    }
+  }
 
   // Secondary title (subtitle or volume): proportional to primary size.
   // CSS forces single-column via white-space:nowrap + text-overflow:ellipsis,
@@ -1194,12 +1217,12 @@ function spineLayout(book, widthPx, heightPx) {
     const authorAreaH = authorMaxH;
 
     // Helper: try a text string at progressively smaller sizes until it fits
-    // in (maxW, maxH) with at most `maxLines` lines. Returns null if nothing fits at >= 9px.
+    // in (maxW, maxH) with at most `maxLines` lines. Returns null if nothing fits at >= sizeLo.
     function tryHorizontal(text, maxW, maxH, maxLines, sizeHi, sizeLo) {
       for (let size = sizeHi; size >= sizeLo; size--) {
         const m = measureHorizontal(text, size, 400, maxW);
         const lines = horizontalLineCount(size, m.h);
-        if (m.h <= maxH && lines <= maxLines && m.w <= maxW) {
+        if (!m.overflowed && m.h <= maxH && lines <= maxLines) {
           return { text, size, weight: 400, width: m.w, height: m.h, lines, orientation: 'horizontal' };
         }
       }
@@ -1227,11 +1250,17 @@ function spineLayout(book, widthPx, heightPx) {
     author = fit;
   }
 
+  // If the title doesn't fill most of its zone, center it vertically instead of top-aligning.
+  // Threshold: less than 65% of the zone height = center. This keeps long titles top-anchored
+  // (so they flow naturally from the upper headband) while short ones float in the middle.
+  const titleCenter = title.height < titleMaxH * 0.65;
+
   return {
     primary: { text: parsed.primary, ...title },
     secondary: secondary ? { text: parsed.secondary, ...secondary } : null,
     author: author,
     authorMaxW: authorMaxW,
+    titleCenter,
     zones: { headTop, headBot, titleMaxH, authorMaxH }
   };
 }
@@ -1397,12 +1426,13 @@ function renderSpineView(el, books) {
         authorHtml = `<span class="spine-author" style="${authStyle}">${esc(a.text)}</span>`;
       }
 
+      const centerClass = layout.titleCenter ? ' centered' : '';
       const spineHtml = `<div class="spine${pinnedClass}" id="spine-${s.index}" style="width:${s.width}px;height:${s.heightPct}%;background:linear-gradient(180deg,${s.color[0]},${s.color[1]})" onclick="openBookById('${s.book.id}')" title="${esc(s.book.title)}">
         <div class="spine-pages"></div>
         <div class="spine-band" style="top:${s.bandTop}%"></div>
         <div class="spine-band" style="top:${s.bandBottom}%"></div>
         ${s.hasProgress ? '<div class="spine-bookmark"></div>' : ''}
-        <div class="spine-top-zone">${primaryHtml}${secondaryHtml}</div>
+        <div class="spine-top-zone${centerClass}">${primaryHtml}${secondaryHtml}</div>
         ${authorHtml ? `<div class="spine-bot-zone">${authorHtml}</div>` : ''}
         ${s.progress > 0 ? '<div class="spine-prog"><div class="spine-prog-fill" style="width:' + s.progress + '%"></div></div>' : ''}
       </div>`;
@@ -1410,6 +1440,18 @@ function renderSpineView(el, books) {
         '<div class="spine-spacer"><div class="spine-spacer-line"></div></div>' : '';
       return spineHtml + spacer;
     }).join('') + '</div></div>';
+
+  // Allow vertical mouse-wheel input to scroll horizontally through the shelf.
+  const wrap = el.querySelector('.view-spine-wrap');
+  if (wrap) {
+    wrap.addEventListener('wheel', (e) => {
+      // Only convert if the user is scrolling primarily vertically
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        wrap.scrollLeft += e.deltaY;
+        e.preventDefault();
+      }
+    }, { passive: false });
+  }
 
   backfillSpineColors();
 }
