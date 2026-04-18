@@ -70,6 +70,9 @@ html, body {
 /* ===== SCREENS ===== */
 .screen { height: 100%; display: none; flex-direction: column; overflow: hidden; }
 .screen.active { display: flex; }
+/* When spine view is active, bottom-anchor the library body so empty vertical
+   space accumulates above (where the header lives) rather than below the books. */
+.screen#screen-lib:has(.lib-body.spine-active) { justify-content: space-between; }
 
 /* ===== LIBRARY ===== */
 .lib-header {
@@ -254,7 +257,17 @@ html, body {
   margin-right: 4px;
 }
 
-/* No lighting overlay — clean flat spine colors. */
+/* Cloth weave texture — fine horizontal + vertical threads, very subtle */
+.spine::before {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 1px, rgba(0,0,0,0.035) 1px 2px),
+    repeating-linear-gradient(0deg, transparent 0 1px, rgba(255,255,255,0.025) 1px 2px);
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 0;
+}
 
 /* Page edge — crisp paper sliver running the full left edge, following the corner radius */
 .spine-pages {
@@ -322,9 +335,14 @@ html, body {
 .spine-title {
   color: rgba(248,240,228,0.88);
 }
+/* Secondary is always a single vertical column — truncate if too long */
 .spine-secondary {
   color: rgba(248,240,228,0.62);
   font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: 100%;
 }
 .spine-author {
   writing-mode: horizontal-tb;
@@ -1128,35 +1146,40 @@ function spineLayout(book, widthPx, heightPx) {
   // The actual text we render is determined by fitting (see Author sizing block).
   const hasAuthor = !!parsed.author;
 
-  // Allocate heights: author zone is small because upright (horizontal) text is compact —
-  // even 2 lines of 13px text at line-height 1.1 = ~29px, which fits easily.
-  // Title gets the rest, with a modest gap above the author.
-  const authorMaxH = hasAuthor ? Math.min(40, Math.round(contentH * 0.15)) : 0;
-  const gapH = hasAuthor ? Math.round(contentH * 0.04) : 0;
-  const titleMaxH = contentH - authorMaxH - gapH;
+  // Height allocation matches the CSS zones in .spine-top-zone (62%) and .spine-bot-zone (18%).
+  // JS must agree with CSS or text overflows its visual container.
+  const titleMaxH = Math.round(heightPx * 0.62);
+  const authorMaxH = hasAuthor ? Math.round(heightPx * 0.18) : 0;
 
-  // Width allocation: text never uses more than ~55% of spine width (leaves margin on both sides).
-  // Short primary titles are allowed to use more width (up to 65%) so they feel bigger.
+  // Width allocation: text uses ~52% of spine width for titles, leaving margins each side.
+  // Short primary titles are allowed more width so they can be bigger.
   const shortTitle = parsed.primary.length <= 6;
-  const titleMaxW = Math.round(widthPx * (shortTitle ? 0.62 : 0.50));
-  const authorMaxW = Math.round(widthPx * 0.40);
+  const titleMaxW = Math.round(widthPx * (shortTitle ? 0.60 : 0.48));
+  // Author gets most of the spine width minus generous side padding (10% each side, min 6px).
+  const authorSidePad = Math.max(6, Math.round(widthPx * 0.10));
+  const authorMaxW = widthPx - (authorSidePad * 2);
 
-  // Primary title sizing — let it grow to fill the available zone.
-  // Upper cap is generous; the actual limit is what fits in (titleMaxW, titleMaxH).
-  const titleMaxSize = 48;
+  // Primary title sizing — max grows with shortness.
+  // Very short titles can go big (36–42), medium titles cap around 24, long titles float down as needed.
+  const titleMaxSize = parsed.primary.length <= 4 ? 42 :
+                       parsed.primary.length <= 8 ? 32 :
+                       parsed.primary.length <= 20 ? 24 : 20;
   const title = fitVertical(parsed.primary, titleMaxW, titleMaxH, 9, titleMaxSize);
 
-  // Secondary title (subtitle or volume): ~75% of primary size, sits next to it.
-  // Only show if there's horizontal room for it beside the primary.
+  // Secondary title (subtitle or volume): proportional to primary size.
+  // CSS forces single-column via white-space:nowrap + text-overflow:ellipsis,
+  // so we don't need to perfectly fit — just pick a readable size.
   let secondary = null;
   if (parsed.secondary) {
-    // Budget for secondary width: remaining horizontal space after primary
-    const secondaryMaxW = Math.max(0, widthPx - title.width - 6 /* gutter */ - 4 /* margin */);
-    // Only attempt if there's at least 10px of horizontal room
+    const secondaryMaxW = Math.max(0, widthPx - title.width - 6 - 4);
     if (secondaryMaxW >= 10) {
-      const secTargetMax = Math.max(9, Math.round(title.size * 0.75));
-      const sec = fitVertical(parsed.secondary, secondaryMaxW, titleMaxH, 8, secTargetMax);
-      if (sec.size >= 8) secondary = sec;
+      const secSize = Math.max(9, Math.round(title.size * 0.72));
+      secondary = {
+        size: secSize,
+        weight: 400,
+        width: secondaryMaxW,
+        height: titleMaxH,
+      };
     }
   }
 
@@ -1167,7 +1190,7 @@ function spineLayout(book, widthPx, heightPx) {
   if (hasAuthor) {
     const fullName = parsed.author;
     const initials = parsed.authorInitials;
-    const authorAreaW = widthPx - 6;  // spine width minus small margin on each side
+    const authorAreaW = authorMaxW;
     const authorAreaH = authorMaxH;
 
     // Helper: try a text string at progressively smaller sizes until it fits
@@ -1184,16 +1207,16 @@ function spineLayout(book, widthPx, heightPx) {
     }
 
     // 1. Try full name on ONE line at legible size
-    let fit = tryHorizontal(fullName, authorAreaW, authorAreaH, 1, 14, 9);
+    let fit = tryHorizontal(fullName, authorAreaW, authorAreaH, 1, 16, 10);
 
     // 2. Try full name wrapped to TWO lines if multi-word
     if (!fit && fullName.includes(' ')) {
-      fit = tryHorizontal(fullName, authorAreaW, authorAreaH, 2, 13, 9);
+      fit = tryHorizontal(fullName, authorAreaW, authorAreaH, 2, 15, 10);
     }
 
     // 3. Fall back to initials, one line
     if (!fit && initials && initials !== fullName) {
-      fit = tryHorizontal(initials, authorAreaW, authorAreaH, 1, 14, 9);
+      fit = tryHorizontal(initials, authorAreaW, authorAreaH, 1, 16, 10);
     }
 
     // 4. Last resort: initials at minimum size, accept whatever fits
@@ -1208,6 +1231,7 @@ function spineLayout(book, widthPx, heightPx) {
     primary: { text: parsed.primary, ...title },
     secondary: secondary ? { text: parsed.secondary, ...secondary } : null,
     author: author,
+    authorMaxW: authorMaxW,
     zones: { headTop, headBot, titleMaxH, authorMaxH }
   };
 }
@@ -1369,7 +1393,7 @@ function renderSpineView(el, books) {
       let authorHtml = '';
       if (layout.author) {
         const a = layout.author;
-        const authStyle = `font-size:${a.size}px;font-weight:${a.weight};letter-spacing:${a.size >= 11 ? '0.2px' : '0.4px'}`;
+        const authStyle = `font-size:${a.size}px;font-weight:${a.weight};letter-spacing:${a.size >= 11 ? '0.2px' : '0.4px'};max-width:${layout.authorMaxW}px`;
         authorHtml = `<span class="spine-author" style="${authStyle}">${esc(a.text)}</span>`;
       }
 
