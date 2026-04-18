@@ -1380,72 +1380,80 @@ function renderSpineView(el, books) {
   updateSpineScale();
   const lastId = getLastReadId();
 
-  // Measure the actual container height so text sizing is accurate
-  const containerH = el.clientHeight || 600; // fallback
-  const paddingTop = 40, paddingBottom = 28; // match CSS padding
-  const usableH = containerH - paddingTop - paddingBottom;
-
+  // PASS 1: Render skeleton spines with correct dimensions but no text.
+  // This lets us measure actual rendered spine heights (respecting max-height: 85vh etc.)
+  // before doing the text-fitting work.
   const spineData = books.map((b, i) => {
     const w = spineWidth(b);
     const hPct = spineHeight(b);
-    const hPx = Math.round((hPct / 100) * usableH);
     let seed = 0;
     for (let j = 0; j < b.title.length; j++) seed += b.title.charCodeAt(j);
-    // Bands sit in the spine's "headband" zones — above and below the title area —
-    // mimicking the raised cloth ridges of a classic hardcover binding.
-    const bandTop = 7 + (seed % 5);      // 7%–11% from top
-    const bandBottom = 89 + (seed % 5);  // 89%–93% from top
+    const bandTop = 7 + (seed % 5);
+    const bandBottom = 89 + (seed % 5);
     const color = b.spineColor || strColor(b.title);
     const hasProgress = (b.progress || 0) > 0 && (b.progress || 0) < 100;
     const isLastRead = b.id === lastId;
     const contentSize = b.contentSize || 0;
-    return { book: b, index: i, width: w, heightPct: hPct, heightPx: hPx,
+    return { book: b, index: i, width: w, heightPct: hPct,
       color, progress: b.progress || 0, bandTop, bandBottom, hasProgress, isLastRead, contentSize };
   });
 
+  // Render skeleton first
   el.innerHTML = '<div class="view-spine-wrap"><div class="view-spine" id="spine-row">' +
-    spineData.map((s, i) => {
-      const layout = spineLayout(s.book, s.width, s.heightPx);
+    spineData.map((s) => {
       const pinnedClass = s.isLastRead ? ' pinned' : '';
-
-      const p = layout.primary;
-      const primaryStyle = `font-size:${p.size}px;font-weight:${p.weight};letter-spacing:${p.size >= 18 ? '-0.2px' : p.size >= 12 ? '0.2px' : '0.4px'}`;
-      const primaryHtml = `<span class="spine-title" style="${primaryStyle}">${esc(p.text)}</span>`;
-
-      let secondaryHtml = '';
-      if (layout.secondary) {
-        const sec = layout.secondary;
-        const secStyle = `font-size:${sec.size}px;font-weight:${sec.weight};letter-spacing:${sec.size >= 12 ? '0.1px' : '0.3px'}`;
-        secondaryHtml = `<span class="spine-secondary" style="${secStyle}">${esc(sec.text)}</span>`;
-      }
-
-      let authorHtml = '';
-      if (layout.author) {
-        const a = layout.author;
-        const authStyle = `font-size:${a.size}px;font-weight:${a.weight};letter-spacing:${a.size >= 11 ? '0.2px' : '0.4px'};max-width:${layout.authorMaxW}px`;
-        authorHtml = `<span class="spine-author" style="${authStyle}">${esc(a.text)}</span>`;
-      }
-
-      const centerClass = layout.titleCenter ? ' centered' : '';
-      const spineHtml = `<div class="spine${pinnedClass}" id="spine-${s.index}" style="width:${s.width}px;height:${s.heightPct}%;background:linear-gradient(180deg,${s.color[0]},${s.color[1]})" onclick="openBookById('${s.book.id}')" title="${esc(s.book.title)}">
-        <div class="spine-pages"></div>
-        <div class="spine-band" style="top:${s.bandTop}%"></div>
-        <div class="spine-band" style="top:${s.bandBottom}%"></div>
-        ${s.hasProgress ? '<div class="spine-bookmark"></div>' : ''}
-        <div class="spine-top-zone${centerClass}">${primaryHtml}${secondaryHtml}</div>
-        ${authorHtml ? `<div class="spine-bot-zone">${authorHtml}</div>` : ''}
-        ${s.progress > 0 ? '<div class="spine-prog"><div class="spine-prog-fill" style="width:' + s.progress + '%"></div></div>' : ''}
-      </div>`;
+      const spineHtml = `<div class="spine${pinnedClass}" id="spine-${s.index}" style="width:${s.width}px;height:${s.heightPct}%;background:linear-gradient(180deg,${s.color[0]},${s.color[1]})" onclick="openBookById('${s.book.id}')" title="${esc(s.book.title)}"></div>`;
       const spacer = (s.isLastRead && spineData.length > 1) ?
         '<div class="spine-spacer"><div class="spine-spacer-line"></div></div>' : '';
       return spineHtml + spacer;
     }).join('') + '</div></div>';
 
+  // Measure actual rendered heights — this is what CSS produced, the source of truth.
+  spineData.forEach((s) => {
+    const spineEl = document.getElementById(`spine-${s.index}`);
+    s.heightPx = spineEl ? spineEl.clientHeight : 400;
+  });
+
+  // PASS 2: Now fill in text for each spine using accurate measured heights.
+  spineData.forEach((s) => {
+    const spineEl = document.getElementById(`spine-${s.index}`);
+    if (!spineEl) return;
+    const layout = spineLayout(s.book, s.width, s.heightPx);
+
+    const p = layout.primary;
+    const primaryStyle = `font-size:${p.size}px;font-weight:${p.weight};letter-spacing:${p.size >= 18 ? '-0.2px' : p.size >= 12 ? '0.2px' : '0.4px'}`;
+    const primaryHtml = `<span class="spine-title" style="${primaryStyle}">${esc(p.text)}</span>`;
+
+    let secondaryHtml = '';
+    if (layout.secondary) {
+      const sec = layout.secondary;
+      const secStyle = `font-size:${sec.size}px;font-weight:${sec.weight};letter-spacing:${sec.size >= 12 ? '0.1px' : '0.3px'}`;
+      secondaryHtml = `<span class="spine-secondary" style="${secStyle}">${esc(sec.text)}</span>`;
+    }
+
+    let authorHtml = '';
+    if (layout.author) {
+      const a = layout.author;
+      const authStyle = `font-size:${a.size}px;font-weight:${a.weight};letter-spacing:${a.size >= 11 ? '0.2px' : '0.4px'};max-width:${layout.authorMaxW}px`;
+      authorHtml = `<span class="spine-author" style="${authStyle}">${esc(a.text)}</span>`;
+    }
+
+    const centerClass = layout.titleCenter ? ' centered' : '';
+    spineEl.innerHTML = `
+      <div class="spine-pages"></div>
+      <div class="spine-band" style="top:${s.bandTop}%"></div>
+      <div class="spine-band" style="top:${s.bandBottom}%"></div>
+      ${s.hasProgress ? '<div class="spine-bookmark"></div>' : ''}
+      <div class="spine-top-zone${centerClass}">${primaryHtml}${secondaryHtml}</div>
+      ${authorHtml ? `<div class="spine-bot-zone">${authorHtml}</div>` : ''}
+      ${s.progress > 0 ? '<div class="spine-prog"><div class="spine-prog-fill" style="width:' + s.progress + '%"></div></div>' : ''}
+    `;
+  });
+
   // Allow vertical mouse-wheel input to scroll horizontally through the shelf.
   const wrap = el.querySelector('.view-spine-wrap');
   if (wrap) {
     wrap.addEventListener('wheel', (e) => {
-      // Only convert if the user is scrolling primarily vertically
       if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
         wrap.scrollLeft += e.deltaY;
         e.preventDefault();
