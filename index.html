@@ -493,9 +493,27 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
   -webkit-user-select: none;
   user-select: none;
   background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .r-edge-strip.left { left: 0; }
 .r-edge-strip.right { right: 0; }
+
+/* Glyph inside each strip — hints at what the strip does.
+   Only visible when the reader UI (top toolbar) is visible. */
+.r-edge-glyph {
+  color: var(--fog);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+body.r-ui-visible .r-edge-glyph { opacity: 0.65; }
 
 /* Bottom width strip — horizontal swipe adjusts reading width. Invisible by default. */
 .r-width-strip {
@@ -506,6 +524,9 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
   cursor: ew-resize;
   background: transparent;
   touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Hold-to-turn circular indicator. Positioned via inline left/top at cursor.
@@ -520,20 +541,15 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
   z-index: 5;
   transform: translate(-50%, -50%);
 }
-.r-hold-ring.hover { opacity: 0.7; }
+.r-hold-ring.hover { opacity: 0.75; }
 .r-hold-ring.active { opacity: 1; }
 .r-hold-ring svg {
   width: 100%; height: 100%;
   overflow: visible;
 }
 .r-hold-track {
-  fill: none;
-  stroke: color-mix(in srgb, var(--ink) 22%, transparent);
-  stroke-width: 0.8;
-  opacity: 0;
-  transition: opacity 120ms ease;
+  display: none;
 }
-.r-hold-ring.active .r-hold-track { opacity: 1; }
 .r-hold-fill {
   fill: none;
   stroke: var(--ember);
@@ -546,7 +562,7 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
   /* Transition set inline when the hold starts */
 }
 .r-hold-arrow {
-  stroke: color-mix(in srgb, var(--ink) 65%, transparent);
+  stroke: var(--ember);
   stroke-width: 1.2;
   display: none;
 }
@@ -641,21 +657,13 @@ body.r-debug .r-book {
 }
 .r-inner a { color: var(--ember); text-decoration: none; }
 
-.r-bottom {
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 16px;
-  background: color-mix(in srgb, var(--paper) 82%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border-top: 0.5px solid var(--border);
-  z-index: 10;
-  transition: opacity 180ms ease;
+.r-pct {
+  font-size: 11px;
+  color: var(--fog);
+  font-family: var(--font-mono);
+  margin: 0 4px;
+  align-self: center;
 }
-.r-bottom.hidden { opacity: 0; pointer-events: none; }
-.r-bottom-nav { display: flex; gap: 4px; }
-.r-pct { font-size: 11px; color: var(--fog); font-family: var(--font-mono); }
 
 /* ===== OVERLAYS ===== */
 .overlay {
@@ -881,11 +889,22 @@ body.r-debug .r-book {
       <span class="r-title" id="r-title"></span>
     </div>
     <div class="r-toolbar-right">
+      <button class="icon-btn" onclick="readerPrev()"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 15l-5-5 5-5"/></svg></button>
+      <button class="icon-btn" onclick="readerNext()"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 5l5 5-5 5"/></svg></button>
+      <span class="r-pct" id="r-pct">0%</span>
       <button class="icon-btn" onclick="toggleSettings()"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="2.5"/><path d="M10 2v3M10 15v3M3.8 3.8l2.1 2.1M14.1 14.1l2.1 2.1M2 10h3M15 10h3M3.8 16.2l2.1-2.1M14.1 5.9l2.1-2.1"/></svg></button>
     </div>
   </div>
   <div class="r-content" id="r-content">
-    <div class="r-edge-strip left" data-strip="font" aria-label="Swipe up/down to change font size"></div>
+    <div class="r-edge-strip left" data-strip="font" aria-label="Swipe up/down to change font size">
+      <div class="r-edge-glyph">
+        <svg width="16" height="44" viewBox="0 0 16 44" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 3 l-3 6 M8 3 l3 6"/>
+          <text x="8" y="27" font-family="inherit" font-size="14" fill="currentColor" stroke="none" text-anchor="middle">A</text>
+          <path d="M8 41 l-3 -6 M8 41 l3 -6"/>
+        </svg>
+      </div>
+    </div>
     <div class="r-click-zone prev" data-dir="prev"></div>
     <div class="r-book" id="r-book" onclick="toggleReaderUI()">
       <div class="r-pages" id="r-pages">
@@ -893,8 +912,26 @@ body.r-debug .r-book {
       </div>
     </div>
     <div class="r-click-zone next" data-dir="next"></div>
-    <div class="r-edge-strip right" data-strip="line" aria-label="Swipe up/down to change line height"></div>
-    <div class="r-width-strip" data-strip="width" aria-label="Swipe left/right to change reading width"></div>
+    <div class="r-edge-strip right" data-strip="line" aria-label="Swipe up/down to change line height">
+      <div class="r-edge-glyph">
+        <svg width="16" height="44" viewBox="0 0 16 44" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 3 l-3 6 M8 3 l3 6"/>
+          <line x1="3" y1="18" x2="13" y2="18"/>
+          <line x1="3" y1="22" x2="13" y2="22"/>
+          <line x1="3" y1="26" x2="13" y2="26"/>
+          <path d="M8 41 l-3 -6 M8 41 l3 -6"/>
+        </svg>
+      </div>
+    </div>
+    <div class="r-width-strip" data-strip="width" aria-label="Swipe left/right to change reading width">
+      <div class="r-edge-glyph">
+        <svg width="56" height="16" viewBox="0 0 56 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 8 l6 -3 M4 8 l6 3"/>
+          <line x1="4" y1="8" x2="52" y2="8"/>
+          <path d="M52 8 l-6 -3 M52 8 l-6 3"/>
+        </svg>
+      </div>
+    </div>
     <!-- Hold-to-turn circular indicator, positioned at cursor on hover/press -->
     <div class="r-hold-ring" id="r-hold-ring" aria-hidden="true">
       <svg viewBox="0 0 40 40">
@@ -908,13 +945,6 @@ body.r-debug .r-book {
     <div class="r-swipe-bar" id="r-swipe-bar" aria-hidden="true">
       <div class="r-swipe-fill" id="r-swipe-fill"></div>
     </div>
-  </div>
-  <div class="r-bottom" id="r-bottom">
-    <div class="r-bottom-nav">
-      <button class="icon-btn" onclick="readerPrev()"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 15l-5-5 5-5"/></svg></button>
-      <button class="icon-btn" onclick="readerNext()"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 5l5 5-5 5"/></svg></button>
-    </div>
-    <span class="r-pct" id="r-pct">0%</span>
   </div>
 </div>
 
@@ -1971,7 +2001,7 @@ async function openBookById(id) {
     $('screen-reader').classList.add('active');
     uiVisible = true;
     $('r-toolbar').classList.remove('hidden');
-    $('r-bottom').classList.remove('hidden');
+    document.body.classList.add('r-ui-visible');
     renderChapter();
     buildTOC();
   } catch (err) {
@@ -1986,6 +2016,7 @@ function showLibrary() {
   saveProgress();
   $('screen-reader').classList.remove('active');
   $('screen-lib').classList.add('active');
+  document.body.classList.remove('r-ui-visible');
   renderLibrary();
 }
 
@@ -2500,7 +2531,8 @@ function toggleTOC() { $('ov-toc').classList.toggle('open'); }
 function toggleReaderUI() {
   uiVisible = !uiVisible;
   $('r-toolbar').classList.toggle('hidden', !uiVisible);
-  $('r-bottom').classList.toggle('hidden', !uiVisible);
+  // Edge strip indicators fade with the toolbar
+  document.body.classList.toggle('r-ui-visible', uiVisible);
 }
 
 // ===== SETTINGS =====
