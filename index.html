@@ -23,6 +23,7 @@
   --paper: #FAF6F1;
   --linen: #F3EDE5;
   --card: #FFFFFF;
+  --paper-edge: #E6DED2;
   --ink: #2C2420;
   --stone: #8A7E76;
   --fog: #B8AFA7;
@@ -45,6 +46,7 @@
 
 .dark {
   --paper: #1A1614; --linen: #121010; --card: #242020;
+  --paper-edge: #2C2623;
   --ink: #E8E0D8; --stone: #9A8E86; --fog: #6A5E56;
   --ember: #E07050; --clay: #F08060; --brand: #E07050;
   --border: rgba(232, 224, 216, 0.06);
@@ -54,6 +56,7 @@
 
 .sepia {
   --paper: #F4ECD8; --linen: #EBE1C8; --card: #FAF4E4;
+  --paper-edge: #DACEAE;
   --ink: #3E3228; --stone: #7A6E5E; --fog: #A89880;
   --ember: #B85A3A; --clay: #9A4C2E; --brand: #C4604A;
   --border: rgba(62, 50, 40, 0.06);
@@ -478,7 +481,7 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
 .r-click-zone.next { right: 40px; }
 
 /* Vertical edge strips — swipe up/down to change font size (left) or line height (right).
-   Visually: fine horizontal striations suggest stacked page edges along the book's sides. */
+   Visual: flat paper-edge color. Swap background to a url() later for image assets. */
 .r-edge-strip {
   position: absolute;
   top: 0; bottom: 0;
@@ -489,73 +492,30 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
-  background-image:
-    repeating-linear-gradient(
-      to bottom,
-      transparent 0,
-      transparent 2px,
-      color-mix(in srgb, var(--ink) 8%, transparent) 2px,
-      color-mix(in srgb, var(--ink) 8%, transparent) 2.5px,
-      transparent 2.5px,
-      transparent 4px,
-      color-mix(in srgb, var(--ink) 5%, transparent) 4px,
-      color-mix(in srgb, var(--ink) 5%, transparent) 4.5px,
-      transparent 4.5px,
-      transparent 7px
-    );
-  background-size: 100% 7px;
+  background: var(--paper-edge);
 }
 .r-edge-strip.left { left: 0; }
 .r-edge-strip.right { right: 0; }
 
-/* Decorative top paper-edge border — purely visual. */
+/* Decorative top paper-edge band — purely visual, no interaction. */
 .r-edge-top {
   position: absolute;
   left: 0; right: 0; top: 0;
   height: 16px;
   z-index: 4;
   pointer-events: none;
-  background-image:
-    repeating-linear-gradient(
-      to right,
-      transparent 0,
-      transparent 2px,
-      color-mix(in srgb, var(--ink) 8%, transparent) 2px,
-      color-mix(in srgb, var(--ink) 8%, transparent) 2.5px,
-      transparent 2.5px,
-      transparent 4px,
-      color-mix(in srgb, var(--ink) 5%, transparent) 4px,
-      color-mix(in srgb, var(--ink) 5%, transparent) 4.5px,
-      transparent 4.5px,
-      transparent 7px
-    );
-  background-size: 7px 100%;
+  background: var(--paper-edge);
 }
 
 /* Bottom width strip — horizontal swipe adjusts reading width.
-   Visually reuses the same vertical striations as the top decorative border,
-   so the bottom 40px of swipe area includes the visual book-edge. */
+   Flat paper-edge color, same as the side strips and top band. */
 .r-width-strip {
   position: absolute;
   left: 0; right: 0; bottom: 0;
   height: 40px;
-  z-index: 5;  /* above the decorative bottom border */
+  z-index: 5;
   cursor: ew-resize;
-  background-image:
-    repeating-linear-gradient(
-      to right,
-      transparent 0,
-      transparent 2px,
-      color-mix(in srgb, var(--ink) 8%, transparent) 2px,
-      color-mix(in srgb, var(--ink) 8%, transparent) 2.5px,
-      transparent 2.5px,
-      transparent 4px,
-      color-mix(in srgb, var(--ink) 5%, transparent) 4px,
-      color-mix(in srgb, var(--ink) 5%, transparent) 4.5px,
-      transparent 4.5px,
-      transparent 7px
-    );
-  background-size: 7px 100%;
+  background: var(--paper-edge);
   touch-action: none;
 }
 
