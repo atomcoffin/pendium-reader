@@ -642,16 +642,14 @@ body.r-ui-visible .r-quick {
   transform: rotate(-90deg);
   transform-origin: center;
 }
-.r-swipe-arrow {
-  fill: none;
-  stroke: var(--ember);
-  stroke-width: 1.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  display: none;
+.r-swipe-icon {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 22px;
+  line-height: 1;
+  color: var(--ember);
 }
-.r-swipe-ring.dir-prev .r-swipe-arrow-prev { display: block; }
-.r-swipe-ring.dir-next .r-swipe-arrow-next { display: block; }
 
 /* Debug mode — reveals click/touch interaction zones.
    Toggle with Shift+D while the reader is active. */
@@ -968,9 +966,8 @@ body.r-debug .r-book {
       <svg viewBox="0 0 40 40">
         <circle class="r-swipe-track" cx="20" cy="20" r="17"></circle>
         <circle class="r-swipe-fill" id="r-swipe-fill" cx="20" cy="20" r="17"></circle>
-        <path class="r-swipe-arrow r-swipe-arrow-prev" d="M22 14l-6 6 6 6"></path>
-        <path class="r-swipe-arrow r-swipe-arrow-next" d="M18 14l6 6-6 6"></path>
       </svg>
+      <i class="ph ph-file r-swipe-icon" aria-hidden="true"></i>
     </div>
     <!-- Quick controls cluster. Three drag pills (font/line/width) grouped
          together at the bottom center. Visible only when reader UI is showing. -->
@@ -2459,7 +2456,13 @@ function isHolding() { return _holdTimer !== null; }
 
 // ===== MOUSE CLICK-AND-HOLD =====
 // Hover shows empty ring with arrow; press starts the fill timer.
+// Only enabled on devices with a real hover-capable pointer (desktop mouse / trackpad).
+// On touch devices, browsers synthesize phantom mouse events that would otherwise
+// trigger this UI mid-swipe — gate the whole IIFE behind a pointer-capability check.
 (() => {
+  const hasPointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  if (!hasPointer) return;
+
   document.addEventListener('mousemove', (e) => {
     const zone = e.target.closest && e.target.closest('.r-click-zone');
     if (zone) {
