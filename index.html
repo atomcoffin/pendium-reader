@@ -405,11 +405,18 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
 }
 
 .r-toolbar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 16px; flex-shrink: 0;
-  background: var(--paper); border-bottom: 0.5px solid var(--border); z-index: 10;
+  padding: 10px 16px;
+  background: color-mix(in srgb, var(--paper) 82%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-bottom: 0.5px solid var(--border);
+  z-index: 10;
+  transition: opacity 180ms ease;
 }
-.r-toolbar.hidden { display: none; }
+.r-toolbar.hidden { opacity: 0; pointer-events: none; }
 
 .r-toolbar-left, .r-toolbar-right { display: flex; align-items: center; gap: 4px; }
 
@@ -478,6 +485,62 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
   touch-action: none;
 }
 
+/* Hold-to-turn circular indicator. Positioned via inline left/top at press point. */
+.r-hold-ring {
+  position: absolute;
+  width: 44px; height: 44px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  z-index: 5;
+  transform: translate(-50%, -50%);
+}
+.r-hold-ring.active { opacity: 1; }
+.r-hold-ring svg {
+  width: 100%; height: 100%;
+  overflow: visible;
+}
+.r-hold-track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--ink) 15%, transparent);
+  stroke-width: 2;
+}
+.r-hold-fill {
+  fill: none;
+  stroke: var(--ember);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 106.8;  /* 2 * PI * r (r=17) */
+  stroke-dashoffset: 106.8;
+  transform: rotate(-90deg);
+  transform-origin: center;
+  /* Transition set inline when the hold starts */
+}
+
+/* Swipe-to-turn horizontal bar, fixed near the bottom center. */
+.r-swipe-bar {
+  position: absolute;
+  left: 50%; bottom: 60px;
+  transform: translateX(-50%);
+  width: 120px; height: 3px;
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+  border-radius: 2px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  z-index: 5;
+  overflow: hidden;
+}
+.r-swipe-bar.active { opacity: 1; }
+.r-swipe-fill {
+  position: absolute;
+  top: 0; bottom: 0; left: 50%;
+  width: 0;
+  background: var(--ember);
+  border-radius: 2px;
+  transition: none;  /* driven by JS */
+}
+
 .r-inner {
   font-family: 'Siche Text', var(--font-read);
   font-size: var(--font-size);
@@ -515,11 +578,18 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
 .r-inner a { color: var(--ember); text-decoration: none; }
 
 .r-bottom {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 16px; border-top: 0.5px solid var(--border);
-  background: var(--paper); flex-shrink: 0;
+  padding: 8px 16px;
+  background: color-mix(in srgb, var(--paper) 82%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-top: 0.5px solid var(--border);
+  z-index: 10;
+  transition: opacity 180ms ease;
 }
-.r-bottom.hidden { display: none; }
+.r-bottom.hidden { opacity: 0; pointer-events: none; }
 .r-bottom-nav { display: flex; gap: 4px; }
 .r-pct { font-size: 11px; color: var(--fog); font-family: var(--font-mono); }
 
@@ -751,14 +821,25 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
     </div>
   </div>
   <div class="r-content" id="r-content">
-    <div class="r-click-zone prev" onclick="readerPrev()"></div>
+    <div class="r-click-zone prev" data-dir="prev"></div>
     <div class="r-book" id="r-book" onclick="toggleReaderUI()">
       <div class="r-pages" id="r-pages">
         <div class="r-inner" id="r-inner"></div>
       </div>
     </div>
-    <div class="r-click-zone next" onclick="readerNext()"></div>
+    <div class="r-click-zone next" data-dir="next"></div>
     <div class="r-width-strip" aria-label="Swipe left/right to change reading width"></div>
+    <!-- Hold-to-turn circular indicator, positioned at cursor on press -->
+    <div class="r-hold-ring" id="r-hold-ring" aria-hidden="true">
+      <svg viewBox="0 0 40 40">
+        <circle class="r-hold-track" cx="20" cy="20" r="17"></circle>
+        <circle class="r-hold-fill" cx="20" cy="20" r="17"></circle>
+      </svg>
+    </div>
+    <!-- Swipe progress line, fixed near the bottom center -->
+    <div class="r-swipe-bar" id="r-swipe-bar" aria-hidden="true">
+      <div class="r-swipe-fill" id="r-swipe-fill"></div>
+    </div>
   </div>
   <div class="r-bottom" id="r-bottom">
     <div class="r-bottom-nav">
@@ -1988,37 +2069,64 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// Swipe navigation and gesture-based settings (real-time).
-// Horizontal swipe on book = page turn.
-// Vertical swipe on LEFT half = font size (real-time, every 40px = 1 step).
-// Vertical swipe on RIGHT half = line height (real-time, every 40px = 1 step).
-// Horizontal swipe on bottom strip = reading width (real-time, every 20px = 1 step of 50px).
+// Swipe navigation, gesture-based settings, and hold-to-turn clicks.
+//
+// HORIZONTAL SWIPE on book = page turn (requires crossing threshold with progress bar feedback).
+// VERTICAL SWIPE on left half = font size (real-time, 40px/step).
+// VERTICAL SWIPE on right half = line height (real-time, 40px/step).
+// HORIZONTAL SWIPE on bottom strip = reading width (real-time, 20px/step).
+// CLICK+HOLD on left/right click zones = page turn (requires 400ms hold with circular progress).
 (() => {
-  const V_STEP = 40;     // vertical px per font/line-height step
-  const W_STEP = 20;     // horizontal px per width step
-  const H_THRESH = 30;   // commit threshold for horizontal page-turn gesture
-  const V_THRESH = 24;   // commit threshold for vertical settings gesture
+  const V_STEP = 40;
+  const W_STEP = 20;
+  const MODE_DECIDE_THRESH = 24;  // minimum motion to lock in a gesture direction
 
   let startX = 0, startY = 0;
   let startedOnLeft = true;
   let tracking = false;
-  // Gesture mode is decided after the first few pixels of motion, then locked in.
   // 'undecided' | 'horizontal' | 'vertical' | 'width'
   let mode = 'undecided';
-  // Baseline values captured at gesture start for real-time stepping
-  let baseFont = 0, baseLine = 0, baseWidth = 0;
   let lastStep = 0;
 
   const rc = $('r-content');
+  const swipeBar = () => $('r-swipe-bar');
+  const swipeFill = () => $('r-swipe-fill');
   if (!rc) return;
+
+  // Commit distance for horizontal swipe: 15% of viewport width.
+  function swipeThreshold() {
+    return Math.max(60, window.innerWidth * 0.15);
+  }
 
   function pickStart(e) {
     if (e.touches.length !== 1) return null;
     return { x: e.touches[0].clientX, y: e.touches[0].clientY };
   }
-
   function isWidthStripTarget(target) {
     return target && target.closest && target.closest('.r-width-strip');
+  }
+
+  function showSwipeProgress(dx, thresh) {
+    const bar = swipeBar(), fill = swipeFill();
+    if (!bar || !fill) return;
+    bar.classList.add('active');
+    const ratio = Math.min(1, Math.abs(dx) / thresh);
+    // Fill grows from center outward in the direction of the swipe
+    const halfWidth = 60;  // matches CSS width: 120px / 2
+    const fillWidth = halfWidth * ratio;
+    if (dx < 0) {
+      // Swiping left (next page) — fill extends leftward from center
+      fill.style.left = `calc(50% - ${fillWidth}px)`;
+      fill.style.width = `${fillWidth}px`;
+    } else {
+      fill.style.left = '50%';
+      fill.style.width = `${fillWidth}px`;
+    }
+  }
+  function hideSwipeProgress() {
+    const bar = swipeBar(), fill = swipeFill();
+    if (bar) bar.classList.remove('active');
+    if (fill) { fill.style.width = '0'; }
   }
 
   rc.addEventListener('touchstart', (e) => {
@@ -2031,9 +2139,6 @@ document.addEventListener('keydown', (e) => {
     startedOnLeft = startX < rect.left + rect.width / 2;
     tracking = true;
     mode = isWidthStripTarget(e.target) ? 'width' : 'undecided';
-    baseFont = parseInt($('sl-fontsize').value);
-    baseLine = parseInt($('sl-lineheight').value);
-    baseWidth = parseInt($('sl-width').value);
     lastStep = 0;
   }, { passive: true });
 
@@ -2042,33 +2147,26 @@ document.addEventListener('keydown', (e) => {
     const t = e.touches[0];
     const dx = t.clientX - startX;
     const dy = t.clientY - startY;
-    const absX = Math.abs(dx);
-    const absY = Math.abs(dy);
+    const absX = Math.abs(dx), absY = Math.abs(dy);
 
-    // Decide mode once we've moved enough in a clear direction
     if (mode === 'undecided') {
-      if (absX >= H_THRESH && absX > absY * 1.3) mode = 'horizontal';
-      else if (absY >= V_THRESH && absY > absX * 1.3) mode = 'vertical';
+      if (absX >= MODE_DECIDE_THRESH && absX > absY * 1.3) mode = 'horizontal';
+      else if (absY >= MODE_DECIDE_THRESH && absY > absX * 1.3) mode = 'vertical';
       else return;
     }
 
-    if (mode === 'vertical') {
-      // Real-time: compute target step count, apply delta from last.
-      // Up (dy < 0) = increase, down = decrease.
+    if (mode === 'horizontal') {
+      showSwipeProgress(dx, swipeThreshold());
+    } else if (mode === 'vertical') {
       const targetStep = Math.trunc(-dy / V_STEP);
       if (targetStep !== lastStep) {
         const delta = targetStep - lastStep;
         lastStep = targetStep;
-        if (startedOnLeft) {
-          adjustFontSize(delta);
-        } else {
-          adjustLineHeight(delta);
-        }
+        if (startedOnLeft) adjustFontSize(delta);
+        else adjustLineHeight(delta);
       }
-      // Don't let the browser try to scroll the page during vertical settings
       if (e.cancelable) e.preventDefault();
     } else if (mode === 'width') {
-      // Right = wider, left = narrower.
       const targetStep = Math.trunc(dx / W_STEP);
       if (targetStep !== lastStep) {
         const delta = targetStep - lastStep;
@@ -2077,7 +2175,6 @@ document.addEventListener('keydown', (e) => {
       }
       if (e.cancelable) e.preventDefault();
     }
-    // Horizontal page-turn mode does nothing on move — commits at touchend
   }, { passive: false });
 
   rc.addEventListener('touchend', (e) => {
@@ -2086,11 +2183,85 @@ document.addEventListener('keydown', (e) => {
     if (mode === 'horizontal') {
       const t = e.changedTouches[0];
       const dx = t.clientX - startX;
-      if (dx < 0) readerNext();
-      else readerPrev();
+      if (Math.abs(dx) >= swipeThreshold()) {
+        if (dx < 0) readerNext();
+        else readerPrev();
+      }
+      hideSwipeProgress();
     }
     mode = 'undecided';
   }, { passive: true });
+
+  rc.addEventListener('touchcancel', () => {
+    tracking = false;
+    mode = 'undecided';
+    hideSwipeProgress();
+  }, { passive: true });
+})();
+
+// ===== CLICK-AND-HOLD PAGE TURN =====
+// mousedown on a click zone starts a 400ms timer showing a circular progress
+// indicator at the cursor. Release before timeout cancels; reach timeout fires.
+(() => {
+  const HOLD_MS = 400;
+  let holdTimer = null;
+  let holdDir = null;
+  const ring = () => $('r-hold-ring');
+  const fill = () => ring()?.querySelector('.r-hold-fill');
+
+  function startHold(dir, x, y) {
+    cancelHold();  // defensive
+    holdDir = dir;
+    const r = ring(), f = fill();
+    if (!r || !f) return;
+    // Position ring at cursor within r-content coordinates
+    const rc = $('r-content').getBoundingClientRect();
+    r.style.left = (x - rc.left) + 'px';
+    r.style.top = (y - rc.top) + 'px';
+    // Reset dashoffset to empty, then animate to filled over HOLD_MS
+    f.style.transition = 'none';
+    f.style.strokeDashoffset = '106.8';
+    // Force reflow to apply the no-transition reset
+    f.offsetHeight;
+    f.style.transition = `stroke-dashoffset ${HOLD_MS}ms linear`;
+    f.style.strokeDashoffset = '0';
+    r.classList.add('active');
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      if (dir === 'next') readerNext();
+      else if (dir === 'prev') readerPrev();
+      cancelHold(true);
+    }, HOLD_MS);
+  }
+  function cancelHold(completed) {
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+    holdDir = null;
+    const r = ring(), f = fill();
+    if (!r) return;
+    r.classList.remove('active');
+    if (f && !completed) {
+      // Reset so the next press starts from empty instantly
+      f.style.transition = 'none';
+      f.style.strokeDashoffset = '106.8';
+    }
+  }
+
+  // Attach to both click zones. Works for mouse; touch uses the swipe handler above
+  // so we avoid firing two overlapping mechanisms.
+  document.addEventListener('mousedown', (e) => {
+    const zone = e.target.closest && e.target.closest('.r-click-zone');
+    if (!zone) return;
+    if (e.button !== 0) return;
+    const dir = zone.dataset.dir;
+    if (!dir) return;
+    startHold(dir, e.clientX, e.clientY);
+    e.preventDefault();  // don't let it drag-select
+  });
+  document.addEventListener('mouseup', cancelHold);
+  document.addEventListener('mouseleave', cancelHold);
+
+  // Hide ring on blur or when the reader is hidden.
+  window.addEventListener('blur', cancelHold);
 })();
 
 // Adjust font size by N steps (each = 1px), clamped to slider range.
