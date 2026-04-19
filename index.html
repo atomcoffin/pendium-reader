@@ -38,7 +38,7 @@
   --font-read: 'Thow', 'Georgia', serif;
   --font-ui: 'Thow', 'Georgia', serif;
   --font-mono: 'Thow Mono', 'Courier New', monospace;
-  --reading-width: 680px;
+  --reading-width: 1100px;
   --font-size: 18px;
   --line-height: 1.8;
 }
@@ -420,28 +420,84 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
   margin-left: 4px;
 }
 
+/* Reader content — no scrolling, content paginates into a two-column spread.
+   Each "spread" is 2 columns wide. Additional pages exist as further columns
+   that we translate into view. Chapter boundaries rerender fresh. */
 .r-content {
-  flex: 1; overflow-y: auto; padding: 36px 24px;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  padding: 36px 24px 28px;
+  display: flex;
+  align-items: stretch;
 }
-.r-content::-webkit-scrollbar { width: 3px; }
-.r-content::-webkit-scrollbar-thumb { background: var(--fog); border-radius: 2px; opacity: 0.2; }
+
+.r-book {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  max-width: var(--reading-width, 1100px);
+  margin: 0 auto;
+  width: 100%;
+}
+
+.r-pages {
+  column-count: 2;
+  column-fill: auto;
+  column-gap: 80px;
+  height: 100%;
+  width: 100%;
+  transition: transform 220ms ease, opacity 160ms ease;
+  will-change: transform, opacity;
+  opacity: 1;
+}
+.r-pages.fade { opacity: 0; }
+
+/* Click zones for pagination — positioned absolutely over the book */
+.r-click-zone {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 22%;
+  cursor: pointer;
+  z-index: 3;
+  background: transparent;
+}
+.r-click-zone.prev { left: 0; }
+.r-click-zone.next { right: 0; }
 
 .r-inner {
-  max-width: var(--reading-width); margin: 0 auto;
-  font-family: 'Siche Text', var(--font-read); font-size: var(--font-size);
-  line-height: var(--line-height); color: var(--ink);
+  font-family: 'Siche Text', var(--font-read);
+  font-size: var(--font-size);
+  line-height: var(--line-height);
+  color: var(--ink);
 }
 .r-inner h1, .r-inner h2, .r-inner h3 {
-  font-family: var(--font-read); font-weight: 600; margin: 1.4em 0 0.5em; line-height: 1.3;
+  font-family: var(--font-read); font-weight: 600;
+  line-height: 1.3;
+  break-after: avoid-column;
 }
-.r-inner h1 { font-size: 1.5em; }
-.r-inner h2 { font-size: 1.25em; }
-.r-inner h3 { font-size: 1.1em; }
-.r-inner p { margin-bottom: 1em; text-align: justify; hyphens: auto; }
-.r-inner img { max-width: 100%; border-radius: var(--radius-sm); margin: 1em 0; }
+.r-inner h1 { font-size: 1.5em; margin: 0 0 0.6em; }
+.r-inner h2 { font-size: 1.25em; margin: 1.4em 0 0.5em; }
+.r-inner h3 { font-size: 1.1em; margin: 1.2em 0 0.4em; }
+.r-inner p {
+  margin: 0 0 1em;
+  text-align: justify;
+  hyphens: auto;
+  break-inside: avoid-column;
+}
+.r-inner img {
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+  margin: 1em 0;
+  break-inside: avoid-column;
+}
 .r-inner blockquote {
-  border-left: 2px solid var(--ember); padding-left: 1.2em;
-  margin: 1.2em 0; color: var(--stone); font-style: italic;
+  border-left: 2px solid var(--ember);
+  padding-left: 1.2em;
+  margin: 1.2em 0;
+  color: var(--stone);
+  font-style: italic;
+  break-inside: avoid-column;
 }
 .r-inner a { color: var(--ember); text-decoration: none; }
 
@@ -661,13 +717,19 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
       <button class="icon-btn" onclick="toggleSettings()"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="2.5"/><path d="M10 2v3M10 15v3M3.8 3.8l2.1 2.1M14.1 14.1l2.1 2.1M2 10h3M15 10h3M3.8 16.2l2.1-2.1M14.1 5.9l2.1-2.1"/></svg></button>
     </div>
   </div>
-  <div class="r-content" id="r-content" onclick="toggleReaderUI()">
-    <div class="r-inner" id="r-inner"></div>
+  <div class="r-content" id="r-content">
+    <div class="r-click-zone prev" onclick="readerPrev()"></div>
+    <div class="r-book" id="r-book" onclick="toggleReaderUI()">
+      <div class="r-pages" id="r-pages">
+        <div class="r-inner" id="r-inner"></div>
+      </div>
+    </div>
+    <div class="r-click-zone next" onclick="readerNext()"></div>
   </div>
   <div class="r-bottom" id="r-bottom">
     <div class="r-bottom-nav">
-      <button class="icon-btn" onclick="prevChapter()"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 15l-5-5 5-5"/></svg></button>
-      <button class="icon-btn" onclick="nextChapter()"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 5l5 5-5 5"/></svg></button>
+      <button class="icon-btn" onclick="readerPrev()"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 15l-5-5 5-5"/></svg></button>
+      <button class="icon-btn" onclick="readerNext()"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 5l5 5-5 5"/></svg></button>
     </div>
     <span class="r-pct" id="r-pct">0%</span>
   </div>
@@ -1694,6 +1756,13 @@ function blobToDataURL(blob) {
 }
 
 // ===== READER =====
+// Paginated two-page spread layout. Each "spread" is 2 columns wide.
+// CSS multi-column handles the text flow; we translate between spreads.
+// Chapter boundaries are hard — new chapter renders fresh at spread 0.
+
+let currentSpread = 0;       // 0-indexed spread within current chapter
+let totalSpreads = 1;        // computed after layout
+
 async function openBookById(id) {
   const meta = library.find(b => b.id === id);
   if (!meta) return;
@@ -1705,6 +1774,7 @@ async function openBookById(id) {
     chapters = currentBook.chapters;
     toc = currentBook.toc;
     currentChapterIndex = currentBook.chapterIndex || 0;
+    currentSpread = currentBook.spreadIndex || 0;
     $('r-title').textContent = currentBook.title;
     $('screen-lib').classList.remove('active');
     $('screen-reader').classList.add('active');
@@ -1713,7 +1783,6 @@ async function openBookById(id) {
     $('r-bottom').classList.remove('hidden');
     renderChapter();
     buildTOC();
-    setTimeout(() => { $('r-content').scrollTop = currentBook.scrollPos || 0; }, 30);
   } catch (err) {
     console.error('Failed to open book:', err);
     alert('Could not open this book.');
@@ -1729,44 +1798,189 @@ function showLibrary() {
   renderLibrary();
 }
 
+// Render the current chapter's HTML into the pages container, then measure
+// how many spreads it occupies.
 function renderChapter() {
-  $('r-inner').innerHTML = chapters[currentChapterIndex]?.html || '<p>No content</p>';
-  $('r-content').scrollTop = 0;
-  updateProgress();
+  const pagesEl = $('r-pages');
+  const innerEl = $('r-inner');
+  innerEl.innerHTML = chapters[currentChapterIndex]?.html || '<p>No content</p>';
+  // Reset transform before measuring
+  pagesEl.style.transition = 'none';
+  pagesEl.style.transform = 'translateX(0)';
+  // Force reflow, then restore transition
+  pagesEl.offsetHeight;
+  pagesEl.style.transition = '';
+  // Measure after layout settles (including font loading)
+  requestAnimationFrame(() => {
+    measureSpreads();
+    // Clamp currentSpread in case chapter shrunk
+    if (currentSpread >= totalSpreads) currentSpread = totalSpreads - 1;
+    if (currentSpread < 0) currentSpread = 0;
+    applySpread();
+    updateProgress();
+  });
 }
 
-function prevChapter() { if (currentChapterIndex > 0) { currentChapterIndex--; renderChapter(); saveProgress(); } }
-function nextChapter() { if (currentChapterIndex < chapters.length - 1) { currentChapterIndex++; renderChapter(); saveProgress(); } }
+// Measure how many spreads (pairs of columns) the current chapter occupies.
+// In a 2-column layout with gap G, the Nth pair of columns sits at x=(N-1)(W+G).
+// We translate by -(spread * (W+G)) to bring the right pair into view.
+function measureSpreads() {
+  const pagesEl = $('r-pages');
+  const bookEl = $('r-book');
+  const spreadWidth = bookEl.clientWidth;
+  const contentWidth = pagesEl.scrollWidth;
+  if (spreadWidth <= 0 || contentWidth <= 0) {
+    totalSpreads = 1;
+    return;
+  }
+  const style = getComputedStyle(pagesEl);
+  const gap = parseFloat(style.columnGap) || 80;
+  const pairAdvance = spreadWidth + gap;
+  // scrollWidth covers N columns + (N-1) gaps. Num columns ~= (scrollWidth+gap) / (colWidth+gap)
+  const colWidth = (spreadWidth - gap) / 2;
+  const approxCols = Math.max(1, Math.round((contentWidth + gap) / (colWidth + gap)));
+  totalSpreads = Math.max(1, Math.ceil(approxCols / 2));
+}
+
+// Apply the current spread by translating the pages container.
+function applySpread() {
+  const pagesEl = $('r-pages');
+  const bookEl = $('r-book');
+  const spreadWidth = bookEl.clientWidth;
+  const style = getComputedStyle(pagesEl);
+  const gap = parseFloat(style.columnGap) || 80;
+  const pairAdvance = spreadWidth + gap;
+  pagesEl.style.transform = `translateX(${-currentSpread * pairAdvance}px)`;
+}
+
+// Navigate one spread forward. Crosses into next chapter at the end.
+function readerNext() {
+  if (!currentBook) return;
+  if (currentSpread < totalSpreads - 1) {
+    currentSpread++;
+    applySpread();
+    updateProgress();
+    saveProgress();
+  } else if (currentChapterIndex < chapters.length - 1) {
+    // Fade out, advance chapter, fade in
+    fadeSwap(() => {
+      currentChapterIndex++;
+      currentSpread = 0;
+      renderChapter();
+      saveProgress();
+    });
+  }
+}
+
+// Navigate one spread backward. Crosses into previous chapter at the start.
+function readerPrev() {
+  if (!currentBook) return;
+  if (currentSpread > 0) {
+    currentSpread--;
+    applySpread();
+    updateProgress();
+    saveProgress();
+  } else if (currentChapterIndex > 0) {
+    fadeSwap(() => {
+      currentChapterIndex--;
+      // Jump to last spread of the previous chapter after render measures it
+      currentSpread = Infinity;  // renderChapter clamps to totalSpreads - 1
+      renderChapter();
+      saveProgress();
+    });
+  }
+}
+
+// Fade the current pages out, run callback (which re-renders), fade in.
+function fadeSwap(cb) {
+  const pagesEl = $('r-pages');
+  pagesEl.classList.add('fade');
+  setTimeout(() => {
+    cb();
+    requestAnimationFrame(() => pagesEl.classList.remove('fade'));
+  }, 180);
+}
+
+function prevChapter() { if (currentChapterIndex > 0) { fadeSwap(() => { currentChapterIndex--; currentSpread = 0; renderChapter(); saveProgress(); }); } }
+function nextChapter() { if (currentChapterIndex < chapters.length - 1) { fadeSwap(() => { currentChapterIndex++; currentSpread = 0; renderChapter(); saveProgress(); }); } }
 
 function goToChapter(index) {
-  currentChapterIndex = index;
-  renderChapter(); saveProgress(); toggleTOC();
+  fadeSwap(() => {
+    currentChapterIndex = index;
+    currentSpread = 0;
+    renderChapter();
+    saveProgress();
+    toggleTOC();
+  });
 }
 
 function updateProgress() {
-  const el = $('r-content');
-  const scrollPct = el.scrollHeight <= el.clientHeight ? 100 : (el.scrollTop / (el.scrollHeight - el.clientHeight)) * 100;
-  const pct = chapters.length > 1 ? ((currentChapterIndex + scrollPct / 100) / chapters.length) * 100 : scrollPct;
+  if (!chapters.length) return;
+  const chapterPct = totalSpreads > 1 ? currentSpread / (totalSpreads - 1) : 1;
+  const pct = ((currentChapterIndex + chapterPct) / chapters.length) * 100;
   $('r-progress').style.width = pct + '%';
   $('r-pct').textContent = Math.round(pct) + '%';
 }
 
 function saveProgress() {
   if (!currentBook) return;
-  const el = $('r-content');
   currentBook.chapterIndex = currentChapterIndex;
-  currentBook.scrollPos = el.scrollTop;
-  const scrollPct = el.scrollHeight <= el.clientHeight ? 100 : (el.scrollTop / (el.scrollHeight - el.clientHeight)) * 100;
-  currentBook.progress = chapters.length > 1 ? ((currentChapterIndex + scrollPct / 100) / chapters.length) * 100 : scrollPct;
+  currentBook.spreadIndex = currentSpread;
+  const chapterPct = totalSpreads > 1 ? currentSpread / (totalSpreads - 1) : 1;
+  currentBook.progress = ((currentChapterIndex + chapterPct) / chapters.length) * 100;
   const idx = library.findIndex(b => b.id === currentBook.id);
   if (idx >= 0) library[idx] = currentBook;
   saveLibrary();
 }
 
-$('r-content')?.addEventListener('scroll', () => {
-  updateProgress();
-  clearTimeout(window._saveTm);
-  window._saveTm = setTimeout(saveProgress, 500);
+// Keyboard navigation
+document.addEventListener('keydown', (e) => {
+  if (!$('screen-reader').classList.contains('active')) return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+    readerNext();
+    e.preventDefault();
+  } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+    readerPrev();
+    e.preventDefault();
+  }
+});
+
+// Swipe navigation — track touchstart/touchend for horizontal gesture
+(() => {
+  let startX = 0, startY = 0, tracking = false;
+  const rc = $('r-content');
+  if (!rc) return;
+  rc.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    tracking = true;
+  }, { passive: true });
+  rc.addEventListener('touchend', (e) => {
+    if (!tracking) return;
+    tracking = false;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    // Only treat as swipe if horizontal movement dominates
+    if (Math.abs(dx) < 50 || Math.abs(dy) > Math.abs(dx)) return;
+    if (dx < 0) readerNext();
+    else readerPrev();
+  }, { passive: true });
+})();
+
+// Recompute on window resize (text reflows, spread count changes)
+let _resizeTm = null;
+window.addEventListener('resize', () => {
+  if (!$('screen-reader').classList.contains('active')) return;
+  clearTimeout(_resizeTm);
+  _resizeTm = setTimeout(() => {
+    measureSpreads();
+    if (currentSpread >= totalSpreads) currentSpread = totalSpreads - 1;
+    applySpread();
+    updateProgress();
+  }, 120);
 });
 
 // ===== TOC =====
