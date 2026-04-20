@@ -719,7 +719,7 @@ body.r-debug .r-book {
    shows up in the marks list, not on the page. Inline spans don't break line
    wrapping, so pagination math stays correct. */
 .r-inner .mark-highlight {
-  background: color-mix(in srgb, var(--ember) 18%, transparent);
+  background: color-mix(in srgb, var(--ember) 28%, transparent);
   border-radius: 2px;
   padding: 0 1px;
   cursor: pointer;
@@ -728,7 +728,7 @@ body.r-debug .r-book {
   transition: background 140ms ease;
 }
 .r-inner .mark-highlight:hover {
-  background: color-mix(in srgb, var(--ember) 28%, transparent);
+  background: color-mix(in srgb, var(--ember) 40%, transparent);
 }
 
 .r-pct {
@@ -2751,19 +2751,11 @@ function saveEditingMark(isBookmark) {
   sel.removeAllRanges();
   exitEditingMode();
 
-  // Re-render the current chapter so the new highlight is visible. We
-  // preserve the current spread position so the user doesn't jump.
-  const savedSpread = currentSpread;
-  renderChapter();
-  // renderChapter will clamp if needed, but we want to land back on the same
-  // spread — requestAnimationFrame so measurement completes first.
-  requestAnimationFrame(() => {
-    if (savedSpread < totalSpreads) {
-      currentSpread = savedSpread;
-      applySpread();
-      updateProgress();
-    }
-  });
+  // Wrap the newly-saved mark in place — no full re-render, so no transform
+  // reset, no slide-back-to-current-spread animation. The walker in
+  // renderMarksForChapter skips text nodes already inside a highlight span,
+  // so existing marks aren't re-wrapped.
+  renderMarksForChapter(inner, currentChapterIndex);
 }
 
 // Convert a DOM Range inside `root` to {start, end} character offsets into the
