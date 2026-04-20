@@ -67,7 +67,9 @@
 
 html, body {
   height: 100%; overflow: hidden;
-  background: var(--paper);
+  background-color: var(--paper);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='2.0' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.13 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-attachment: fixed;
   color: var(--ink);
   font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;
@@ -604,11 +606,7 @@ body.r-ui-visible .r-quick {
 .r-hold-ring.dir-next .r-hold-arrow-next { display: block; }
 
 /* Swipe-to-turn edge glow. Tall ember bloom on whichever side the user is
-   swiping toward. Opacity scales with swipe progress.
-   Two background layers: the noise tile on top, the gradient below, blended
-   with overlay. Stacking them on the same element (rather than a pseudo-
-   element) means the gradient's alpha clips the noise — no gray box where
-   the gradient is transparent. */
+   swiping toward. Opacity scales with swipe progress. */
 .r-swipe-ring {
   position: absolute;
   top: 50%;
@@ -619,34 +617,28 @@ body.r-ui-visible .r-quick {
   opacity: 0;
   transition: opacity 80ms linear;
   z-index: 5;
-  background-blend-mode: overlay, normal;
-  background-repeat: repeat, no-repeat;
 }
 .r-swipe-ring.dir-prev {
   left: 0;
-  background-image:
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"),
-    radial-gradient(
-      ellipse 65% 70% at left center,
-      rgba(212, 101, 74, 0.92) 0%,
-      rgba(212, 101, 74, 0.6)  16%,
-      rgba(212, 101, 74, 0.28) 38%,
-      rgba(212, 101, 74, 0.08) 65%,
-      rgba(212, 101, 74, 0)    95%
-    );
+  background: radial-gradient(
+    ellipse 65% 70% at left center,
+    rgba(212, 101, 74, 0.92) 0%,
+    rgba(212, 101, 74, 0.6)  16%,
+    rgba(212, 101, 74, 0.28) 38%,
+    rgba(212, 101, 74, 0.08) 65%,
+    rgba(212, 101, 74, 0)    95%
+  );
 }
 .r-swipe-ring.dir-next {
   right: 0;
-  background-image:
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"),
-    radial-gradient(
-      ellipse 65% 70% at right center,
-      rgba(212, 101, 74, 0.92) 0%,
-      rgba(212, 101, 74, 0.6)  16%,
-      rgba(212, 101, 74, 0.28) 38%,
-      rgba(212, 101, 74, 0.08) 65%,
-      rgba(212, 101, 74, 0)    95%
-    );
+  background: radial-gradient(
+    ellipse 65% 70% at right center,
+    rgba(212, 101, 74, 0.92) 0%,
+    rgba(212, 101, 74, 0.6)  16%,
+    rgba(212, 101, 74, 0.28) 38%,
+    rgba(212, 101, 74, 0.08) 65%,
+    rgba(212, 101, 74, 0)    95%
+  );
 }
 
 /* Debug mode — reveals click/touch interaction zones.
