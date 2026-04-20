@@ -409,7 +409,7 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
 
 /* ===== READER ===== */
 .r-progress {
-  position: fixed; top: 0; left: 0; height: 3px;
+  position: fixed; bottom: 0; left: 0; height: 3px;
   background: var(--ember); z-index: 50; width: 0;
 }
 
@@ -607,10 +607,8 @@ body.r-ui-visible .r-quick {
    swiping toward. Opacity scales with swipe progress. */
 .r-swipe-ring {
   position: absolute;
-  top: 50%;
-  height: 80vh;
+  top: 0; bottom: 0;
   width: 240px;
-  transform: translateY(-50%);
   pointer-events: none;
   opacity: 0;
   transition: opacity 80ms linear;
