@@ -714,6 +714,23 @@ body.r-debug .r-book {
 }
 .r-inner a { color: var(--ember); text-decoration: none; }
 
+/* Mark highlight spans — classic highlighter look. A single visual treatment
+   covers both plain highlights and bookmarked highlights; the bookmark flag
+   shows up in the marks list, not on the page. Inline spans don't break line
+   wrapping, so pagination math stays correct. */
+.r-inner .mark-highlight {
+  background: color-mix(in srgb, var(--ember) 18%, transparent);
+  border-radius: 2px;
+  padding: 0 1px;
+  cursor: pointer;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  transition: background 140ms ease;
+}
+.r-inner .mark-highlight:hover {
+  background: color-mix(in srgb, var(--ember) 28%, transparent);
+}
+
 .r-pct {
   font-size: 11px;
   color: var(--fog);
@@ -2105,6 +2122,9 @@ function renderChapter() {
   const pagesEl = $('r-pages');
   const innerEl = $('r-inner');
   innerEl.innerHTML = chapters[currentChapterIndex]?.html || '<p>No content</p>';
+  // Wrap saved marks for this chapter in highlight spans, before measuring
+  // pagination so spread math reflects the wrapped content.
+  renderMarksForChapter(innerEl, currentChapterIndex);
   // Reset transform before measuring
   pagesEl.style.transition = 'none';
   pagesEl.style.transform = 'translateX(0)';
@@ -2730,6 +2750,20 @@ function saveEditingMark(isBookmark) {
   // Clear the selection and exit editing so the user returns to reading.
   sel.removeAllRanges();
   exitEditingMode();
+
+  // Re-render the current chapter so the new highlight is visible. We
+  // preserve the current spread position so the user doesn't jump.
+  const savedSpread = currentSpread;
+  renderChapter();
+  // renderChapter will clamp if needed, but we want to land back on the same
+  // spread — requestAnimationFrame so measurement completes first.
+  requestAnimationFrame(() => {
+    if (savedSpread < totalSpreads) {
+      currentSpread = savedSpread;
+      applySpread();
+      updateProgress();
+    }
+  });
 }
 
 // Convert a DOM Range inside `root` to {start, end} character offsets into the
@@ -2747,6 +2781,109 @@ function rangeToChapterOffsets(root, range) {
     if (start >= 0 && end >= 0) break;
   }
   return { start, end };
+}
+
+// ===== MARK RENDERING =====
+// Walk currentBook.marks and wrap each mark's text range in a highlight span
+// inside the given rendered-chapter root. Called after renderChapter sets HTML.
+function renderMarksForChapter(rootEl, chapterIndex) {
+  if (!currentBook || !Array.isArray(currentBook.marks)) return;
+  // Only marks belonging to this chapter, sorted rightmost-first so wrapping
+  // earlier marks doesn't shift offsets for later ones.
+  const marks = currentBook.marks
+    .filter(m => m.chapterIndex === chapterIndex)
+    .slice()
+    .sort((a, b) => (b.startOffset || 0) - (a.startOffset || 0));
+  for (const m of marks) {
+    try { highlightOneMark(rootEl, m); }
+    catch (err) { console.warn('Mark render failed:', err, m); }
+  }
+}
+
+// Wrap the text range [startOffset, endOffset) inside rootEl in highlight
+// spans. Handles ranges that span multiple text nodes by splitting and
+// wrapping each intersecting segment independently (necessary when the
+// highlight straddles an <em>, <a>, footnote, etc.).
+function highlightOneMark(rootEl, mark) {
+  const start = mark.startOffset | 0;
+  const end   = mark.endOffset   | 0;
+  if (end <= start) return;
+
+  // Collect the text nodes to split in a first pass; DO NOT mutate during the
+  // walk or the walker's state gets invalidated by splitText.
+  const walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, null);
+  let cursor = 0;
+  const hits = []; // { node, localStart, localEnd }
+  let n;
+  while ((n = walker.nextNode())) {
+    // Skip text nodes that are already inside a highlight wrapper (avoid
+    // nesting and double-wrapping if render is called twice).
+    if (n.parentNode && n.parentNode.classList &&
+        n.parentNode.classList.contains('mark-highlight')) {
+      cursor += n.data.length;
+      continue;
+    }
+    const nodeStart = cursor;
+    const nodeEnd = cursor + n.data.length;
+    cursor = nodeEnd;
+    // Does this node intersect [start, end)?
+    if (nodeEnd <= start) continue;
+    if (nodeStart >= end) break;
+    const localStart = Math.max(0, start - nodeStart);
+    const localEnd   = Math.min(n.data.length, end - nodeStart);
+    if (localEnd > localStart) {
+      hits.push({ node: n, localStart, localEnd });
+    }
+  }
+
+  if (!hits.length) {
+    // Offset anchor failed — try a text-based fallback.
+    tryHighlightByText(rootEl, mark);
+    return;
+  }
+
+  // Now do the DOM surgery. Wrap each hit's local segment in a span.
+  for (const hit of hits) {
+    let node = hit.node;
+    // Split off the tail after localEnd (leaves `node` as the front part).
+    if (hit.localEnd < node.data.length) node.splitText(hit.localEnd);
+    // Split off the head at localStart (leaves `node` as prefix, next node is our target).
+    let target = node;
+    if (hit.localStart > 0) target = node.splitText(hit.localStart);
+    // Wrap target in a span
+    const span = document.createElement('span');
+    span.className = 'mark-highlight';
+    if (mark.createdAt) span.dataset.markCreated = String(mark.createdAt);
+    if (mark.isBookmark) span.dataset.markBookmark = '1';
+    target.parentNode.insertBefore(span, target);
+    span.appendChild(target);
+  }
+}
+
+// Fallback: if offset anchor didn't locate the mark, search for its text
+// content via a simple string match in the flattened chapter text. Builds
+// a synthetic range using the first occurrence and hands it back to the
+// offset-based wrapper.
+function tryHighlightByText(rootEl, mark) {
+  const needle = (mark.text || '').replace(/\s+/g, ' ').trim();
+  if (!needle) return;
+  // Flatten and search
+  const walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, null);
+  let flat = '';
+  let n;
+  while ((n = walker.nextNode())) flat += n.data;
+  const norm = flat.replace(/\s+/g, ' ');
+  const idx = norm.indexOf(needle);
+  if (idx < 0) return;
+  // Translate back to raw offsets in the non-normalized flat string.
+  // Simple approach: use indexOf on the raw text (needle with any ws).
+  const rawIdx = flat.indexOf(needle);
+  if (rawIdx < 0) return;
+  highlightOneMark(rootEl, {
+    ...mark,
+    startOffset: rawIdx,
+    endOffset: rawIdx + needle.length
+  });
 }
 
 // ===== SETTINGS =====
