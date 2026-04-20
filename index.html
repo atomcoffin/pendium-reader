@@ -469,6 +469,34 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
 }
 .r-pages.fade { opacity: 0; }
 
+/* Spine indicator between the two paginated columns. A thin vertical line
+   is the visible affordance; the actual tap target is wider so it's easy to
+   hit. Tapping anywhere on this zone toggles the reader UI (toolbar/sliders).
+   This replaces the old tap-anywhere-in-book behavior, which conflicted with
+   tap-to-select-sentence. */
+.r-spine {
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 28px;                 /* tap target */
+  cursor: pointer;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.r-spine::before {
+  content: '';
+  width: 1px;
+  height: 80%;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  transition: background 180ms ease;
+}
+.r-spine:hover::before {
+  background: color-mix(in srgb, var(--ink) 20%, transparent);
+}
+
 /* Click zones for pagination. Cursor hides when over the zone so the
    hover-ring stands in for it. */
 .r-click-zone {
@@ -936,10 +964,14 @@ body.r-debug .r-book {
   </div>
   <div class="r-content" id="r-content">
     <div class="r-click-zone prev" data-dir="prev"></div>
-    <div class="r-book" id="r-book" onclick="toggleReaderUI()">
+    <div class="r-book" id="r-book">
       <div class="r-pages" id="r-pages">
         <div class="r-inner" id="r-inner"></div>
       </div>
+      <!-- Spine: thin vertical indicator between the two pages. Tapping it
+           toggles the reader UI. Replaces the previous tap-anywhere-to-toggle
+           behavior on r-book, which was conflicting with tap-to-select-sentence. -->
+      <div class="r-spine" id="r-spine" onclick="toggleReaderUI()" aria-label="Toggle reader UI"></div>
     </div>
     <div class="r-click-zone next" data-dir="next"></div>
     <!-- Hold-to-turn circular indicator, positioned at cursor on hover/press.
@@ -2119,6 +2151,7 @@ function applySpread() {
 // Navigate one spread forward. Crosses into next chapter at the end.
 function readerNext() {
   if (!currentBook) return;
+  if (document.querySelector('.overlay.open')) return;
   if (currentSpread < totalSpreads - 1) {
     currentSpread++;
     applySpread();
@@ -2138,6 +2171,7 @@ function readerNext() {
 // Navigate one spread backward. Crosses into previous chapter at the start.
 function readerPrev() {
   if (!currentBook) return;
+  if (document.querySelector('.overlay.open')) return;
   if (currentSpread > 0) {
     currentSpread--;
     applySpread();
