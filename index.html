@@ -19,6 +19,8 @@
 @font-face { font-family: 'Thow Mono'; src: url('fonts/ThowMono0.3-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
 @font-face { font-family: 'Siche Text'; src: url('fonts/Siche-Text-v.0.3-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
 @font-face { font-family: 'Siche Text'; src: url('fonts/Siche-Text-v.0.3-Regular-Italic.woff2') format('woff2'); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: 'Siche Display'; src: url('fonts/Siche-Display-v.0.3-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Siche Display'; src: url('fonts/Siche-Display-v.0.3-Regular-Italic.woff2') format('woff2'); font-weight: 400; font-style: italic; font-display: swap; }
 
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -738,22 +740,24 @@ body.r-mode-editing .r-inner {
   user-select: text;
 }
 
-/* Headings render in the UI face (Thow). Siche Text currently has only 400
-   regular + italic, so headings need a face that supports heavier weights. */
+/* Headings inside book content render in Siche Display — the condensed
+   display cut of Siche, designed to pair with Siche Text at heading sizes.
+   Thow is the fallback while the display font loads. Siche Display ships
+   with only 400 weight, so headings run at 400 to avoid synthetic bold. */
 .r-inner h1, .r-inner h2, .r-inner h3,
 .r-inner h4, .r-inner h5, .r-inner h6 {
-  font-family: var(--font-read);
-  font-weight: 600;
-  line-height: 1.3;
+  font-family: 'Siche Display', var(--font-read);
+  font-weight: 400;
+  line-height: 1.25;
   break-after: avoid-column;
   color: var(--ink);
 }
-.r-inner h1 { font-size: 1.5em;  margin: 0 0 0.6em; }
-.r-inner h2 { font-size: 1.25em; margin: 1.4em 0 0.5em; }
-.r-inner h3 { font-size: 1.1em;  margin: 1.2em 0 0.4em; }
-.r-inner h4 { font-size: 1em;    margin: 1em 0 0.3em; font-weight: 500; }
-.r-inner h5 { font-size: 0.95em; margin: 1em 0 0.3em; font-weight: 500; }
-.r-inner h6 { font-size: 0.9em;  margin: 1em 0 0.3em; font-weight: 500; color: var(--stone); }
+.r-inner h1 { font-size: 1.7em;  margin: 0 0 0.6em; }
+.r-inner h2 { font-size: 1.4em;  margin: 1.4em 0 0.5em; }
+.r-inner h3 { font-size: 1.2em;  margin: 1.2em 0 0.4em; }
+.r-inner h4 { font-size: 1.05em; margin: 1em 0 0.3em; }
+.r-inner h5 { font-size: 1em;    margin: 1em 0 0.3em; }
+.r-inner h6 { font-size: 0.95em; margin: 1em 0 0.3em; color: var(--stone); }
 
 /* Paragraphs: block vs indent and alignment are user-controlled via
    CSS variables set by setParagraphStyle() and setTextAlign(). Defaults
