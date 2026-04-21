@@ -955,6 +955,37 @@ body.r-mode-editing .r-inner {
   cursor: pointer; color: var(--ink);
 }
 .theme-btn.active { border-color: var(--ember); color: var(--ember); }
+
+/* Export button in profile overlay — same visual weight as theme buttons
+   but full-width with an icon. Ember on hover so it reads as an action. */
+.export-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  background: transparent;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease;
+}
+.export-btn:hover { border-color: var(--ember); color: var(--ember); }
+.export-btn .ph { font-size: 16px; }
+
+/* Small caption under a settings row — explains what the control does
+   without taking much visual weight. */
+.settings-hint {
+  margin-top: 8px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--stone);
+}
 .range-row { display: flex; align-items: center; gap: 12px; }
 .range-row input[type="range"] {
   flex: 1; -webkit-appearance: none; height: 3px;
@@ -1025,6 +1056,32 @@ body.r-mode-editing .r-inner {
   backdrop-filter: blur(6px);
 }
 .gesture-toast.show { opacity: 1; }
+
+/* Error toast — same look as gesture toast but positioned near the top so
+   it's harder to miss during reading, lingers longer, and uses ember to
+   read as "something needs attention." */
+.error-toast {
+  position: fixed;
+  top: calc(20px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 20px;
+  background: rgba(30, 26, 22, 0.92);
+  color: var(--paper);
+  border: 1px solid var(--ember);
+  border-radius: 8px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.4;
+  max-width: min(88vw, 420px);
+  text-align: center;
+  z-index: 600;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+  backdrop-filter: blur(6px);
+}
+.error-toast.show { opacity: 1; }
 
 /* Update toast */
 .update-toast {
@@ -1347,6 +1404,14 @@ body.r-mode-editing .r-inner {
         <button class="theme-btn" data-theme="dark" onclick="setTheme('dark')">Dark</button>
       </div>
     </div>
+    <div class="settings-section">
+      <div class="settings-label">Library data</div>
+      <button class="export-btn" onclick="exportLibrary()">
+        <i class="ph ph-download-simple"></i>
+        <span>Export library</span>
+      </button>
+      <div class="settings-hint">Downloads your entire library, reading progress, and marks as a single file. Keep it safe — it's a complete backup.</div>
+    </div>
   </div>
 </div>
 
@@ -1377,7 +1442,7 @@ let currentSort = localStorage.getItem('tomen_sort') || 'title';
 
 // ===== INDEXEDDB STORAGE =====
 const DB_NAME = 'tomen';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 let db = null;
 
 function openDB() {
@@ -1385,11 +1450,49 @@ function openDB() {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
       const d = e.target.result;
+      const tx = e.target.transaction;
       if (!d.objectStoreNames.contains('books')) {
         d.createObjectStore('books', { keyPath: 'id' });
       }
       if (!d.objectStoreNames.contains('content')) {
         d.createObjectStore('content', { keyPath: 'id' });
+      }
+      // v2 — marks become a first-class store so they can be written and
+      // queried independently of the heavy book-meta object. Indexed by
+      // bookId so loading marks for one book is fast.
+      if (!d.objectStoreNames.contains('marks')) {
+        const ms = d.createObjectStore('marks', { keyPath: 'id' });
+        ms.createIndex('bookId', 'bookId', { unique: false });
+      }
+      // Migrate inline marks from book records into the new store. The
+      // upgrade transaction can read both stores so we copy in-place.
+      if (e.oldVersion < 2) {
+        const booksStore = tx.objectStore('books');
+        const marksStore = tx.objectStore('marks');
+        booksStore.openCursor().onsuccess = (cev) => {
+          const cursor = cev.target.result;
+          if (!cursor) return;
+          const book = cursor.value;
+          if (Array.isArray(book.marks) && book.marks.length > 0) {
+            for (const m of book.marks) {
+              const mark = {
+                id: markId(book.id, m),
+                bookId: book.id,
+                chapterIndex: m.chapterIndex,
+                startOffset: m.startOffset,
+                endOffset: m.endOffset,
+                text: m.text || '',
+                isBookmark: !!m.isBookmark,
+                createdAt: m.createdAt || Date.now()
+              };
+              marksStore.put(mark);
+            }
+            // Strip inline marks from book record (still keep id, etc.)
+            delete book.marks;
+            cursor.update(book);
+          }
+          cursor.continue();
+        };
       }
     };
     req.onsuccess = (e) => { db = e.target.result; resolve(db); };
@@ -1397,7 +1500,25 @@ function openDB() {
   });
 }
 
-function dbGet(store, id) {
+// Stable id for a mark — bookId + chapter + offsets + createdAt makes
+// duplicates impossible while letting us migrate from old inline marks.
+function markId(bookId, m) {
+  const ts = m.createdAt || Date.now();
+  return `${bookId}::${m.chapterIndex}::${m.startOffset}::${m.endOffset}::${ts}`;
+}
+
+// Ensure the DB connection exists before any operation touches it. Lazy
+// init means individual db* calls don't crash if init() hasn't completed
+// yet (e.g., during early service-worker activation).
+let _dbOpenPromise = null;
+async function ensureDB() {
+  if (db) return db;
+  if (!_dbOpenPromise) _dbOpenPromise = openDB();
+  return _dbOpenPromise;
+}
+
+async function dbGet(store, id) {
+  await ensureDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readonly');
     const req = tx.objectStore(store).get(id);
@@ -1406,7 +1527,8 @@ function dbGet(store, id) {
   });
 }
 
-function dbGetAll(store) {
+async function dbGetAll(store) {
+  await ensureDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readonly');
     const req = tx.objectStore(store).getAll();
@@ -1415,7 +1537,8 @@ function dbGetAll(store) {
   });
 }
 
-function dbPut(store, data) {
+async function dbPut(store, data) {
+  await ensureDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readwrite');
     const req = tx.objectStore(store).put(data);
@@ -1424,7 +1547,8 @@ function dbPut(store, data) {
   });
 }
 
-function dbDelete(store, id) {
+async function dbDelete(store, id) {
+  await ensureDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readwrite');
     const req = tx.objectStore(store).delete(id);
@@ -1437,17 +1561,25 @@ function dbDelete(store, id) {
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 function $(id) { return document.getElementById(id); }
 
+// Recognize quota-exceeded errors. Modern browsers throw DOMException with
+// name 'QuotaExceededError'; older Firefox uses 'NS_ERROR_DOM_QUOTA_REACHED';
+// some surface code 22 directly. Returns a friendly message or null if the
+// error isn't quota-related.
+function quotaMessageForError(err) {
+  if (!err) return null;
+  const name = err.name || '';
+  const code = err.code;
+  if (name === 'QuotaExceededError' ||
+      name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+      code === 22) {
+    return "Your device's storage is full. Free up space to import more books, or remove a book from your library.";
+  }
+  return null;
+}
+
 // Save just the lightweight book metadata (not chapter content)
 async function saveBookMeta(book) {
-  const meta = {
-    id: book.id, title: book.title, author: book.author, cover: book.cover,
-    progress: book.progress || 0, chapterIndex: book.chapterIndex || 0,
-    spreadIndex: book.spreadIndex || 0,
-    scrollPos: book.scrollPos || 0, chapterCount: (book.chapters || []).length,
-    contentSize: (book.chapters || []).reduce((s, c) => s + (c.html?.length || 0), 0),
-    spineColor: book.spineColor || null,
-    marks: book.marks || []
-  };
+  const meta = bookMetaFromBook(book);
   await dbPut('books', meta);
 }
 
@@ -1456,9 +1588,98 @@ async function saveBookContent(book) {
   await dbPut('content', { id: book.id, chapters: book.chapters, toc: book.toc });
 }
 
+// Build the metadata-only record from a full book object. Extracted so both
+// saveBookMeta and saveBookAtomic can share the projection logic. Marks are
+// stored in their own object store now and intentionally excluded here.
+function bookMetaFromBook(book) {
+  return {
+    id: book.id, title: book.title, author: book.author, cover: book.cover,
+    progress: book.progress || 0, chapterIndex: book.chapterIndex || 0,
+    spreadIndex: book.spreadIndex || 0,
+    scrollPos: book.scrollPos || 0, chapterCount: (book.chapters || []).length,
+    contentSize: (book.chapters || []).reduce((s, c) => s + (c.html?.length || 0), 0),
+    spineColor: book.spineColor || null
+  };
+}
+
+// Atomic save: write meta + content in one transaction across both stores.
+// If either write fails (quota exceeded, etc.) the whole transaction aborts
+// and no partial state is left behind. Used for book import — a partial
+// import would orphan a metadata entry pointing at nonexistent content.
+async function saveBookAtomic(book) {
+  await ensureDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['books', 'content'], 'readwrite');
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
+    tx.objectStore('books').put(bookMetaFromBook(book));
+    tx.objectStore('content').put({ id: book.id, chapters: book.chapters, toc: book.toc });
+  });
+}
+
+// ===== MARKS STORE =====
+// Marks live in their own store so they can be written/read independently
+// of the heavy book metadata. The bookId index lets us load all marks for
+// one book in a single query.
+
+// Load all marks for a book. Returns an array (possibly empty).
+async function loadMarksForBook(bookId) {
+  await ensureDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('marks', 'readonly');
+    const idx = tx.objectStore('marks').index('bookId');
+    const req = idx.getAll(bookId);
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// Persist a single mark. Caller is responsible for setting the mark's id;
+// use markId(bookId, m) to compute one. Returns the mark id.
+async function saveMark(mark) {
+  await ensureDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('marks', 'readwrite');
+    const req = tx.objectStore('marks').put(mark);
+    req.onsuccess = () => resolve(mark.id);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// Delete a single mark by id.
+async function deleteMarkById(id) {
+  await ensureDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('marks', 'readwrite');
+    const req = tx.objectStore('marks').delete(id);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// Delete all marks for a book. Used when a book is removed from the library.
+async function deleteAllMarksForBook(bookId) {
+  await ensureDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('marks', 'readwrite');
+    const idx = tx.objectStore('marks').index('bookId');
+    const req = idx.openKeyCursor(bookId);
+    req.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        tx.objectStore('marks').delete(cursor.primaryKey);
+        cursor.continue();
+      } else {
+        resolve();
+      }
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
 // Save progress for currently-open book (metadata only, no content rewrite)
 async function saveLibrary() {
-  // Find the book in library array and persist its metadata
   if (currentBook) {
     const idx = library.findIndex(b => b.id === currentBook.id);
     if (idx >= 0) {
@@ -1466,7 +1687,6 @@ async function saveLibrary() {
       library[idx].chapterIndex = currentBook.chapterIndex;
       library[idx].spreadIndex = currentBook.spreadIndex;
       library[idx].scrollPos = currentBook.scrollPos;
-      library[idx].marks = currentBook.marks;
       await saveBookMeta(library[idx]);
     }
   }
@@ -1480,8 +1700,12 @@ async function loadBookContent(id) {
 
 // Delete a book completely
 async function deleteBook(id) {
-  await dbDelete('books', id);
-  await dbDelete('content', id);
+  // Delete content + meta + all marks for this book. Any individual failure
+  // is logged but not thrown — partial cleanup is better than no cleanup,
+  // and orphan marks for a deleted book are harmless dead data.
+  try { await dbDelete('books', id); } catch (err) { console.error('delete books meta failed:', err); }
+  try { await dbDelete('content', id); } catch (err) { console.error('delete content failed:', err); }
+  try { await deleteAllMarksForBook(id); } catch (err) { console.error('delete marks failed:', err); }
   library = library.filter(b => b.id !== id);
 }
 
@@ -1497,8 +1721,11 @@ async function migrateFromLocalStorage() {
     }
     console.log(`Migrating ${oldLib.length} books from localStorage to IndexedDB…`);
     for (const b of oldLib) {
-      await saveBookMeta(b);
-      if (b.chapters) await saveBookContent(b);
+      if (b.chapters) {
+        await saveBookAtomic(b);
+      } else {
+        await saveBookMeta(b);
+      }
     }
     localStorage.removeItem('tomen_library');
     console.log('Migration complete.');
@@ -2156,8 +2383,7 @@ async function loadTextFile(file, batch = false) {
     chapters: [{ title, html }], toc: [{ title, index: 0 }],
     progress: 0, chapterIndex: 0, scrollPos: 0
   };
-  await saveBookMeta(book);
-  await saveBookContent(book);
+  await saveBookAtomic(book);
   library.push({
     id: book.id, title: book.title, author: book.author, cover: book.cover,
     progress: 0, chapterIndex: 0, scrollPos: 0,
@@ -2515,8 +2741,7 @@ async function loadEpub(file, batch = false) {
       title, author, cover, chapters: bookChapters, toc: finalToc,
       progress: 0, chapterIndex: 0, scrollPos: 0, spineColor
     };
-    await saveBookMeta(book);
-    await saveBookContent(book);
+    await saveBookAtomic(book);
     library.push({
       id: book.id, title: book.title, author: book.author, cover: book.cover,
       progress: 0, chapterIndex: 0, scrollPos: 0,
@@ -2525,7 +2750,10 @@ async function loadEpub(file, batch = false) {
     if (!batch) renderLibrary();
   } catch (err) {
     console.error('EPUB parse error:', err);
-    if (!batch) alert('Could not open this EPUB. It may be DRM-protected or unsupported.');
+    if (!batch) {
+      const quotaMsg = quotaMessageForError(err);
+      alert(quotaMsg || 'Could not open this EPUB. It may be DRM-protected or unsupported.');
+    }
     throw err;  // re-throw so importFiles can count it as skipped
   }
   if (!batch) showLoading(false);
@@ -2559,9 +2787,19 @@ async function openBookById(id) {
   try {
     const content = await loadBookContent(meta.id);
     currentBook = { ...meta, chapters: content.chapters, toc: content.toc };
-    // Migrate legacy `bookmarks` field → `marks` (preserves data from earlier versions)
-    if (!Array.isArray(currentBook.marks)) {
-      currentBook.marks = Array.isArray(currentBook.bookmarks) ? currentBook.bookmarks : [];
+    // Marks live in their own store now — load them and use as in-memory
+    // cache. Legacy inline `bookmarks` / `marks` fields are migrated on DB
+    // upgrade, but fall back here just in case an older record slips through.
+    const storedMarks = await loadMarksForBook(currentBook.id);
+    if (storedMarks.length > 0) {
+      currentBook.marks = storedMarks;
+    } else if (Array.isArray(currentBook.marks)) {
+      // Keep whatever's on the record (possibly migrated data that hasn't
+      // been persisted to the new store yet — writes below will normalize).
+    } else if (Array.isArray(currentBook.bookmarks)) {
+      currentBook.marks = currentBook.bookmarks;
+    } else {
+      currentBook.marks = [];
     }
     delete currentBook.bookmarks;
     chapters = currentBook.chapters;
@@ -2582,7 +2820,8 @@ async function openBookById(id) {
     buildTOC();
   } catch (err) {
     console.error('Failed to open book:', err);
-    alert('Could not open this book.');
+    const quotaMsg = quotaMessageForError(err);
+    alert(quotaMsg || 'Could not open this book.');
   } finally {
     showLoading(false);
   }
@@ -2766,16 +3005,59 @@ function updateProgress() {
   $('r-pct').textContent = Math.round(pct) + '%';
 }
 
+// Compute the in-memory progress fields and persist them. Debounced because
+// it fires on every page turn — without debouncing, rapid swiping triggers
+// many sequential disk writes, each serializing the full marks array.
+let _saveProgressTm = null;
+let _saveProgressPending = false;
 function saveProgress() {
   if (!currentBook) return;
+  // Update in-memory state immediately so the UI (progress bar, library) is
+  // always accurate. Only the disk write is debounced.
   currentBook.chapterIndex = currentChapterIndex;
   currentBook.spreadIndex = currentSpread;
   const chapterPct = totalSpreads > 1 ? currentSpread / (totalSpreads - 1) : 1;
   currentBook.progress = ((currentChapterIndex + chapterPct) / chapters.length) * 100;
   const idx = library.findIndex(b => b.id === currentBook.id);
   if (idx >= 0) library[idx] = currentBook;
-  saveLibrary();
+  _saveProgressPending = true;
+  if (_saveProgressTm) return;
+  _saveProgressTm = setTimeout(flushSaveProgress, 1500);
 }
+
+// Force-write any pending progress immediately. Called on book close, app
+// blur, and page-hide so progress isn't lost if the user kills the tab.
+let _saveProgressFailures = 0;
+async function flushSaveProgress() {
+  if (_saveProgressTm) { clearTimeout(_saveProgressTm); _saveProgressTm = null; }
+  if (!_saveProgressPending) return;
+  _saveProgressPending = false;
+  try {
+    await saveLibrary();
+    _saveProgressFailures = 0;
+  } catch (err) {
+    console.error('Save progress failed:', err);
+    _saveProgressPending = true;
+    _saveProgressFailures++;
+    // Surface to the user only after a couple of repeated failures —
+    // a single transient blip shouldn't show a toast. Quota errors are
+    // shown immediately because they need action.
+    const quotaMsg = quotaMessageForError(err);
+    if (quotaMsg) {
+      showErrorToast(quotaMsg);
+    } else if (_saveProgressFailures >= 2) {
+      showErrorToast("Reading progress isn't being saved. Try refreshing the page.");
+    }
+  }
+}
+
+// Persistent flushers — protect against data loss on tab close / app suspend.
+window.addEventListener('pagehide', flushSaveProgress);
+window.addEventListener('beforeunload', flushSaveProgress);
+window.addEventListener('blur', flushSaveProgress);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushSaveProgress();
+});
 
 // Keyboard navigation
 document.addEventListener('keydown', (e) => {
@@ -3138,6 +3420,25 @@ function showGestureToast(text) {
   _gestureToastTm = setTimeout(() => el.classList.remove('show'), 900);
 }
 
+// Persistent error toast — for things the user genuinely needs to know
+// about, like "save failed" or "storage full." Positioned at the top so
+// it doesn't disappear behind reader chrome, lingers ~4s, and is styled
+// distinctly from the brief gesture toast.
+let _errorToastTm = null;
+function showErrorToast(text) {
+  let el = $('error-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'error-toast';
+    el.className = 'error-toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(_errorToastTm);
+  _errorToastTm = setTimeout(() => el.classList.remove('show'), 4000);
+}
+
 // Recompute on window resize / orientation change (text reflows, spread count
 // changes). Captures a textual anchor (the chapter-relative character offset
 // at the top-left of the currently visible spread), reflows, then snaps to
@@ -3392,15 +3693,26 @@ function saveEditingMark(isBookmark) {
   if (!text) return;
 
   if (!Array.isArray(currentBook.marks)) currentBook.marks = [];
-  currentBook.marks.push({
+  const mark = {
+    id: null,  // filled in below
+    bookId: currentBook.id,
     chapterIndex: currentChapterIndex,
     startOffset: start,
     endOffset: end,
     text,
     isBookmark: !!isBookmark,
     createdAt: Date.now()
+  };
+  mark.id = markId(currentBook.id, mark);
+  currentBook.marks.push(mark);
+  // Write to the marks store in the background. A failure surfaces via
+  // toast; the in-memory cache is already updated so UI reflects the mark
+  // immediately even if the write is slow.
+  saveMark(mark).catch(err => {
+    console.error('saveMark failed:', err);
+    const q = quotaMessageForError(err);
+    showErrorToast(q || "Could not save this mark.");
   });
-  saveLibrary();
 
   // Clear the selection and exit editing so the user returns to reading.
   sel.removeAllRanges();
@@ -3547,6 +3859,69 @@ function toggleProfile() {
 function updateProfileName(name) {
   localStorage.setItem('tomen_name', name.trim());
   renderGreeting();
+}
+
+// Export the full library as a JSON blob — metadata, content, marks, and
+// user preferences. Users can save this as a backup or to move to another
+// device. Everything needed to reconstruct a Tomen library lives in here.
+async function exportLibrary() {
+  try {
+    showLoading(true, 'Preparing export…');
+    // Flush any pending progress first so the export reflects the latest
+    // reading position, not what's stale in the DB.
+    await flushSaveProgress();
+
+    await ensureDB();
+    const [books, contents, marks] = await Promise.all([
+      dbGetAll('books'),
+      dbGetAll('content'),
+      new Promise((resolve, reject) => {
+        const tx = db.transaction('marks', 'readonly');
+        const req = tx.objectStore('marks').getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      })
+    ]);
+
+    const preferences = {};
+    // Collect tomen_* keys from localStorage so prefs survive the export.
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('tomen_')) preferences[key] = localStorage.getItem(key);
+    }
+
+    const payload = {
+      format: 'tomen-library',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      stats: {
+        books: books.length,
+        marks: marks.length
+      },
+      books,
+      contents,
+      marks,
+      preferences
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const dateStr = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `tomen-library-${dateStr}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Release the blob reference shortly after so memory isn't held.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    showLoading(false);
+    showGestureToast(`Exported ${books.length} book${books.length === 1 ? '' : 's'}`);
+  } catch (err) {
+    console.error('Export failed:', err);
+    showLoading(false);
+    showErrorToast("Couldn't export library. Check console for details.");
+  }
 }
 
 // ===== IMPORT MENU =====

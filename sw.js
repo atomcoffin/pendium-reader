@@ -1,5 +1,12 @@
-// Bump this version string every time you push an update.
-const CACHE_VERSION = 'tomen-v1.4.0';
+// =====================================================================
+// IMPORTANT — RELEASE PROCESS
+// Bump CACHE_VERSION on EVERY meaningful release. The version string is
+// the cache key — if it doesn't change, returning users get the old
+// cached HTML/CSS/JS until they manually clear cache. The activate
+// handler below deletes any cache whose key doesn't match this version.
+// Add new assets (fonts, icons) to ASSETS so they're cached on install.
+// =====================================================================
+const CACHE_VERSION = 'tomen-v1.5.0';
 
 const ASSETS = [
   './',
@@ -10,11 +17,24 @@ const ASSETS = [
   './fonts/Thow0.3-Medium.woff2',
   './fonts/Thow0.3-SemiBold.woff2',
   './fonts/ThowMono0.3-Regular.woff2',
+  './fonts/Siche-Text-v.0.3-Regular.woff2',
+  './fonts/Siche-Text-v.0.3-Regular-Italic.woff2',
+  './fonts/Siche-Display-v.0.3-Regular.woff2',
+  './fonts/Siche-Display-v.0.3-Regular-Italic.woff2',
   'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE_VERSION).then(cache => cache.addAll(ASSETS)));
+  // addAll fails the whole batch if any single asset fails. Use Promise.all
+  // over individual cache.add calls so a missing/blocked asset doesn't
+  // prevent the rest of the cache from populating.
+  event.waitUntil(
+    caches.open(CACHE_VERSION).then(cache =>
+      Promise.all(ASSETS.map(url =>
+        cache.add(url).catch(err => console.warn('SW skipped asset:', url, err))
+      ))
+    )
+  );
 });
 
 self.addEventListener('activate', (event) => {
