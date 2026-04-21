@@ -470,10 +470,15 @@ body.r-mode-editing .r-toolbar-editing { display: flex; }
 
 /* Click zones for pagination. Cursor hides when over the zone so the
    hover-ring stands in for it. */
+/* Page-turn click zones. On desktop they cover the outer 40% of each side,
+   leaving a ~20% safe middle where tapping cleanly opens the menu. On mobile
+   they meet at center, each taking half the screen. Zones absorb hold and
+   swipe gestures for page-turn; single taps still reach the menu-open handler
+   on each zone. */
 .r-click-zone {
   position: absolute;
   top: 0; bottom: 0;
-  width: 22%;
+  width: 40%;
   cursor: none;
   z-index: 3;
   background: transparent;
@@ -483,6 +488,13 @@ body.r-mode-editing .r-toolbar-editing { display: flex; }
 }
 .r-click-zone.prev { left: 0; }
 .r-click-zone.next { right: 0; }
+
+/* In editing mode, click-zones should not absorb events — taps on the outer
+   text need to reach .r-inner so sentence-select can fire. Page-turn logic
+   is already disabled by readerInteractionBlocked() during editing. */
+body.r-mode-editing .r-click-zone {
+  pointer-events: none;
+}
 
 /* Quick controls cluster — three horizontal-slider bars stacked vertically at
    the bottom center. Visible only when reader UI is showing. Backdrop blur so
@@ -688,6 +700,14 @@ body.r-debug .r-book {
   font-size: var(--font-size);
   line-height: var(--line-height);
   color: var(--ink);
+  /* Native text selection is disabled in reading mode — marks are intentional
+     and gated by editing mode. Editing mode re-enables selection below. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+body.r-mode-editing .r-inner {
+  -webkit-user-select: text;
+  user-select: text;
 }
 .r-inner h1, .r-inner h2, .r-inner h3 {
   font-family: var(--font-read); font-weight: 600;
@@ -902,7 +922,7 @@ body.r-debug .r-book {
 @media (max-width: 768px) {
   .r-content { padding: 56px 24px; }
   .r-pages { column-count: 1; column-gap: 40px; }
-  .r-click-zone { width: 14%; }
+  .r-click-zone { width: 50%; }
   .r-toolbar { padding: 8px 10px; }
   .r-title { max-width: 120px; font-size: 13px; }
   .r-toolbar .icon-btn { width: 34px; height: 34px; }
@@ -1013,13 +1033,13 @@ body.r-debug .r-book {
     </div>
   </div>
   <div class="r-content" id="r-content">
-    <div class="r-click-zone prev" data-dir="prev"></div>
+    <div class="r-click-zone prev" data-dir="prev" onclick="bookAreaTapped(event)"></div>
     <div class="r-book" id="r-book" onclick="bookAreaTapped(event)">
       <div class="r-pages" id="r-pages">
         <div class="r-inner" id="r-inner"></div>
       </div>
     </div>
-    <div class="r-click-zone next" data-dir="next"></div>
+    <div class="r-click-zone next" data-dir="next" onclick="bookAreaTapped(event)"></div>
     <!-- Hold-to-turn circular indicator, positioned at cursor on hover/press.
          The ring is an SVG (needs vector stroke animation for fill progress).
          The arrow is a Phosphor caret icon layered over it, swapped by
@@ -2402,6 +2422,7 @@ document.addEventListener('keydown', (e) => {
       if (Math.abs(dx) >= swipeThreshold()) {
         if (dx < 0) readerNext();
         else readerPrev();
+        _gestureJustResolved = true;
       }
       hideSwipeProgress();
     }
@@ -2511,6 +2532,7 @@ function startHold(dir, x, y) {
     _holdTimer = null;
     if (dir === 'next') readerNext();
     else if (dir === 'prev') readerPrev();
+    _gestureJustResolved = true;
     cancelHold(true);
   }, HOLD_MS);
 }
@@ -2668,12 +2690,15 @@ function toggleReaderUI() {
   document.body.classList.toggle('r-ui-visible', uiVisible);
 }
 
-// Click handler on #r-book. In reading mode: tap anywhere toggles UI.
-// In editing mode: the sentence-select IIFE handles tap, and its preventDefault
-// stops this from firing. If a long-press just resolved into editing-mode entry,
-// the pointer code also eats the click so we don't immediately toggle UI.
+// Click handler on #r-book and both click-zones. A single tap anywhere in
+// the reader area (in reading mode) toggles the UI. Bails if a hold or swipe
+// just resolved — the gesture already did its job and we don't want the
+// trailing click to also toggle UI. Also bails in editing mode, where the
+// sentence-select IIFE handles taps on text.
+let _gestureJustResolved = false;
 function bookAreaTapped(ev) {
   if (!isReading()) return;
+  if (_gestureJustResolved) { _gestureJustResolved = false; return; }
   if (ev && ev.defaultPrevented) return;
   toggleReaderUI();
 }
@@ -3156,30 +3181,21 @@ if ('serviceWorker' in navigator) {
 function showUpdateToast(sw) { waitingSW = sw; $('update-toast').classList.add('visible'); }
 function applyUpdate() { if (waitingSW) waitingSW.postMessage('skipWaiting'); }
 
-// ===== SENTENCE SELECTION + EDITING-MODE ENTRY =====
-// Two jobs:
-//   1. In reading mode — detect long-press on text and enter editing mode,
-//      selecting the sentence at the press point.
-//   2. In editing mode — tap on text selects the sentence containing the tap.
-// Native drag/long-press-drag selection still works on top of this; we only
-// intercept clean taps and clean holds.
+// ===== SENTENCE SELECTION =====
+// In editing mode, a single tap on text selects the sentence containing the
+// tap point. Native drag-select still works alongside this for refining.
+// Long-press was removed — editing mode is entered exclusively via the
+// menu's "Mark text" button, which makes the mode change deliberate.
 (() => {
   const hasSegmenter = typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function';
   const sentenceSegmenter = hasSegmenter
     ? new Intl.Segmenter(undefined, { granularity: 'sentence' })
     : null;
 
-  const TAP_MAX_MOVEMENT = 6;     // px — max drift for a "clean" gesture
-  const TAP_MAX_DURATION = 350;   // ms — up to this = tap
-  const LONG_PRESS_MS   = 500;    // ms — hold this long = long-press
+  const TAP_MAX_MOVEMENT = 6;     // px — max drift for a "clean" tap
+  const TAP_MAX_DURATION = 350;   // ms — longer than this is a hold or drag
 
   let downX = 0, downY = 0, downTime = 0, downed = false;
-  let longPressTimer = null;
-  let longPressFired = false;
-
-  function clearLongPress() {
-    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
-  }
 
   function onPointerDown(e) {
     if (e.button !== undefined && e.button !== 0) return;
@@ -3187,63 +3203,27 @@ function applyUpdate() { if (waitingSW) waitingSW.postMessage('skipWaiting'); }
     downY = e.clientY;
     downTime = Date.now();
     downed = true;
-    longPressFired = false;
-    clearLongPress();
-
-    // Arm long-press only in reading mode and only on text targets.
-    const target = e.target;
-    if (!target || target.nodeType !== 1) return;
-    if (target.closest('a, img, code, pre, figure')) return;
-    if (!isReading()) return;
-
-    const px = e.clientX, py = e.clientY;
-    longPressTimer = setTimeout(() => {
-      longPressTimer = null;
-      if (!downed) return;
-      // Still roughly stationary? Then fire.
-      const dx = Math.abs(px - downX), dy = Math.abs(py - downY);
-      if (dx > TAP_MAX_MOVEMENT || dy > TAP_MAX_MOVEMENT) return;
-      longPressFired = true;
-      enterEditingMode();
-      selectSentenceAt(px, py);
-      updateEditingActions();
-    }, LONG_PRESS_MS);
-  }
-
-  function onPointerMove(e) {
-    if (!downed) return;
-    const dx = Math.abs(e.clientX - downX);
-    const dy = Math.abs(e.clientY - downY);
-    if (dx > TAP_MAX_MOVEMENT || dy > TAP_MAX_MOVEMENT) clearLongPress();
   }
 
   function onPointerUp(e) {
-    clearLongPress();
     if (!downed) return;
     downed = false;
 
-    // If long-press already fired, eat the trailing click so r-book's
-    // bookAreaTapped doesn't interpret it as a UI toggle.
-    if (longPressFired) {
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
-
+    // Only act on clean taps. Drags and long-holds pass through to the
+    // browser's native text-selection behavior.
     const dx = Math.abs(e.clientX - downX);
     const dy = Math.abs(e.clientY - downY);
     const dt = Date.now() - downTime;
     if (dx > TAP_MAX_MOVEMENT || dy > TAP_MAX_MOVEMENT) return;
     if (dt > TAP_MAX_DURATION) return;
 
-    // Non-text targets do nothing special — let the tap propagate to
-    // bookAreaTapped (which toggles UI in reading mode, no-ops in editing).
+    // Non-text targets do nothing — let the tap propagate.
     const target = e.target;
     if (!target || target.nodeType !== 1) return;
     if (target.closest('a, img, code, pre, figure')) return;
 
-    // Only in editing mode do taps select sentences. In reading mode, the tap
-    // passes through to bookAreaTapped for UI toggle.
+    // Only fires in editing mode. Reading-mode taps pass through to
+    // bookAreaTapped for menu toggle.
     if (!isEditing()) return;
 
     if (!selectSentenceAt(e.clientX, e.clientY)) return;
@@ -3253,12 +3233,10 @@ function applyUpdate() { if (waitingSW) waitingSW.postMessage('skipWaiting'); }
   }
 
   function onPointerCancel() {
-    clearLongPress();
     downed = false;
-    longPressFired = false;
   }
 
-  // Common: find sentence at screen point, set browser selection to that range.
+  // Find sentence at screen point, set browser selection to that range.
   function selectSentenceAt(x, y) {
     const range = sentenceRangeAtPoint(x, y);
     if (!range) return false;
@@ -3422,7 +3400,6 @@ function applyUpdate() { if (waitingSW) waitingSW.postMessage('skipWaiting'); }
   const inner = $('r-inner');
   if (inner) {
     inner.addEventListener('pointerdown', onPointerDown);
-    inner.addEventListener('pointermove', onPointerMove);
     inner.addEventListener('pointerup', onPointerUp);
     inner.addEventListener('pointercancel', onPointerCancel);
     inner.addEventListener('click', onClickCapture, true);
