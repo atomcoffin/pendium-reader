@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Tomen</title>
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#C45D3E">
+<meta name="theme-color" content="#FAF6F1" media="(prefers-color-scheme: light)" id="theme-color-light">
+<meta name="theme-color" content="#1A1614" media="(prefers-color-scheme: dark)" id="theme-color-dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <!-- Phosphor icons (regular weight only) -->
@@ -3396,6 +3397,14 @@ document.addEventListener('click', e => {
   if (wrap && !wrap.contains(e.target)) closeImportMenu();
 });
 
+// Map from theme name → the paper background color for that theme. Used to
+// update the OS-level notification bar / status bar color so it blends with
+// Tomen's background rather than showing a default bar.
+const _THEME_PAPER_COLORS = {
+  '':      '#FAF6F1',  // light (default)
+  'sepia': '#F4ECD8',
+  'dark':  '#1A1614'
+};
 function setTheme(theme) {
   // Remove old theme classes without wiping other body classes (r-ui-visible,
   // r-mode-editing, r-debug, etc.)
@@ -3403,6 +3412,28 @@ function setTheme(theme) {
   if (theme) document.body.classList.add(theme);
   document.querySelectorAll('.theme-btn').forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
   localStorage.setItem('tomen_theme', theme);
+  updateSystemBarColor(theme);
+}
+
+// Keep the browser/OS notification bar color synced with Tomen's background.
+// We remove the OS-preference media queries from the two static meta tags on
+// first user-directed theme change and collapse to a single active tag, so
+// the user's explicit theme choice wins over OS preference.
+function updateSystemBarColor(theme) {
+  const color = _THEME_PAPER_COLORS[theme || ''] || _THEME_PAPER_COLORS[''];
+  // Remove the scheme-specific tags so they don't override a user choice.
+  const lt = document.getElementById('theme-color-light');
+  const dk = document.getElementById('theme-color-dark');
+  if (lt) lt.remove();
+  if (dk) dk.remove();
+  // Ensure exactly one active theme-color meta.
+  let meta = document.querySelector('meta[name="theme-color"]:not([media])');
+  if (!meta) {
+    meta = document.createElement('meta');
+    meta.name = 'theme-color';
+    document.head.appendChild(meta);
+  }
+  meta.content = color;
 }
 
 // ===== DEVICE-BUCKETED PREFERENCES =====
