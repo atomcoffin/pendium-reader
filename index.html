@@ -516,6 +516,12 @@ body.r-mode-editing .r-toolbar-editing { display: flex; }
   margin: 0 8px;
   opacity: 0.6;
 }
+/* Time remaining in the footer is secondary to book/chapter text —
+   same family but in the stone color, slightly lower in the visual stack. */
+.r-footer-ref-time {
+  color: var(--stone);
+  opacity: 0.8;
+}
 body.r-ui-visible .r-footer-ref {
   opacity: 0;
 }
@@ -1513,7 +1519,14 @@ body.r-mode-editing .r-inner {
       </div>
     </div>
     <div class="settings-section">
-      <div class="settings-label">Library data</div>
+      <div class="settings-label">Reading pace</div>
+      <div class="theme-row">
+        <button class="theme-btn" data-pace="immersed" onclick="setReadingPace('immersed')">Immersed</button>
+        <button class="theme-btn active" data-pace="steady" onclick="setReadingPace('steady')">Steady</button>
+        <button class="theme-btn" data-pace="brisk" onclick="setReadingPace('brisk')">Brisk</button>
+      </div>
+      <div class="settings-hint">Used to estimate reading time remaining. Adjust if estimates feel off.</div>
+    </div>
       <button class="export-btn" onclick="exportLibrary()">
         <i class="ph ph-download-simple"></i>
         <span>Export library</span>
@@ -2239,9 +2252,21 @@ function renderTextView(el, books) {
   el.innerHTML = '<div class="view-text">' + books.map(b => {
     const p = b.progress || 0;
     const isReading = p > 0 && p < 100;
+    // Estimate remaining time based on HTML content size scaled ~0.75 to
+    // approximate text-only length (tags, whitespace inflate raw length).
+    // Fall back silently if contentSize is missing (legacy books).
+    let timeMeta = '';
+    if (b.contentSize) {
+      const textChars = b.contentSize * 0.75;
+      const remainingChars = textChars * (1 - p / 100);
+      const mins = estimateReadingMinutes(remainingChars);
+      const formatted = formatReadingTime(mins);
+      if (formatted && p < 100) timeMeta = ' · <span style="font-family:var(--font-mono);font-size:11px">' + formatted + '</span>';
+    }
+    const progressMeta = isReading ? ' · <span style="font-family:var(--font-mono);font-size:11px">' + Math.round(p) + '%</span>' : '';
     return `<div class="tv-item" onclick="openBookById('${b.id}')">
       <div class="tv-title${isReading ? ' reading' : ''}">${esc(b.title)}</div>
-      <div class="tv-author">${esc(b.author || 'Unknown')}${isReading ? ' · <span style="font-family:var(--font-mono);font-size:11px">' + Math.round(p) + '%</span>' : ''}</div>
+      <div class="tv-author">${esc(b.author || 'Unknown')}${progressMeta}${timeMeta}</div>
       ${isReading ? '<div class="tv-progress"><div class="tv-progress-fill" style="width:' + p + '%"></div></div>' : ''}
     </div>`;
   }).join('') + '</div>';
@@ -3121,6 +3146,10 @@ function updateProgress() {
   const pct = ((currentChapterIndex + chapterPct) / chapters.length) * 100;
   $('r-progress').style.width = pct + '%';
   $('r-pct').textContent = Math.round(pct) + '%';
+  // Footer reference carries chapter-time-remaining which changes with
+  // every spread. Kept here rather than in a separate hook so the progress
+  // bar and the footer move together visually.
+  updateReaderRefs();
 }
 
 // Compute the in-memory progress fields and persist them. Debounced because
@@ -3711,11 +3740,28 @@ function updateReaderRefs() {
   const bookTitle = currentBook.title || '';
   const tocItem = toc.find(item => item.index === currentChapterIndex);
   const chapterTitle = tocItem?.title || chapters[currentChapterIndex]?.title || '';
-  if (bookTitle && chapterTitle) {
-    el.innerHTML = `${esc(bookTitle)}<span class="r-footer-ref-sep">·</span>${esc(chapterTitle)}`;
-  } else {
-    el.textContent = bookTitle || chapterTitle || '';
+
+  // Compute estimated time remaining in the current chapter. Uses the
+  // visible chapter text (innerEl.textContent, so tags don't inflate) and
+  // proportional position (currentSpread / totalSpreads). Only shows if
+  // we're partway through and the remaining time is meaningful.
+  let timeRef = '';
+  const innerEl = $('r-inner');
+  if (innerEl && totalSpreads > 0) {
+    const totalChars = innerEl.textContent.length;
+    const frac = totalSpreads > 1 ? (currentSpread / (totalSpreads - 1)) : 1;
+    const remainingChars = Math.max(0, totalChars * (1 - frac));
+    const mins = estimateReadingMinutes(remainingChars);
+    const formatted = formatReadingTime(mins);
+    if (formatted) timeRef = formatted + ' left';
   }
+
+  const sep = '<span class="r-footer-ref-sep">·</span>';
+  const parts = [];
+  if (bookTitle) parts.push(esc(bookTitle));
+  if (chapterTitle) parts.push(esc(chapterTitle));
+  if (timeRef) parts.push(`<span class="r-footer-ref-time">${esc(timeRef)}</span>`);
+  el.innerHTML = parts.join(sep);
 }
 
 // ===== UI TOGGLE =====
@@ -3972,6 +4018,12 @@ function toggleProfile() {
   ov.classList.toggle('open');
   if (ov.classList.contains('open')) {
     $('profile-name').value = localStorage.getItem('tomen_name') || '';
+    // Reflect saved pace on the button group. Defaults to Steady for new
+    // users who haven't picked yet.
+    const pace = localStorage.getItem('tomen_readingPace') || 'steady';
+    document.querySelectorAll('.theme-btn[data-pace]').forEach(b =>
+      b.classList.toggle('active', b.dataset.pace === pace)
+    );
   }
 }
 function updateProfileName(name) {
@@ -4086,6 +4138,61 @@ function setBrightness(value) {
   const slider = $('sl-brightness');
   if (slider && slider.value != String(v)) slider.value = v;
   localStorage.setItem('tomen_brightness', String(v));
+}
+
+// Reading pace: maps a user-chosen label to a WPM value for time estimation.
+// Non-judgmental labels — no "slow" or "fast" — because reading pace is a
+// stylistic choice, not a capability ranking. Values based on commonly
+// cited averages (185-400 WPM range for English prose).
+const _READING_PACES = {
+  immersed: 200,  // careful, attentive reading; deeper engagement with text
+  steady:   265,  // the commonly cited adult average
+  brisk:    340   // confident fluent reading; familiar material
+};
+function setReadingPace(pace) {
+  const valid = _READING_PACES[pace] ? pace : 'steady';
+  localStorage.setItem('tomen_readingPace', valid);
+  document.querySelectorAll('.theme-btn[data-pace]').forEach(b =>
+    b.classList.toggle('active', b.dataset.pace === valid)
+  );
+  // Refresh any currently-visible time estimates.
+  if (typeof updateReaderRefs === 'function') updateReaderRefs();
+  if ($('screen-lib')?.classList.contains('active')) renderLibrary();
+}
+function getReadingWPM() {
+  const pace = localStorage.getItem('tomen_readingPace') || 'steady';
+  return _READING_PACES[pace] || _READING_PACES.steady;
+}
+
+// Estimate reading time for a given character count at the user's chosen
+// pace. Assumes English prose averages ~5 characters per word (including
+// the trailing space). Returns minutes as a float.
+function estimateReadingMinutes(chars) {
+  if (!chars || chars < 0) return 0;
+  const wpm = getReadingWPM();
+  const words = chars / 5;
+  return words / wpm;
+}
+
+// Format a duration in minutes for display. Hybrid format:
+//   <1 min          →  'less than a minute'
+//   <60 min         →  '12 min'   (precise)
+//   >=60 min        →  '~2h'  or  '~2h 30min' if non-trivial minutes
+// Precise under 1h because that's the "can I finish this chapter?" use
+// case where precision matters. Fuzzy over 1h because our estimate has
+// too much variance to claim minute accuracy across hours.
+function formatReadingTime(minutes) {
+  if (!isFinite(minutes) || minutes <= 0) return '';
+  if (minutes < 1) return 'less than a min';
+  if (minutes < 60) return `${Math.round(minutes)} min`;
+  const hours = Math.floor(minutes / 60);
+  const mins = Math.round(minutes - hours * 60);
+  // Round down minutes into 30-min buckets over 1h for fuzzy honest output.
+  // 2h 7min → ~2h; 2h 22min → ~2h; 2h 48min → ~3h.
+  // But keep 2h 15-45min range as "~2h 30min" so half-hour differences show.
+  if (mins < 15) return `~${hours}h`;
+  if (mins < 45) return `~${hours}h 30min`;
+  return `~${hours + 1}h`;
 }
 // Reading face: swap between Siche Text (serif), Uncut Sans (sans), and
 // Dolph YY (mono). Changes CSS variables only — no chapter re-render, no
