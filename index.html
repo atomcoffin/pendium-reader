@@ -427,27 +427,62 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
   background: var(--ember); z-index: 50; width: 0;
 }
 
+/* Reader toolbars. Top bar carries app-level chrome (Library + title +
+   Settings). Bottom bar carries book-level chrome (Contents + Marks +
+   Appearance + page arrows). Both bars span full viewport width (their
+   background reaches the screen edges) but their INNER content is
+   constrained to the reading width so the controls align with the content.
+   Makes the chrome feel like it belongs to the page, not to the viewport. */
 .r-toolbar {
   position: absolute;
-  top: 0; left: 0; right: 0;
-  display: flex; align-items: center; justify-content: space-between;
-  /* Safe-area top handles iPhone notch / Dynamic Island when installed.
-     Also left/right in case of landscape with home indicator. */
-  padding: calc(10px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) 10px calc(16px + env(safe-area-inset-left, 0px));
-  background: color-mix(in srgb, var(--paper) 82%, transparent);
+  left: 0; right: 0;
+  z-index: 10;
+  background: color-mix(in srgb, var(--paper) 90%, var(--ink) 2%);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border-bottom: 0.5px solid var(--border);
-  z-index: 10;
-  transition: opacity 180ms ease;
+  transition: opacity 180ms ease, transform 220ms var(--ease);
+  pointer-events: auto;
 }
+.r-toolbar-top {
+  top: 0;
+  border-bottom: 0.5px solid var(--border);
+  padding: calc(8px + env(safe-area-inset-top, 0px)) 0 8px 0;
+}
+.r-toolbar-bottom {
+  bottom: 0;
+  border-top: 0.5px solid var(--border);
+  padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px)) 0;
+}
+/* Inner container constrains chrome content to reading width. Falls back
+   to viewport max minus padding if --reading-width isn't set. The outer
+   background still extends edge-to-edge so the bars feel grounded. */
+.r-toolbar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: min(var(--reading-width, 1200px), calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 0 calc(8px + env(safe-area-inset-right, 0px)) 0 calc(8px + env(safe-area-inset-left, 0px));
+  gap: 12px;
+}
+/* Hidden state — slide off screen on toggle, fade out. Top slides up,
+   bottom slides down, so they visually "clear out" from the content. */
 .r-toolbar.hidden { opacity: 0; pointer-events: none; }
+.r-toolbar-top.hidden { transform: translateY(-8px); }
+.r-toolbar-bottom.hidden { transform: translateY(8px); }
 
-/* Toolbar mode swap. Reading toolbar shown by default; editing toolbar hidden
-   until readerMode === 'editing' (the body gets .r-mode-editing). */
+/* Toolbar mode swap. Reading toolbars shown by default; editing toolbar
+   hidden until readerMode === 'editing'. During editing mode, the bottom
+   bar also hides so the focus is entirely on the editing actions. */
 .r-toolbar-editing { display: none; }
 body.r-mode-editing .r-toolbar-reading { display: none; }
-body.r-mode-editing .r-toolbar-editing { display: flex; }
+body.r-mode-editing .r-toolbar-editing { display: block; }
+body.r-mode-editing .r-toolbar-bottom {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+}
 
 /* Editing toolbar accent — the accent color hints at "doing something" without
    being loud. Save/bookmark icons use ember so they stand out. */
@@ -471,16 +506,19 @@ body.r-mode-editing .r-toolbar-editing { display: flex; }
   margin-left: 4px;
 }
 /* Passive title on the new top bar carries Book · Chapter rather than
-   just the book, so it needs more room. The dot separator between parts
-   sits at slightly lower opacity than the text for visual hierarchy. */
+   just the book, so it needs more room. Uses ink color at 85% opacity —
+   recessive enough to be secondary but genuinely legible against paper
+   (the previous stone color faded below usable contrast). */
 .r-title-passive {
   max-width: min(50vw, 520px);
   font-size: 13px;
-  margin-left: 0;
+  margin-left: 4px;
+  color: color-mix(in srgb, var(--ink) 85%, transparent);
 }
 .r-title-sep {
   margin: 0 8px;
-  opacity: 0.5;
+  opacity: 0.4;
+  color: var(--stone);
 }
 
 /* Reader content — no scrolling, content paginates into a two-column spread.
@@ -613,98 +651,6 @@ body.r-ui-visible .r-footer-ref {
    is already disabled by readerInteractionBlocked() during editing. */
 body.r-mode-editing .r-click-zone {
   pointer-events: none;
-}
-
-/* Floating island nav — centered pill at bottom with 4 nav buttons. The
-   pill sits clear of the bottom edge (20px + safe area) so it reads as a
-   distinct object, not a tab bar welded to the edge. Backdrop blur blends
-   it with the page behind. Appears/disappears with the reader UI toggle,
-   scaling up from 95% for a subtle entrance. */
-.r-island {
-  position: absolute;
-  left: 50%;
-  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-  transform: translateX(-50%) translateY(8px) scale(0.96);
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 6px;
-  background: color-mix(in srgb, var(--paper) 92%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 0.5px solid var(--border);
-  border-radius: 999px;
-  box-shadow: var(--shadow-float);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 220ms var(--ease), transform 220ms var(--ease);
-  z-index: 10;
-}
-body.r-ui-visible .r-island {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0) scale(1);
-  pointer-events: auto;
-}
-/* Island hides during highlight-mode editing — the editing toolbar at the
-   top takes full attention and nav would be a distraction + a place for
-   mis-taps while selecting text. */
-body.r-mode-editing .r-island {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.r-island-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 8px 14px;
-  min-width: 64px;
-  background: transparent;
-  border: 0;
-  border-radius: 999px;
-  color: var(--stone);
-  font-family: var(--font-ui);
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: color 140ms ease, background 140ms ease;
-}
-.r-island-btn:hover {
-  color: var(--ember);
-  background: color-mix(in srgb, var(--ink) 4%, transparent);
-}
-.r-island-btn:active {
-  transform: scale(0.96);
-}
-.r-island-btn .ph {
-  font-size: 18px;
-  line-height: 1;
-}
-
-.r-island-label {
-  line-height: 1;
-  white-space: nowrap;
-}
-
-/* Narrow phones — shrink the island to keep it from crowding the screen.
-   Labels stay visible at smaller sizes since they're short words. */
-@media (max-width: 480px) {
-  .r-island {
-    padding: 4px;
-    gap: 0;
-  }
-  .r-island-btn {
-    padding: 7px 10px;
-    min-width: 56px;
-    gap: 2px;
-    font-size: 8.5px;
-  }
-  .r-island-btn .ph {
-    font-size: 16px;
-  }
 }
 
 /* Hold-to-turn circular indicator. Positioned via inline left/top at cursor.
@@ -1632,25 +1578,33 @@ body.r-mode-editing .r-inner {
        (library, contents, marks, settings) live in the floating island at
        the bottom. Editing-mode toolbar below takes over when the user is
        actively highlighting text. -->
-  <div class="r-toolbar r-toolbar-reading" id="r-toolbar">
-    <div class="r-toolbar-left">
-      <span class="r-title r-title-passive" id="r-title"></span>
-    </div>
-    <div class="r-toolbar-right">
-      <button class="icon-btn" onclick="readerPrev()" title="Previous page"><i class="ph ph-caret-left"></i></button>
-      <button class="icon-btn" onclick="readerNext()" title="Next page"><i class="ph ph-caret-right"></i></button>
+  <!-- Reading toolbar (top). App-level chrome: Library on left, passive
+       book/chapter info center-left, global Settings (profile overlay) on
+       the right. No book-level controls here — those are in the bottom bar.
+       Editing-mode toolbar below takes over when actively highlighting. -->
+  <div class="r-toolbar r-toolbar-reading r-toolbar-top" id="r-toolbar">
+    <div class="r-toolbar-inner">
+      <div class="r-toolbar-left">
+        <button class="icon-btn" onclick="showLibrary()" title="Back to library" aria-label="Back to library"><i class="ph ph-books"></i></button>
+        <span class="r-title r-title-passive" id="r-title"></span>
+      </div>
+      <div class="r-toolbar-right">
+        <button class="icon-btn" onclick="toggleProfile()" title="Settings" aria-label="Settings"><i class="ph ph-gear-six"></i></button>
+      </div>
     </div>
   </div>
   <!-- Editing toolbar (shown while readerMode === 'editing'). Replaces the
        reading toolbar entirely so the mode change is unmissable. -->
-  <div class="r-toolbar r-toolbar-editing" id="r-toolbar-edit">
-    <div class="r-toolbar-left">
-      <button class="icon-btn" onclick="exitEditingMode()" title="Done"><i class="ph ph-x"></i></button>
-      <span class="r-title r-edit-title">Marking text</span>
-    </div>
-    <div class="r-toolbar-right">
-      <button class="icon-btn r-edit-action" id="r-edit-save" onclick="saveEditingMark(false)" title="Save highlight"><i class="ph ph-check"></i></button>
-      <button class="icon-btn r-edit-action" id="r-edit-bookmark" onclick="saveEditingMark(true)" title="Save + bookmark"><i class="ph ph-bookmark-simple"></i></button>
+  <div class="r-toolbar r-toolbar-editing r-toolbar-top" id="r-toolbar-edit">
+    <div class="r-toolbar-inner">
+      <div class="r-toolbar-left">
+        <button class="icon-btn" onclick="exitEditingMode()" title="Done"><i class="ph ph-x"></i></button>
+        <span class="r-title r-edit-title">Marking text</span>
+      </div>
+      <div class="r-toolbar-right">
+        <button class="icon-btn r-edit-action" id="r-edit-save" onclick="saveEditingMark(false)" title="Save highlight"><i class="ph ph-check"></i></button>
+        <button class="icon-btn r-edit-action" id="r-edit-bookmark" onclick="saveEditingMark(true)" title="Save + bookmark"><i class="ph ph-bookmark-simple"></i></button>
+      </div>
     </div>
   </div>
   <div class="r-content" id="r-content">
@@ -1678,28 +1632,22 @@ body.r-mode-editing .r-inner {
     <!-- Swipe-to-turn edge glow. Tall narrow ember bloom on whichever side
          the user is swiping toward. Opacity scales with swipe progress. -->
     <div class="r-swipe-ring" id="r-swipe-ring" aria-hidden="true"></div>
-    <!-- Floating island nav. Centered pill at bottom-center carrying the four
-         primary nav actions (Library, Contents, Marks, Settings). Visible
-         only when reader UI is shown. Replaces the old scattered toolbar +
-         quick-bar chrome with a single consolidated anchor. -->
-    <nav class="r-island" id="r-island" aria-label="Reader navigation">
-      <button class="r-island-btn" onclick="showLibrary()" aria-label="Back to library">
-        <i class="ph ph-arrow-left" aria-hidden="true"></i>
-        <span class="r-island-label">Library</span>
-      </button>
-      <button class="r-island-btn" onclick="toggleTOC()" aria-label="Contents">
-        <i class="ph ph-list-bullets" aria-hidden="true"></i>
-        <span class="r-island-label">Contents</span>
-      </button>
-      <button class="r-island-btn" onclick="toggleMarks()" aria-label="Marks">
-        <i class="ph ph-bookmarks" aria-hidden="true"></i>
-        <span class="r-island-label">Marks</span>
-      </button>
-      <button class="r-island-btn" onclick="toggleSettings()" aria-label="Settings">
-        <i class="ph ph-gear-six" aria-hidden="true"></i>
-        <span class="r-island-label">Settings</span>
-      </button>
-    </nav>
+  </div>
+  <!-- Reading toolbar (bottom). Book-level chrome: Contents / Marks /
+       Appearance / page arrows. Width matches reading-width so the bars
+       visually belong to the content. Hidden during highlight mode. -->
+  <div class="r-toolbar r-toolbar-bottom" id="r-toolbar-bottom">
+    <div class="r-toolbar-inner">
+      <div class="r-toolbar-left">
+        <button class="icon-btn" onclick="toggleTOC()" title="Contents" aria-label="Contents"><i class="ph ph-list-bullets"></i></button>
+        <button class="icon-btn" onclick="toggleMarks()" title="Marks" aria-label="Marks"><i class="ph ph-bookmark-simple"></i></button>
+        <button class="icon-btn" onclick="toggleSettings()" title="Appearance" aria-label="Appearance"><i class="ph ph-sliders"></i></button>
+      </div>
+      <div class="r-toolbar-right">
+        <button class="icon-btn" onclick="readerPrev()" title="Previous page" aria-label="Previous page"><i class="ph ph-caret-left"></i></button>
+        <button class="icon-btn" onclick="readerNext()" title="Next page" aria-label="Next page"><i class="ph ph-caret-right"></i></button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -3277,6 +3225,7 @@ async function openBookById(id) {
     uiVisible = true;
     $('r-toolbar').classList.remove('hidden');
     $('r-toolbar-edit').classList.remove('hidden');
+    $('r-toolbar-bottom').classList.remove('hidden');
     document.body.classList.add('r-ui-visible');
     // Always start books in reading mode (editing mode is never persisted)
     readerMode = 'reading';
@@ -4228,6 +4177,7 @@ function toggleReaderUI() {
   uiVisible = !uiVisible;
   $('r-toolbar').classList.toggle('hidden', !uiVisible);
   $('r-toolbar-edit').classList.toggle('hidden', !uiVisible);
+  $('r-toolbar-bottom').classList.toggle('hidden', !uiVisible);
   document.body.classList.toggle('r-ui-visible', uiVisible);
 }
 
