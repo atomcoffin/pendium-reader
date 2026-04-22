@@ -609,12 +609,12 @@ body.r-mode-editing .r-click-zone {
 .r-quick {
   position: absolute;
   left: 50%;
-  bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%) translateY(8px);
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  width: min(80vw, 600px);
+  gap: 4px;
+  width: min(60vw, 420px);
   opacity: 0;
   pointer-events: none;
   transition: opacity 200ms ease, transform 200ms ease;
@@ -626,14 +626,14 @@ body.r-ui-visible .r-quick {
   pointer-events: auto;
 }
 
-/* Each slider bar: small glyph on the left, drag-body in the middle, big
-   glyph on the right. Drag is horizontal for all three. */
+/* Thin strip — tiny left icon, drag-body track. The whole strip is padded
+   on each edge so the thumb has room at slider extremes without clipping. */
 .r-quick-bar {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 18px;
-  height: 44px;
+  gap: 10px;
+  padding: 0 12px;
+  height: 18px;
   background: color-mix(in srgb, var(--paper) 78%, transparent);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -655,8 +655,16 @@ body.r-ui-visible .r-quick {
   border-color: color-mix(in srgb, var(--ink) 18%, transparent);
 }
 
-/* The flex-growing middle — drag surface AND slider track. The body holds
-   both the track line (its ::before) and the thumb (absolute child). */
+/* Left icon on each strip — the only visual identifier of what control
+   this strip adjusts. Kept small so the strip stays thin. */
+.r-quick-icon {
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+/* Track body — thin rail with centered thumb positioned by JS. */
 .r-quick-body {
   flex: 1;
   position: relative;
@@ -668,7 +676,7 @@ body.r-ui-visible .r-quick {
   content: '';
   width: 100%;
   height: 1px;
-  background: color-mix(in srgb, currentColor 40%, transparent);
+  background: color-mix(in srgb, currentColor 35%, transparent);
   border-radius: 1px;
 }
 /* Thumb — small ember dot positioned along the track. JS sets its `left`
@@ -676,8 +684,8 @@ body.r-ui-visible .r-quick {
 .r-quick-thumb {
   position: absolute;
   top: 50%;
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--ember);
   transform: translate(-50%, -50%);
@@ -688,24 +696,6 @@ body.r-ui-visible .r-quick {
 .r-quick-bar:hover .r-quick-thumb {
   background: color-mix(in srgb, var(--ember) 88%, var(--ink));
 }
-
-/* Font-size glyph extremes */
-.r-glyph-big   { font-size: 20px; font-weight: 500; }
-.r-glyph-small { font-size: 12px; font-weight: 500; }
-
-/* Line-height glyph extremes — three stacked lines with different gap */
-.r-glyph-lines-loose, .r-glyph-lines-tight {
-  display: flex; flex-direction: column; align-items: center;
-}
-.r-glyph-lines-loose span, .r-glyph-lines-tight span {
-  width: 16px; height: 1px; background: currentColor;
-}
-.r-glyph-lines-loose { gap: 5px; }
-.r-glyph-lines-tight { gap: 1.5px; }
-
-/* Width glyph extremes */
-.r-glyph-bar-short { width: 12px; height: 2px; background: currentColor; border-radius: 1px; }
-.r-glyph-bar-long  { width: 42px; height: 2px; background: currentColor; border-radius: 1px; }
 
 /* Hold-to-turn circular indicator. Positioned via inline left/top at cursor.
    Two visible states: 'hover' (empty ring shown at 55% opacity when cursor is
@@ -1100,6 +1090,190 @@ body.r-mode-editing .r-inner {
   color: var(--stone); min-width: 32px; text-align: center;
 }
 
+/* ===== Settings panel redesign =====
+   Compact grouped layout replacing the flat list. Three groups — Display,
+   Typography, Layout — in a two-column grid on desktop, single column on
+   mobile. Group headers demarcate concept clusters; rows are label+control
+   pairs aligned on a shared baseline. The existing .settings classes (handle,
+   etc.) still apply; .settings-redesign just swaps the content padding and
+   enables the grid. */
+
+.settings-redesign {
+  padding: 16px 24px 28px;
+  max-height: 80vh;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px 32px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* Layout group spans both columns because it has more rows than the others
+   and looks balanced as a wide section below the two top groups. */
+.settings-group-wide {
+  grid-column: 1 / -1;
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Group header — small uppercase label with a thin rule underneath to
+   visually separate from the row list. Same color family as other UI
+   captions; slightly heavier than body UI. */
+.settings-group-header {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--stone);
+  padding-bottom: 6px;
+  border-bottom: 0.5px solid var(--border);
+  margin-bottom: 2px;
+}
+
+/* Row — label on the left, control on the right. Shared baseline; fixed
+   label width so controls align across rows within a group. */
+.settings-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  align-items: center;
+  gap: 14px;
+  min-height: 32px;
+}
+
+.settings-row-label {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--stone);
+  font-weight: 500;
+}
+
+/* Segmented control — the all-new replacement for the old .theme-row +
+   .theme-btn pattern. Pill container with children dividing the space.
+   Active state uses filled ember with paper text for strong legibility. */
+.seg-row {
+  display: flex;
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  padding: 2px;
+  gap: 2px;
+}
+.seg-btn {
+  flex: 1;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--stone);
+  cursor: pointer;
+  border-radius: 999px;
+  transition: background 140ms ease, color 140ms ease;
+  white-space: nowrap;
+}
+.seg-btn:hover {
+  color: var(--ink);
+}
+.seg-btn.active {
+  background: var(--ember);
+  color: var(--paper);
+}
+.seg-btn.active:hover {
+  color: var(--paper);
+}
+
+/* Compact slider row — horizontal layout with optional leading icon and
+   trailing value display. Track is thin, thumb smaller than the old
+   range-row pattern to match the overall density reduction. */
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.slider-row input[type="range"] {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+  outline: none;
+  cursor: pointer;
+}
+.slider-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ember);
+  cursor: pointer;
+  border: 0;
+}
+.slider-row input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ember);
+  cursor: pointer;
+  border: 0;
+}
+.slider-icon {
+  font-size: 12px;
+  color: var(--stone);
+  flex-shrink: 0;
+}
+.slider-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--stone);
+  min-width: 36px;
+  text-align: right;
+}
+
+/* Mobile: single column, keep group headers, preserve row structure. */
+@media (max-width: 768px) {
+  .settings-redesign {
+    padding: 14px 20px 24px;
+  }
+  .settings-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .settings-group-wide {
+    grid-column: auto;
+  }
+  /* Labels get slightly narrower on mobile to leave more room for controls. */
+  .settings-row {
+    grid-template-columns: 100px 1fr;
+    gap: 10px;
+  }
+  .seg-btn {
+    padding: 7px 8px;
+    font-size: 12px;
+  }
+}
+
+/* Very narrow screens — stack label above control so segmented rows have
+   full row width. Keeps the layout honest rather than squeezing. */
+@media (max-width: 420px) {
+  .settings-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    min-height: 0;
+  }
+  .settings-row-label {
+    font-size: 11px;
+  }
+}
+
 /* TOC */
 .toc-panel {
   position: fixed; top: 0; left: 0; bottom: 0;
@@ -1272,8 +1446,10 @@ body.r-mode-editing .r-inner {
   .r-toolbar .icon-btn { width: 34px; height: 34px; }
   .r-toolbar .icon-btn .ph { font-size: 18px; }
   .r-pct { font-size: 10px; }
-  .r-quick { width: min(92vw, 560px); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
-  .r-quick-bar { height: 42px; }
+  .r-quick { width: min(78vw, 380px); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .r-quick-bar { height: 22px; padding: 0 10px; gap: 8px; }
+  .r-quick-icon { font-size: 12px; }
+  .r-quick-thumb { width: 10px; height: 10px; }
 }
 @media (max-width: 480px) {
   .r-content {
@@ -1292,7 +1468,7 @@ body.r-mode-editing .r-inner {
       calc(8px + env(safe-area-inset-left, 0px));
   }
   .r-title { max-width: 100px; }
-  .r-quick-bar { height: 40px; }
+  .r-quick-bar { height: 20px; }
 }
 
 /* Sort select */
@@ -1417,101 +1593,111 @@ body.r-mode-editing .r-inner {
     <!-- Swipe-to-turn edge glow. Tall narrow ember bloom on whichever side
          the user is swiping toward. Opacity scales with swipe progress. -->
     <div class="r-swipe-ring" id="r-swipe-ring" aria-hidden="true"></div>
-    <!-- Quick controls cluster. Three horizontal sliders (font/line/width)
-         stacked at the bottom center. Visible only when reader UI is showing.
-         All three use horizontal drag: left decreases, right increases. -->
+    <!-- Quick controls cluster. Three thin strips (font/line/width) at the
+         bottom center. Visible only when reader UI is shown. Left icon
+         labels which control; track shows position; no right-end glyph.
+         Drag gestures on the reader body ALSO hit these via [data-strip]. -->
     <div class="r-quick" id="r-quick" aria-hidden="true">
       <div class="r-quick-bar" data-strip="font" aria-label="Drag left or right to change font size">
-        <span class="r-glyph-small" aria-hidden="true">A</span>
+        <i class="r-quick-icon ph ph-text-aa" aria-hidden="true"></i>
         <div class="r-quick-body" aria-hidden="true"><div class="r-quick-thumb"></div></div>
-        <span class="r-glyph-big" aria-hidden="true">A</span>
       </div>
       <div class="r-quick-bar" data-strip="line" aria-label="Drag left or right to change line height">
-        <span class="r-glyph-lines-tight" aria-hidden="true"><span></span><span></span><span></span></span>
+        <i class="r-quick-icon ph ph-rows" aria-hidden="true"></i>
         <div class="r-quick-body" aria-hidden="true"><div class="r-quick-thumb"></div></div>
-        <span class="r-glyph-lines-loose" aria-hidden="true"><span></span><span></span><span></span></span>
       </div>
       <div class="r-quick-bar" data-strip="width" aria-label="Drag left or right to change reading width">
-        <span class="r-glyph-bar-short" aria-hidden="true"></span>
+        <i class="r-quick-icon ph ph-arrows-horizontal" aria-hidden="true"></i>
         <div class="r-quick-body" aria-hidden="true"><div class="r-quick-thumb"></div></div>
-        <span class="r-glyph-bar-long" aria-hidden="true"></span>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Settings overlay -->
+<!-- Settings overlay. Three groups (Display / Typography / Layout) with
+     compact two-column layout on desktop, stacked single column on mobile.
+     Each group has a small uppercase header demarcated by a rule. -->
 <div class="overlay" id="ov-settings" onclick="toggleSettings()">
-  <div class="settings" onclick="event.stopPropagation()">
+  <div class="settings settings-redesign" onclick="event.stopPropagation()">
     <div class="settings-handle"></div>
-    <div class="settings-section">
-      <div class="settings-label">Theme</div>
-      <div class="theme-row">
-        <button class="theme-btn active" data-theme="" onclick="setTheme('')">Light</button>
-        <button class="theme-btn" data-theme="sepia" onclick="setTheme('sepia')">Sepia</button>
-        <button class="theme-btn" data-theme="dark" onclick="setTheme('dark')">Dark</button>
+
+    <div class="settings-grid">
+      <div class="settings-group">
+        <div class="settings-group-header">Display</div>
+        <div class="settings-row">
+          <div class="settings-row-label">Theme</div>
+          <div class="seg-row">
+            <button class="seg-btn active" data-theme="" onclick="setTheme('')">Light</button>
+            <button class="seg-btn" data-theme="sepia" onclick="setTheme('sepia')">Sepia</button>
+            <button class="seg-btn" data-theme="dark" onclick="setTheme('dark')">Dark</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">Brightness</div>
+          <div class="slider-row">
+            <i class="ph ph-sun slider-icon" aria-hidden="true"></i>
+            <input type="range" min="0" max="100" value="100" id="sl-brightness" oninput="setBrightness(this.value)">
+            <span class="slider-value" id="brightness-display">100</span>
+          </div>
+        </div>
       </div>
-    </div>
-    <div class="settings-section">
-      <div class="settings-label">Brightness</div>
-      <div class="range-row">
-        <span class="range-label" style="font-size:12px" aria-hidden="true"><i class="ph ph-sun-dim"></i></span>
-        <input type="range" min="0" max="100" value="100" id="sl-brightness" oninput="setBrightness(this.value)">
-        <span class="range-label" style="font-size:14px" aria-hidden="true"><i class="ph ph-sun"></i></span>
+
+      <div class="settings-group">
+        <div class="settings-group-header">Typography</div>
+        <div class="settings-row">
+          <div class="settings-row-label">Face</div>
+          <div class="seg-row">
+            <button class="seg-btn active" data-face="serif" onclick="setReadingFace('serif')">Serif</button>
+            <button class="seg-btn" data-face="sans" onclick="setReadingFace('sans')">Sans</button>
+            <button class="seg-btn" data-face="mono" onclick="setReadingFace('mono')">Mono</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">Size</div>
+          <div class="slider-row">
+            <input type="range" min="14" max="28" value="18" id="sl-fontsize" oninput="setFontSize(this.value)">
+            <span class="slider-value" id="fs-display">18</span>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">Line height</div>
+          <div class="slider-row">
+            <input type="range" min="14" max="24" value="18" id="sl-lineheight" oninput="setLineHeight(this.value)">
+            <span class="slider-value" id="lh-display">1.8</span>
+          </div>
+        </div>
       </div>
-    </div>
-    <div class="settings-section">
-      <div class="settings-label">Reading face</div>
-      <div class="theme-row">
-        <button class="theme-btn active" data-face="serif" onclick="setReadingFace('serif')">Serif</button>
-        <button class="theme-btn" data-face="sans" onclick="setReadingFace('sans')">Sans</button>
-        <button class="theme-btn" data-face="mono" onclick="setReadingFace('mono')">Mono</button>
-      </div>
-    </div>
-    <div class="settings-section">
-      <div class="settings-label">Font size</div>
-      <div class="range-row">
-        <span class="range-label" style="font-size:12px">A</span>
-        <input type="range" min="14" max="28" value="18" id="sl-fontsize" oninput="setFontSize(this.value)">
-        <span class="range-label" id="fs-display">18</span>
-      </div>
-    </div>
-    <div class="settings-section">
-      <div class="settings-label">Line height</div>
-      <div class="range-row">
-        <span class="range-label">≡</span>
-        <input type="range" min="14" max="24" value="18" id="sl-lineheight" oninput="setLineHeight(this.value)">
-        <span class="range-label" id="lh-display">1.8</span>
-      </div>
-    </div>
-    <div class="settings-section">
-      <div class="settings-label">Reading width</div>
-      <div class="range-row">
-        <span class="range-label" style="font-size:10px">∣∣</span>
-        <input type="range" min="800" max="1600" step="50" value="1200" id="sl-width" oninput="setReadingWidth(this.value)">
-        <span class="range-label" id="rw-display">1200</span>
-      </div>
-    </div>
-    <div class="settings-section">
-      <div class="settings-label">Paragraphs</div>
-      <div class="theme-row">
-        <button class="theme-btn active" data-pstyle="block" onclick="setParagraphStyle('block')">Block</button>
-        <button class="theme-btn" data-pstyle="indent" onclick="setParagraphStyle('indent')">Indent</button>
-      </div>
-    </div>
-    <div class="settings-section">
-      <div class="settings-label">Paragraph spacing</div>
-      <div class="range-row">
-        <span class="range-label" style="font-size:10px" aria-hidden="true">≡</span>
-        <input type="range" min="5" max="20" step="1" value="10" id="sl-pspacing" oninput="setParagraphSpacing(this.value)">
-        <span class="range-label" id="ps-display">1.0</span>
-      </div>
-    </div>
-    <div class="settings-section">
-      <div class="settings-label">Alignment</div>
-      <div class="theme-row">
-        <button class="theme-btn active" data-align="justify" onclick="setTextAlign('justify')">Justify</button>
-        <button class="theme-btn" data-align="left" onclick="setTextAlign('left')">Left</button>
+
+      <div class="settings-group settings-group-wide">
+        <div class="settings-group-header">Layout</div>
+        <div class="settings-row">
+          <div class="settings-row-label">Reading width</div>
+          <div class="slider-row">
+            <input type="range" min="800" max="1600" step="50" value="1200" id="sl-width" oninput="setReadingWidth(this.value)">
+            <span class="slider-value" id="rw-display">1200</span>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">Paragraphs</div>
+          <div class="seg-row">
+            <button class="seg-btn active" data-pstyle="block" onclick="setParagraphStyle('block')">Block</button>
+            <button class="seg-btn" data-pstyle="indent" onclick="setParagraphStyle('indent')">Indent</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">Paragraph spacing</div>
+          <div class="slider-row">
+            <input type="range" min="5" max="20" step="1" value="10" id="sl-pspacing" oninput="setParagraphSpacing(this.value)">
+            <span class="slider-value" id="ps-display">1.0</span>
+          </div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-label">Alignment</div>
+          <div class="seg-row">
+            <button class="seg-btn active" data-align="justify" onclick="setTextAlign('justify')">Justify</button>
+            <button class="seg-btn" data-align="left" onclick="setTextAlign('left')">Left</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -4161,7 +4347,7 @@ function setTheme(theme) {
   if (theme) document.body.classList.add(theme);
   // Scope to buttons that actually carry a data-theme attribute — otherwise
   // we'd also toggle face/paragraph/align buttons which share .theme-btn.
-  document.querySelectorAll('.theme-btn[data-theme]').forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
+  document.querySelectorAll('.theme-btn[data-theme], .seg-btn[data-theme]').forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
   localStorage.setItem('tomen_theme', theme);
   updateSystemBarColor(theme);
 }
@@ -4176,6 +4362,8 @@ function setBrightness(value) {
   document.documentElement.style.setProperty('--brightness-dim', dim);
   const slider = $('sl-brightness');
   if (slider && slider.value != String(v)) slider.value = v;
+  const display = $('brightness-display');
+  if (display) display.textContent = v;
   localStorage.setItem('tomen_brightness', String(v));
 }
 
@@ -4247,7 +4435,7 @@ function setReadingFace(face) {
   root.setProperty('--font-read-active', config.read);
   root.setProperty('--font-display-active', config.display);
   root.setProperty('--font-display-weight', config.weight);
-  document.querySelectorAll('.theme-btn[data-face]').forEach(b => b.classList.toggle('active', b.dataset.face === face));
+  document.querySelectorAll('.theme-btn[data-face], .seg-btn[data-face]').forEach(b => b.classList.toggle('active', b.dataset.face === face));
   localStorage.setItem('tomen_readingFace', face);
   // The swap changes metrics — different faces have different x-heights,
   // widths, and line-boxing behavior. Remeasure so pagination reflects the
@@ -4387,7 +4575,7 @@ function setParagraphStyle(v) {
     document.documentElement.style.setProperty('--p-margin', `${parseInt(sp, 10) / 10}em`);
     document.documentElement.style.setProperty('--p-indent-rest', '0');
   }
-  document.querySelectorAll('.theme-btn[data-pstyle]').forEach(b =>
+  document.querySelectorAll('.theme-btn[data-pstyle], .seg-btn[data-pstyle]').forEach(b =>
     b.classList.toggle('active', b.dataset.pstyle === style)
   );
   savePref('paragraphStyle', style);
@@ -4417,7 +4605,7 @@ function setParagraphSpacing(value) {
 function setTextAlign(v) {
   const align = (v === 'left') ? 'left' : 'justify';
   document.documentElement.style.setProperty('--text-align', align);
-  document.querySelectorAll('.theme-btn[data-align]').forEach(b =>
+  document.querySelectorAll('.theme-btn[data-align], .seg-btn[data-align]').forEach(b =>
     b.classList.toggle('active', b.dataset.align === align)
   );
   savePref('textAlign', align);
