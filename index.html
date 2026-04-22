@@ -470,6 +470,18 @@ body.r-mode-editing .r-toolbar-editing { display: flex; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   margin-left: 4px;
 }
+/* Passive title on the new top bar carries Book · Chapter rather than
+   just the book, so it needs more room. The dot separator between parts
+   sits at slightly lower opacity than the text for visual hierarchy. */
+.r-title-passive {
+  max-width: min(50vw, 520px);
+  font-size: 13px;
+  margin-left: 0;
+}
+.r-title-sep {
+  margin: 0 8px;
+  opacity: 0.5;
+}
 
 /* Reader content — no scrolling, content paginates into a two-column spread.
    Each "spread" is 2 columns wide. Additional pages exist as further columns
@@ -603,98 +615,96 @@ body.r-mode-editing .r-click-zone {
   pointer-events: none;
 }
 
-/* Quick controls cluster — three horizontal-slider bars stacked vertically at
-   the bottom center. Visible only when reader UI is showing. Backdrop blur so
-   the text behind is obfuscated; the cluster floats over the page. */
-.r-quick {
+/* Floating island nav — centered pill at bottom with 4 nav buttons. The
+   pill sits clear of the bottom edge (20px + safe area) so it reads as a
+   distinct object, not a tab bar welded to the edge. Backdrop blur blends
+   it with the page behind. Appears/disappears with the reader UI toggle,
+   scaling up from 95% for a subtle entrance. */
+.r-island {
   position: absolute;
   left: 50%;
   bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-  transform: translateX(-50%) translateY(8px);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: min(60vw, 420px);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 200ms ease, transform 200ms ease;
-  z-index: 10;
-}
-body.r-ui-visible .r-quick {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-  pointer-events: auto;
-}
-
-/* Thin strip — tiny left icon, drag-body track. The whole strip is padded
-   on each edge so the thumb has room at slider extremes without clipping. */
-.r-quick-bar {
+  transform: translateX(-50%) translateY(8px) scale(0.96);
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 12px;
-  height: 18px;
-  background: color-mix(in srgb, var(--paper) 78%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  gap: 2px;
+  padding: 6px;
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 0.5px solid var(--border);
   border-radius: 999px;
-  color: var(--fog);
-  font-family: var(--font-ui);
-  line-height: 1;
-  cursor: ew-resize;
-  touch-action: none;
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
-  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
-}
-.r-quick-bar:hover {
-  color: var(--ink);
-  background: color-mix(in srgb, var(--paper) 90%, transparent);
-  border-color: color-mix(in srgb, var(--ink) 18%, transparent);
-}
-
-/* Left icon on each strip — the only visual identifier of what control
-   this strip adjusts. Kept small so the strip stays thin. */
-.r-quick-icon {
-  font-size: 11px;
-  line-height: 1;
-  flex-shrink: 0;
-  opacity: 0.9;
-}
-
-/* Track body — thin rail with centered thumb positioned by JS. */
-.r-quick-body {
-  flex: 1;
-  position: relative;
-  height: 100%;
-  display: flex;
-  align-items: center;
-}
-.r-quick-body::before {
-  content: '';
-  width: 100%;
-  height: 1px;
-  background: color-mix(in srgb, currentColor 35%, transparent);
-  border-radius: 1px;
-}
-/* Thumb — small ember dot positioned along the track. JS sets its `left`
-   as a percentage reflecting the current slider value. */
-.r-quick-thumb {
-  position: absolute;
-  top: 50%;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ember);
-  transform: translate(-50%, -50%);
-  transition: left 120ms ease, background 140ms ease;
+  box-shadow: var(--shadow-float);
+  opacity: 0;
   pointer-events: none;
-  left: 50%;
+  transition: opacity 220ms var(--ease), transform 220ms var(--ease);
+  z-index: 10;
 }
-.r-quick-bar:hover .r-quick-thumb {
-  background: color-mix(in srgb, var(--ember) 88%, var(--ink));
+body.r-ui-visible .r-island {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0) scale(1);
+  pointer-events: auto;
+}
+/* Island hides during highlight-mode editing — the editing toolbar at the
+   top takes full attention and nav would be a distraction + a place for
+   mis-taps while selecting text. */
+body.r-mode-editing .r-island {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.r-island-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 14px;
+  min-width: 64px;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: var(--stone);
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 140ms ease, background 140ms ease;
+}
+.r-island-btn:hover {
+  color: var(--ember);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+.r-island-btn:active {
+  transform: scale(0.96);
+}
+.r-island-btn .ph {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.r-island-label {
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Narrow phones — shrink the island to keep it from crowding the screen.
+   Labels stay visible at smaller sizes since they're short words. */
+@media (max-width: 480px) {
+  .r-island {
+    padding: 4px;
+    gap: 0;
+  }
+  .r-island-btn {
+    padding: 7px 10px;
+    min-width: 56px;
+    gap: 2px;
+    font-size: 8.5px;
+  }
+  .r-island-btn .ph {
+    font-size: 16px;
+  }
 }
 
 /* Hold-to-turn circular indicator. Positioned via inline left/top at cursor.
@@ -784,9 +794,6 @@ body.r-debug .r-click-zone.prev {
 body.r-debug .r-click-zone.next {
   background: rgba(255, 138, 63, 0.18) !important;
   outline: 2px dashed rgba(255, 138, 63, 0.55) !important;
-}
-body.r-debug .r-quick-bar {
-  outline: 2px dashed rgba(200, 80, 200, 0.55) !important;
 }
 body.r-debug .r-book {
   outline: 1px dashed rgba(100, 100, 100, 0.3) !important;
@@ -1296,6 +1303,91 @@ body.r-mode-editing .r-inner {
 .toc-item:hover { background: var(--linen); color: var(--ink); }
 .toc-item.active { color: var(--ember); font-weight: 600; }
 
+/* ===== Marks panel ===== Slides in from the right (complementing TOC on
+   left). Carries "Mark new passage" CTA at top, then a scrollable list of
+   existing marks grouped by chapter. Tap a mark to jump to it. */
+.marks-panel {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(360px, 85vw); background: var(--card);
+  z-index: 201; transform: translateX(100%);
+  transition: transform 0.25s var(--ease);
+  display: flex; flex-direction: column;
+}
+.overlay.open .marks-panel { transform: translateX(0); }
+.marks-header {
+  padding: 20px 24px 16px;
+  border-bottom: 0.5px solid var(--border);
+  font-family: var(--font-read); font-size: 18px; font-weight: 500;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.marks-header-count {
+  font-family: var(--font-ui); font-size: 11px; color: var(--fog);
+  font-weight: 400; letter-spacing: 0.5px;
+}
+.marks-cta {
+  margin: 14px 18px 0;
+  padding: 11px 14px;
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-ui); font-size: 13px; color: var(--ink);
+  cursor: pointer; width: calc(100% - 36px);
+  transition: all 140ms ease;
+}
+.marks-cta:hover {
+  border-color: var(--ember);
+  color: var(--ember);
+  background: color-mix(in srgb, var(--ember) 5%, transparent);
+}
+.marks-cta .ph { font-size: 16px; }
+
+.marks-list { flex: 1; overflow-y: auto; padding: 12px 0 18px; }
+.marks-empty {
+  padding: 32px 24px;
+  text-align: center;
+  color: var(--fog);
+  font-family: var(--font-ui); font-size: 12px; line-height: 1.5;
+}
+.marks-chapter-header {
+  padding: 14px 24px 6px;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--fog);
+  font-weight: 600;
+}
+.marks-item {
+  display: block; width: 100%; text-align: left;
+  padding: 10px 24px;
+  border: none; background: transparent;
+  font-family: var(--font-read); font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink);
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+.marks-item:hover {
+  background: var(--linen);
+  border-left-color: var(--ember);
+}
+.marks-item-preview {
+  /* Truncate long highlights to 3 lines with ellipsis via line clamp. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.marks-item-meta {
+  margin-top: 4px;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  color: var(--stone);
+  letter-spacing: 0.2px;
+}
+
 /* Loading */
 .loading {
   position: fixed; inset: 0; background: var(--paper);
@@ -1445,11 +1537,6 @@ body.r-mode-editing .r-inner {
   .r-title { max-width: 120px; font-size: 13px; }
   .r-toolbar .icon-btn { width: 34px; height: 34px; }
   .r-toolbar .icon-btn .ph { font-size: 18px; }
-  .r-pct { font-size: 10px; }
-  .r-quick { width: min(78vw, 380px); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
-  .r-quick-bar { height: 22px; padding: 0 10px; gap: 8px; }
-  .r-quick-icon { font-size: 12px; }
-  .r-quick-thumb { width: 10px; height: 10px; }
 }
 @media (max-width: 480px) {
   .r-content {
@@ -1468,7 +1555,6 @@ body.r-mode-editing .r-inner {
       calc(8px + env(safe-area-inset-left, 0px));
   }
   .r-title { max-width: 100px; }
-  .r-quick-bar { height: 20px; }
 }
 
 /* Sort select */
@@ -1541,19 +1627,18 @@ body.r-mode-editing .r-inner {
 <!-- ===== READER SCREEN ===== -->
 <div class="screen" id="screen-reader">
   <div class="r-progress" id="r-progress"></div>
-  <!-- Reading toolbar (default) -->
+  <!-- Reading toolbar. Now passive-only on the left (book title + chapter)
+       with page turn buttons on the far right. All navigation actions
+       (library, contents, marks, settings) live in the floating island at
+       the bottom. Editing-mode toolbar below takes over when the user is
+       actively highlighting text. -->
   <div class="r-toolbar r-toolbar-reading" id="r-toolbar">
     <div class="r-toolbar-left">
-      <button class="icon-btn" onclick="showLibrary()" title="Back to library"><i class="ph ph-arrow-left"></i></button>
-      <button class="icon-btn" onclick="toggleTOC()" title="Contents"><i class="ph ph-list"></i></button>
-      <button class="icon-btn" onclick="enterEditingMode()" title="Mark text"><i class="ph ph-highlighter"></i></button>
-      <span class="r-title" id="r-title"></span>
+      <span class="r-title r-title-passive" id="r-title"></span>
     </div>
     <div class="r-toolbar-right">
       <button class="icon-btn" onclick="readerPrev()" title="Previous page"><i class="ph ph-caret-left"></i></button>
       <button class="icon-btn" onclick="readerNext()" title="Next page"><i class="ph ph-caret-right"></i></button>
-      <span class="r-pct" id="r-pct">0%</span>
-      <button class="icon-btn" onclick="toggleSettings()" title="Settings"><i class="ph ph-gear-six"></i></button>
     </div>
   </div>
   <!-- Editing toolbar (shown while readerMode === 'editing'). Replaces the
@@ -1593,24 +1678,28 @@ body.r-mode-editing .r-inner {
     <!-- Swipe-to-turn edge glow. Tall narrow ember bloom on whichever side
          the user is swiping toward. Opacity scales with swipe progress. -->
     <div class="r-swipe-ring" id="r-swipe-ring" aria-hidden="true"></div>
-    <!-- Quick controls cluster. Three thin strips (font/line/width) at the
-         bottom center. Visible only when reader UI is shown. Left icon
-         labels which control; track shows position; no right-end glyph.
-         Drag gestures on the reader body ALSO hit these via [data-strip]. -->
-    <div class="r-quick" id="r-quick" aria-hidden="true">
-      <div class="r-quick-bar" data-strip="font" aria-label="Drag left or right to change font size">
-        <i class="r-quick-icon ph ph-text-aa" aria-hidden="true"></i>
-        <div class="r-quick-body" aria-hidden="true"><div class="r-quick-thumb"></div></div>
-      </div>
-      <div class="r-quick-bar" data-strip="line" aria-label="Drag left or right to change line height">
-        <i class="r-quick-icon ph ph-rows" aria-hidden="true"></i>
-        <div class="r-quick-body" aria-hidden="true"><div class="r-quick-thumb"></div></div>
-      </div>
-      <div class="r-quick-bar" data-strip="width" aria-label="Drag left or right to change reading width">
-        <i class="r-quick-icon ph ph-arrows-horizontal" aria-hidden="true"></i>
-        <div class="r-quick-body" aria-hidden="true"><div class="r-quick-thumb"></div></div>
-      </div>
-    </div>
+    <!-- Floating island nav. Centered pill at bottom-center carrying the four
+         primary nav actions (Library, Contents, Marks, Settings). Visible
+         only when reader UI is shown. Replaces the old scattered toolbar +
+         quick-bar chrome with a single consolidated anchor. -->
+    <nav class="r-island" id="r-island" aria-label="Reader navigation">
+      <button class="r-island-btn" onclick="showLibrary()" aria-label="Back to library">
+        <i class="ph ph-arrow-left" aria-hidden="true"></i>
+        <span class="r-island-label">Library</span>
+      </button>
+      <button class="r-island-btn" onclick="toggleTOC()" aria-label="Contents">
+        <i class="ph ph-list-bullets" aria-hidden="true"></i>
+        <span class="r-island-label">Contents</span>
+      </button>
+      <button class="r-island-btn" onclick="toggleMarks()" aria-label="Marks">
+        <i class="ph ph-bookmarks" aria-hidden="true"></i>
+        <span class="r-island-label">Marks</span>
+      </button>
+      <button class="r-island-btn" onclick="toggleSettings()" aria-label="Settings">
+        <i class="ph ph-gear-six" aria-hidden="true"></i>
+        <span class="r-island-label">Settings</span>
+      </button>
+    </nav>
   </div>
 </div>
 
@@ -1708,6 +1797,21 @@ body.r-mode-editing .r-inner {
   <div class="toc-panel" onclick="event.stopPropagation()">
     <div class="toc-header">Contents</div>
     <div class="toc-list" id="toc-list"></div>
+  </div>
+</div>
+
+<!-- Marks overlay -->
+<div class="overlay" id="ov-marks" onclick="toggleMarks()">
+  <div class="marks-panel" onclick="event.stopPropagation()">
+    <div class="marks-header">
+      <span>Marks</span>
+      <span class="marks-header-count" id="marks-count"></span>
+    </div>
+    <button class="marks-cta" onclick="startMarkingFromPanel()">
+      <i class="ph ph-highlighter" aria-hidden="true"></i>
+      <span>Mark new passage</span>
+    </button>
+    <div class="marks-list" id="marks-list"></div>
   </div>
 </div>
 
@@ -3167,6 +3271,7 @@ async function openBookById(id) {
     currentChapterIndex = currentBook.chapterIndex || 0;
     currentSpread = currentBook.spreadIndex || 0;
     $('r-title').textContent = currentBook.title;
+    updateTopTitle();
     $('screen-lib').classList.remove('active');
     $('screen-reader').classList.add('active');
     uiVisible = true;
@@ -3362,7 +3467,11 @@ function updateProgress() {
   const chapterPct = totalSpreads > 1 ? currentSpread / (totalSpreads - 1) : 1;
   const pct = ((currentChapterIndex + chapterPct) / chapters.length) * 100;
   $('r-progress').style.width = pct + '%';
-  $('r-pct').textContent = Math.round(pct) + '%';
+  // r-pct was on the old top bar and has been removed; the progress line
+  // alone communicates this info now. Left here in case a future design
+  // restores a visible percentage readout.
+  const pctEl = $('r-pct');
+  if (pctEl) pctEl.textContent = Math.round(pct) + '%';
   // Footer reference carries chapter-time-remaining which changes with
   // every spread. Kept here rather than in a separate hook so the progress
   // bar and the footer move together visually.
@@ -3948,6 +4057,108 @@ function buildTOC() {
 }
 function toggleTOC() { $('ov-toc').classList.toggle('open'); }
 
+// ===== MARKS PANEL =====
+// Marks overlay shows all highlights/bookmarks for the current book, grouped
+// by chapter. Opens from the island's Marks button. Users create new marks
+// by tapping the top CTA, which exits the panel and enters editing mode.
+function toggleMarks() {
+  const ov = $('ov-marks');
+  const opening = !ov.classList.contains('open');
+  ov.classList.toggle('open');
+  if (opening) renderMarksList();
+}
+
+// Render the marks list grouped by chapter in reading order. Each mark
+// shows a text preview (line-clamped to 3 lines) plus a small meta line.
+function renderMarksList() {
+  const listEl = $('marks-list');
+  const countEl = $('marks-count');
+  if (!listEl) return;
+  const marks = Array.isArray(currentBook?.marks) ? currentBook.marks : [];
+  if (countEl) countEl.textContent = marks.length ? `${marks.length}` : '';
+
+  if (marks.length === 0) {
+    listEl.innerHTML = `<div class="marks-empty">
+      No marks yet. Tap "Mark new passage" above, then select text in the book
+      to create your first highlight.
+    </div>`;
+    return;
+  }
+
+  // Sort by chapter, then by start offset within chapter — reading order.
+  const sorted = [...marks].sort((a, b) => {
+    if (a.chapterIndex !== b.chapterIndex) return a.chapterIndex - b.chapterIndex;
+    return (a.startOffset || 0) - (b.startOffset || 0);
+  });
+
+  // Group by chapter for visual hierarchy. Chapter title pulled from TOC
+  // if available; falls back to chapter.title, then to "Chapter N".
+  const html = [];
+  let lastChapter = -1;
+  for (const m of sorted) {
+    if (m.chapterIndex !== lastChapter) {
+      const tocItem = toc.find(t => t.index === m.chapterIndex);
+      const chTitle = tocItem?.title || chapters[m.chapterIndex]?.title || `Chapter ${m.chapterIndex + 1}`;
+      html.push(`<div class="marks-chapter-header">${esc(chTitle)}</div>`);
+      lastChapter = m.chapterIndex;
+    }
+    const icon = m.isBookmark ? '<i class="ph ph-bookmark-simple-fill" style="font-size:11px;color:var(--ember);margin-right:6px"></i>' : '';
+    const preview = m.text ? esc(m.text) : '(empty)';
+    html.push(`<button class="marks-item" onclick="goToMark('${esc(m.id)}')">
+      <div class="marks-item-preview">${icon}${preview}</div>
+    </button>`);
+  }
+  listEl.innerHTML = html.join('');
+}
+
+// Navigate to a specific mark: switch chapter if needed, then advance to
+// the spread containing the mark's start offset. Uses the same anchor-
+// offset → spread mapping as remeasureReader so positioning is accurate.
+function goToMark(markId) {
+  if (!currentBook || !Array.isArray(currentBook.marks)) return;
+  const mark = currentBook.marks.find(m => m.id === markId);
+  if (!mark) return;
+  toggleMarks();
+  const targetChapter = mark.chapterIndex;
+  const targetOffset = mark.startOffset;
+  // Same-chapter jump: just find the spread.
+  if (targetChapter === currentChapterIndex) {
+    const spread = findSpreadForChapterOffset(targetOffset);
+    if (spread !== null) {
+      currentSpread = spread;
+      applySpread();
+      updateProgress();
+      saveProgress();
+    }
+    return;
+  }
+  // Different chapter: render it, then on next frame locate the spread
+  // containing the target offset and jump there.
+  fadeSwap(() => {
+    currentChapterIndex = targetChapter;
+    currentSpread = 0;
+    renderChapter();
+    requestAnimationFrame(() => {
+      const spread = findSpreadForChapterOffset(targetOffset);
+      if (spread !== null && spread !== currentSpread) {
+        currentSpread = spread;
+        applySpread();
+        updateProgress();
+      }
+      saveProgress();
+    });
+  });
+}
+
+// "Mark new passage" CTA handler. Closes the panel, then enters editing
+// mode so the user can select text to highlight. Small delay lets the
+// panel close animation run before the editing UI appears, avoiding a
+// visual clash between the two overlays.
+function startMarkingFromPanel() {
+  toggleMarks();
+  setTimeout(() => enterEditingMode(), 260);
+}
+
 // Update the footer reference with book / chapter / time remaining. Primary
 // line carries book and chapter identity; secondary line carries time
 // remaining. On mobile they stack (time below); on desktop they sit inline
@@ -3987,6 +4198,29 @@ function updateReaderRefs() {
   }
 
   el.innerHTML = primary + timeSpan;
+
+  // Also update the top-bar passive title — same Book · Chapter identifier
+  // but without the time (time lives in the footer). Called here so both
+  // stay synchronized with chapter changes without duplicating logic.
+  updateTopTitle(bookTitle, chapterTitle);
+}
+
+// Update the top-bar passive title. Separate from footer so it can be
+// different if needed later (e.g., fewer characters on narrow screens).
+function updateTopTitle(bookTitle, chapterTitle) {
+  const el = $('r-title');
+  if (!el) return;
+  // If no arguments passed, look up the current context.
+  if (bookTitle === undefined) {
+    if (!currentBook) { el.textContent = ''; return; }
+    bookTitle = currentBook.title || '';
+    const tocItem = toc.find(item => item.index === currentChapterIndex);
+    chapterTitle = tocItem?.title || chapters[currentChapterIndex]?.title || '';
+  }
+  const parts = [];
+  if (bookTitle) parts.push(esc(bookTitle));
+  if (chapterTitle) parts.push(esc(chapterTitle));
+  el.innerHTML = parts.join('<span class="r-title-sep">·</span>');
 }
 
 // ===== UI TOGGLE =====
