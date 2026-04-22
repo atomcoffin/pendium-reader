@@ -429,15 +429,16 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
 
 /* Reader toolbars. Top bar carries app-level chrome (Library + title +
    Settings). Bottom bar carries book-level chrome (Contents + Marks +
-   Appearance + page arrows). Both bars span full viewport width (their
-   background reaches the screen edges) but their INNER content is
-   constrained to the reading width so the controls align with the content.
-   Makes the chrome feel like it belongs to the page, not to the viewport. */
+   Appearance + page arrows). Background extends edge-to-edge for grounding,
+   but the INNER content is constrained to a comfortable toolbar width so
+   controls feel clustered rather than stretched across a wide viewport. */
 .r-toolbar {
   position: absolute;
   left: 0; right: 0;
   z-index: 10;
-  background: color-mix(in srgb, var(--paper) 90%, var(--ink) 2%);
+  /* Warm paper with a whisper of ember — recedes against content but has a
+     subtle brand temperature, not a neutral grey. */
+  background: color-mix(in srgb, var(--paper) 96%, var(--ember) 4%);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   transition: opacity 180ms ease, transform 220ms var(--ease);
@@ -445,26 +446,34 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
 }
 .r-toolbar-top {
   top: 0;
-  border-bottom: 0.5px solid var(--border);
+  border-bottom: 0.5px solid color-mix(in srgb, var(--ember) 8%, var(--border));
   padding: calc(8px + env(safe-area-inset-top, 0px)) 0 8px 0;
 }
 .r-toolbar-bottom {
   bottom: 0;
-  border-top: 0.5px solid var(--border);
+  border-top: 0.5px solid color-mix(in srgb, var(--ember) 8%, var(--border));
   padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px)) 0;
 }
-/* Inner container constrains chrome content to reading width. Falls back
-   to viewport max minus padding if --reading-width isn't set. The outer
-   background still extends edge-to-edge so the bars feel grounded. */
+/* Inner container is a three-column grid: left cluster, centered title,
+   right cluster. Constrained to 720px on desktop so the items sit close
+   together rather than spread to the viewport edges. On phones the bar
+   spans nearly full width because the screen itself is narrow enough that
+   the icons don't feel dispersed. */
 .r-toolbar-inner {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  max-width: min(var(--reading-width, 1200px), calc(100vw - 32px));
-  margin: 0 auto;
-  padding: 0 calc(8px + env(safe-area-inset-right, 0px)) 0 calc(8px + env(safe-area-inset-left, 0px));
   gap: 12px;
+  width: 100%;
+  max-width: min(720px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 0 calc(12px + env(safe-area-inset-right, 0px)) 0 calc(12px + env(safe-area-inset-left, 0px));
+}
+/* Bottom bar variant — no centered title, so just left/right clusters
+   with space-between distribution. Keeps the same width constraints. */
+.r-toolbar-inner-split {
+  grid-template-columns: auto auto;
+  justify-content: space-between;
 }
 /* Hidden state — slide off screen on toggle, fade out. Top slides up,
    bottom slides down, so they visually "clear out" from the content. */
@@ -497,7 +506,29 @@ body.r-mode-editing .r-toolbar-bottom {
 .r-edit-action:disabled { opacity: 0.35; cursor: not-allowed; }
 .r-edit-action:disabled:hover { color: var(--fog); }
 
-.r-toolbar-left, .r-toolbar-right { display: flex; align-items: center; gap: 4px; }
+/* Cluster children on the left/right of the grid. Left is flush-left,
+   right is flush-right; the center column takes the title. */
+.r-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+}
+.r-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: end;
+}
+/* Center title column — centered horizontally via grid, ellipsizes if
+   the combined Book · Chapter · Time string runs long. Minimum width
+   zero so ellipsis works inside the grid column. */
+.r-toolbar-center {
+  min-width: 0;
+  text-align: center;
+  justify-self: center;
+  max-width: 100%;
+}
 
 .r-title {
   font-family: var(--font-read); font-size: 14px; font-weight: 400;
@@ -510,15 +541,25 @@ body.r-mode-editing .r-toolbar-bottom {
    recessive enough to be secondary but genuinely legible against paper
    (the previous stone color faded below usable contrast). */
 .r-title-passive {
-  max-width: min(50vw, 520px);
+  max-width: 100%;
   font-size: 13px;
-  margin-left: 4px;
+  margin-left: 0;
   color: color-mix(in srgb, var(--ink) 85%, transparent);
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .r-title-sep {
   margin: 0 8px;
   opacity: 0.4;
   color: var(--stone);
+}
+/* Time-remaining chip inside the passive title — muted stone color so it
+   reads as tertiary info after the book and chapter names. */
+.r-title-time {
+  color: var(--stone);
+  opacity: 0.85;
 }
 
 /* Reader content — no scrolling, content paginates into a two-column spread.
@@ -1578,14 +1619,16 @@ body.r-mode-editing .r-inner {
        (library, contents, marks, settings) live in the floating island at
        the bottom. Editing-mode toolbar below takes over when the user is
        actively highlighting text. -->
-  <!-- Reading toolbar (top). App-level chrome: Library on left, passive
-       book/chapter info center-left, global Settings (profile overlay) on
-       the right. No book-level controls here — those are in the bottom bar.
-       Editing-mode toolbar below takes over when actively highlighting. -->
+  <!-- Reading toolbar (top). App-level chrome: Library arrow on left,
+       centered book/chapter/time in middle, global Settings on right.
+       Three-column grid keeps the title visually centered regardless of
+       how many icons sit on either side. -->
   <div class="r-toolbar r-toolbar-reading r-toolbar-top" id="r-toolbar">
     <div class="r-toolbar-inner">
       <div class="r-toolbar-left">
-        <button class="icon-btn" onclick="showLibrary()" title="Back to library" aria-label="Back to library"><i class="ph ph-books"></i></button>
+        <button class="icon-btn" onclick="showLibrary()" title="Back to library" aria-label="Back to library"><i class="ph ph-arrow-left"></i></button>
+      </div>
+      <div class="r-toolbar-center">
         <span class="r-title r-title-passive" id="r-title"></span>
       </div>
       <div class="r-toolbar-right">
@@ -1599,6 +1642,8 @@ body.r-mode-editing .r-inner {
     <div class="r-toolbar-inner">
       <div class="r-toolbar-left">
         <button class="icon-btn" onclick="exitEditingMode()" title="Done"><i class="ph ph-x"></i></button>
+      </div>
+      <div class="r-toolbar-center">
         <span class="r-title r-edit-title">Marking text</span>
       </div>
       <div class="r-toolbar-right">
@@ -1634,10 +1679,11 @@ body.r-mode-editing .r-inner {
     <div class="r-swipe-ring" id="r-swipe-ring" aria-hidden="true"></div>
   </div>
   <!-- Reading toolbar (bottom). Book-level chrome: Contents / Marks /
-       Appearance / page arrows. Width matches reading-width so the bars
-       visually belong to the content. Hidden during highlight mode. -->
+       Appearance on the left, page arrows on the right. Constrained to the
+       same comfortable toolbar width as the top bar so items feel clustered
+       and chrome reads as a single system. Hidden during highlight mode. -->
   <div class="r-toolbar r-toolbar-bottom" id="r-toolbar-bottom">
-    <div class="r-toolbar-inner">
+    <div class="r-toolbar-inner r-toolbar-inner-split">
       <div class="r-toolbar-left">
         <button class="icon-btn" onclick="toggleTOC()" title="Contents" aria-label="Contents"><i class="ph ph-list-bullets"></i></button>
         <button class="icon-btn" onclick="toggleMarks()" title="Marks" aria-label="Marks"><i class="ph ph-bookmark-simple"></i></button>
@@ -4169,6 +4215,17 @@ function updateTopTitle(bookTitle, chapterTitle) {
   const parts = [];
   if (bookTitle) parts.push(esc(bookTitle));
   if (chapterTitle) parts.push(esc(chapterTitle));
+  // Append book-level time remaining (not chapter — the footer already
+  // carries chapter-time). Uses contentSize × 0.75 for the text-length
+  // approximation and current progress for what's consumed. Only shown
+  // when progress < 100%.
+  if (currentBook && currentBook.contentSize && (currentBook.progress || 0) < 100) {
+    const textChars = currentBook.contentSize * 0.75;
+    const remainingChars = textChars * (1 - (currentBook.progress || 0) / 100);
+    const mins = estimateReadingMinutes(remainingChars);
+    const formatted = formatReadingTime(mins);
+    if (formatted) parts.push(`<span class="r-title-time">${esc(formatted + ' remaining')}</span>`);
+  }
   el.innerHTML = parts.join('<span class="r-title-sep">·</span>');
 }
 
