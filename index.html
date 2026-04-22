@@ -46,9 +46,16 @@
   --ink: #2C2420;
   --stone: #8A7E76;
   --fog: #B8AFA7;
-  --ember: #C45D3E;
-  --clay: #A94E33;
-  --brand: #D4654A;
+  /* Brand accent — chartreuse. Loud, distinctive, highlighter-family.
+     --brand is the base (used for backgrounds, fills, progress bars).
+     --brand-ink is a darker variant usable as a TEXT color on paper
+     backgrounds — pure chartreuse would be nearly invisible as text.
+     --brand-deep is slightly more saturated for hover/active states.
+     --brand-text is the dark text color to use on brand backgrounds. */
+  --brand: #C8FF00;
+  --brand-ink: #6B8C00;
+  --brand-deep: #A8E000;
+  --brand-text: #1A2908;
   --border: rgba(44, 36, 32, 0.06);
   --shadow-cover: 0 4px 16px rgba(44, 36, 32, 0.08);
   --shadow-float: 0 8px 32px rgba(44, 36, 32, 0.12);
@@ -83,7 +90,14 @@
   --paper: #1A1614; --linen: #121010; --card: #242020;
   --paper-edge: #2C2623;
   --ink: #E8E0D8; --stone: #9A8E86; --fog: #6A5E56;
-  --ember: #E07050; --clay: #F08060; --brand: #E07050;
+  /* Dark theme chartreuse — same hue but slightly desaturated from
+     electric #C8FF00 so it doesn't burn eyes against dark paper.
+     --brand-ink stays similar to --brand here since chartreuse IS
+     already legible against dark backgrounds. */
+  --brand: #B8E635;
+  --brand-ink: #B8E635;
+  --brand-deep: #98C620;
+  --brand-text: #0F1A08;
   --border: rgba(232, 224, 216, 0.06);
   --shadow-cover: 0 4px 16px rgba(0,0,0,0.25);
   --shadow-float: 0 8px 32px rgba(0,0,0,0.4);
@@ -93,7 +107,13 @@
   --paper: #F4ECD8; --linen: #EBE1C8; --card: #FAF4E4;
   --paper-edge: #DACEAE;
   --ink: #3E3228; --stone: #7A6E5E; --fog: #A89880;
-  --ember: #B85A3A; --clay: #9A4C2E; --brand: #C4604A;
+  /* Sepia chartreuse — slightly warmer/yellower so it reads as part of
+     the same warm-paper family instead of clashing with it. Brand-ink
+     is a darker olive for text on sepia paper. */
+  --brand: #B8D800;
+  --brand-ink: #5F7A00;
+  --brand-deep: #98B600;
+  --brand-text: #1F2508;
   --border: rgba(62, 50, 40, 0.06);
 }
 
@@ -121,10 +141,10 @@ html, body {
   white-space: nowrap; margin-right: auto;
 }
 .lib-brand .greeting-name {
-  color: var(--brand); cursor: pointer;
+  color: var(--brand-ink); cursor: pointer;
   border-bottom: 1px dashed transparent;
 }
-.lib-brand .greeting-name:hover { border-bottom-color: var(--brand); }
+.lib-brand .greeting-name:hover { border-bottom-color: var(--brand-ink); }
 
 .lib-toolbar { display: flex; align-items: center; gap: 6px; }
 
@@ -153,10 +173,10 @@ html, body {
   border: none; background: transparent; color: var(--stone);
   border-radius: var(--radius-sm); cursor: pointer;
 }
-.icon-btn:hover { background: var(--linen); color: var(--ember); }
+.icon-btn:hover { background: var(--linen); color: var(--brand-ink); }
 .icon-btn svg { width: 20px; height: 20px; }
 .icon-btn .ph { font-size: 20px; line-height: 1; }
-.icon-btn.active { color: var(--ember); }
+.icon-btn.active { color: var(--brand-ink); }
 
 /* View switcher */
 .view-switch { display: flex; gap: 2px; background: var(--linen); border-radius: 6px; padding: 2px; }
@@ -197,18 +217,18 @@ html, body {
 .view-text { display: flex; flex-direction: column; gap: 0; }
 .tv-item { cursor: pointer; padding: 16px 0; border-bottom: 0.5px solid var(--border); }
 .tv-item:last-child { border-bottom: none; }
-.tv-item:hover .tv-title { color: var(--ember); }
+.tv-item:hover .tv-title { color: var(--brand-ink); }
 .tv-title {
   font-family: var(--font-read); font-size: 28px; font-weight: 400;
   letter-spacing: -0.5px; line-height: 1.2; color: var(--ink);
 }
-.tv-title.reading { color: var(--ember); }
+.tv-title.reading { color: var(--brand-ink); }
 .tv-author { font-size: 12px; color: var(--fog); margin-top: 3px; }
 .tv-progress {
   height: 2px; background: var(--linen); border-radius: 1px;
   width: 100px; margin-top: 6px; overflow: hidden;
 }
-.tv-progress-fill { height: 100%; background: var(--ember); border-radius: 1px; }
+.tv-progress-fill { height: 100%; background: var(--brand); border-radius: 1px; }
 
 /* === GRID VIEW === */
 .view-grid {
@@ -238,7 +258,7 @@ html, body {
   position: absolute; bottom: 0; left: 0; right: 0;
   height: 3px; background: rgba(0,0,0,0.1);
 }
-.gc-prog-fill { height: 100%; background: var(--ember); }
+.gc-prog-fill { height: 100%; background: var(--brand); }
 .gc-title {
   font-size: 13px; font-weight: 600; color: var(--ink);
   margin-top: 10px; line-height: 1.3;
@@ -401,7 +421,7 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
   position: absolute; bottom: 0; left: 0; right: 0;
   height: 3px; background: rgba(0,0,0,0.15);
 }
-.spine-prog-fill { height: 100%; background: var(--ember); }
+.spine-prog-fill { height: 100%; background: var(--brand); }
 
 /* Last-read separator */
 .spine-spacer {
@@ -424,7 +444,7 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
   position: fixed;
   bottom: env(safe-area-inset-bottom, 0px);
   left: 0; height: 3px;
-  background: var(--ember); z-index: 50; width: 0;
+  background: var(--brand); z-index: 50; width: 0;
 }
 
 /* Reader toolbars. Top bar carries app-level chrome (Library + title +
@@ -438,7 +458,7 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
   z-index: 10;
   /* Warm paper with a whisper of ember — recedes against content but has a
      subtle brand temperature, not a neutral grey. */
-  background: color-mix(in srgb, var(--paper) 96%, var(--ember) 4%);
+  background: color-mix(in srgb, var(--paper) 96%, var(--brand) 4%);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   transition: opacity 180ms ease, transform 220ms var(--ease);
@@ -446,12 +466,12 @@ never disagree. Orientation is vertical for title/secondary, horizontal for auth
 }
 .r-toolbar-top {
   top: 0;
-  border-bottom: 0.5px solid color-mix(in srgb, var(--ember) 8%, var(--border));
+  border-bottom: 0.5px solid color-mix(in srgb, var(--brand) 8%, var(--border));
   padding: calc(8px + env(safe-area-inset-top, 0px)) 0 8px 0;
 }
 .r-toolbar-bottom {
   bottom: 0;
-  border-top: 0.5px solid color-mix(in srgb, var(--ember) 8%, var(--border));
+  border-top: 0.5px solid color-mix(in srgb, var(--brand) 8%, var(--border));
   padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px)) 0;
 }
 /* Inner container is a three-column grid: left cluster, centered title,
@@ -496,13 +516,13 @@ body.r-mode-editing .r-toolbar-bottom {
 /* Editing toolbar accent — the accent color hints at "doing something" without
    being loud. Save/bookmark icons use ember so they stand out. */
 .r-toolbar-editing {
-  border-bottom-color: color-mix(in srgb, var(--ember) 30%, var(--border));
+  border-bottom-color: color-mix(in srgb, var(--brand) 30%, var(--border));
 }
 .r-edit-title {
   color: var(--ink); font-weight: 500;
 }
 .r-edit-action { color: var(--fog); transition: color 140ms ease; }
-.r-edit-action:hover { color: var(--ember); }
+.r-edit-action:hover { color: var(--brand-ink); }
 .r-edit-action:disabled { opacity: 0.35; cursor: not-allowed; }
 .r-edit-action:disabled:hover { color: var(--fog); }
 
@@ -598,7 +618,7 @@ body.r-mode-editing .r-toolbar-bottom {
   text-align: center;
   font-family: var(--font-ui);
   font-size: 11px;
-  color: color-mix(in srgb, var(--ember) 75%, var(--stone));
+  color: color-mix(in srgb, var(--brand-ink) 75%, var(--stone));
   letter-spacing: 0.02em;
   padding: 0 24px;
   pointer-events: none;
@@ -717,7 +737,7 @@ body.r-mode-editing .r-click-zone {
 }
 .r-hold-fill {
   fill: none;
-  stroke: var(--ember);
+  stroke: var(--brand);
   stroke-width: 1.2;
   stroke-linecap: round;
   stroke-dasharray: 106.8;  /* 2 * PI * r (r=17) */
@@ -730,7 +750,7 @@ body.r-mode-editing .r-click-zone {
   position: absolute;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
-  color: var(--ember);
+  color: var(--brand-ink);
   font-size: 20px;
   line-height: 1;
   display: none;
@@ -879,7 +899,7 @@ body.r-mode-editing .r-inner {
 }
 
 .r-inner blockquote {
-  border-left: 2px solid var(--ember);
+  border-left: 2px solid var(--brand);
   padding-left: 1.2em;
   margin: 1.2em 0;
   color: var(--stone);
@@ -893,7 +913,7 @@ body.r-mode-editing .r-inner {
 .r-inner blockquote p + p { text-indent: 0; margin: 0 0 0.4em; }
 .r-inner blockquote p:last-child { margin-bottom: 0; }
 
-.r-inner a { color: var(--ember); text-decoration: none; }
+.r-inner a { color: var(--brand-ink); text-decoration: none; }
 
 /* Lists: restore reasonable indentation. Tighter item spacing than the
    browser default so lists don't sprawl. */
@@ -956,7 +976,7 @@ body.r-mode-editing .r-inner {
    shows up in the marks list, not on the page. Inline spans don't break line
    wrapping, so pagination math stays correct. */
 .r-inner .mark-highlight {
-  background: color-mix(in srgb, var(--ember) 28%, transparent);
+  background: color-mix(in srgb, var(--brand) 28%, transparent);
   border-radius: 2px;
   padding: 0 1px;
   cursor: pointer;
@@ -965,7 +985,7 @@ body.r-mode-editing .r-inner {
   transition: background 140ms ease;
 }
 .r-inner .mark-highlight:hover {
-  background: color-mix(in srgb, var(--ember) 40%, transparent);
+  background: color-mix(in srgb, var(--brand) 40%, transparent);
 }
 
 .r-pct {
@@ -1005,7 +1025,7 @@ body.r-mode-editing .r-inner {
   font-family: var(--font-ui); font-size: 13px; font-weight: 500;
   cursor: pointer; color: var(--ink);
 }
-.theme-btn.active { border-color: var(--ember); color: var(--ember); }
+.theme-btn.active { border-color: var(--brand-ink); color: var(--brand-ink); }
 
 /* Export button in profile overlay — same visual weight as theme buttons
    but full-width with an icon. Ember on hover so it reads as an action. */
@@ -1025,7 +1045,7 @@ body.r-mode-editing .r-inner {
   cursor: pointer;
   transition: border-color 150ms ease, color 150ms ease;
 }
-.export-btn:hover { border-color: var(--ember); color: var(--ember); }
+.export-btn:hover { border-color: var(--brand-ink); color: var(--brand-ink); }
 .export-btn .ph { font-size: 16px; }
 
 /* Small caption under a settings row — explains what the control does
@@ -1068,7 +1088,7 @@ body.r-mode-editing .r-inner {
   transition: color 150ms ease;
 }
 .colophon a:hover {
-  color: var(--ember);
+  color: var(--brand-ink);
 }
 .range-row { display: flex; align-items: center; gap: 12px; }
 .range-row input[type="range"] {
@@ -1077,7 +1097,7 @@ body.r-mode-editing .r-inner {
 }
 .range-row input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none; width: 18px; height: 18px;
-  border-radius: 50%; background: var(--ember); cursor: pointer;
+  border-radius: 50%; background: var(--brand); cursor: pointer;
 }
 .range-label {
   font-size: 12px; font-family: var(--font-mono);
@@ -1177,11 +1197,11 @@ body.r-mode-editing .r-inner {
   color: var(--ink);
 }
 .seg-btn.active {
-  background: var(--ember);
-  color: var(--paper);
+  background: var(--brand);
+  color: var(--brand-text);
 }
 .seg-btn.active:hover {
-  color: var(--paper);
+  color: var(--brand-text);
 }
 
 /* Compact slider row — horizontal layout with optional leading icon and
@@ -1207,7 +1227,7 @@ body.r-mode-editing .r-inner {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--ember);
+  background: var(--brand);
   cursor: pointer;
   border: 0;
 }
@@ -1215,7 +1235,7 @@ body.r-mode-editing .r-inner {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--ember);
+  background: var(--brand);
   cursor: pointer;
   border: 0;
 }
@@ -1288,7 +1308,7 @@ body.r-mode-editing .r-inner {
   font-family: var(--font-ui); font-size: 13px; color: var(--stone); cursor: pointer;
 }
 .toc-item:hover { background: var(--linen); color: var(--ink); }
-.toc-item.active { color: var(--ember); font-weight: 600; }
+.toc-item.active { color: var(--brand-ink); font-weight: 600; }
 
 /* ===== Marks panel ===== Slides in from the right (complementing TOC on
    left). Carries "Mark new passage" CTA at top, then a scrollable list of
@@ -1323,9 +1343,9 @@ body.r-mode-editing .r-inner {
   transition: all 140ms ease;
 }
 .marks-cta:hover {
-  border-color: var(--ember);
-  color: var(--ember);
-  background: color-mix(in srgb, var(--ember) 5%, transparent);
+  border-color: var(--brand-ink);
+  color: var(--brand-ink);
+  background: color-mix(in srgb, var(--brand) 5%, transparent);
 }
 .marks-cta .ph { font-size: 16px; }
 
@@ -1358,7 +1378,7 @@ body.r-mode-editing .r-inner {
 }
 .marks-item:hover {
   background: var(--linen);
-  border-left-color: var(--ember);
+  border-left-color: var(--brand-ink);
 }
 .marks-item-preview {
   /* Truncate long highlights to 3 lines with ellipsis via line clamp. */
@@ -1384,7 +1404,7 @@ body.r-mode-editing .r-inner {
 .loading.active { display: flex; }
 .spinner {
   width: 24px; height: 24px; border: 2px solid var(--linen);
-  border-top-color: var(--ember); border-radius: 50%;
+  border-top-color: var(--brand-ink); border-radius: 50%;
   animation: spin 0.7s linear infinite; margin-bottom: 12px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -1435,7 +1455,7 @@ body.r-mode-editing .r-inner {
   padding: 12px 20px;
   background: rgba(30, 26, 22, 0.92);
   color: var(--paper);
-  border: 1px solid var(--ember);
+  border: 1px solid var(--brand);
   border-radius: 8px;
   font-family: var(--font-ui);
   font-size: 13px;
@@ -1463,7 +1483,7 @@ body.r-mode-editing .r-inner {
 .update-toast.visible { transform: translateX(-50%) translateY(0); }
 .update-toast .u-btn {
   padding: 5px 12px; border-radius: 6px; border: none;
-  background: var(--ember); color: white;
+  background: var(--brand); color: var(--brand-text);
   font-family: var(--font-ui); font-size: 12px; font-weight: 600; cursor: pointer;
 }
 .update-toast .u-dismiss {
@@ -4097,7 +4117,7 @@ function renderMarksList() {
       html.push(`<div class="marks-chapter-header">${esc(chTitle)}</div>`);
       lastChapter = m.chapterIndex;
     }
-    const icon = m.isBookmark ? '<i class="ph ph-bookmark-simple-fill" style="font-size:11px;color:var(--ember);margin-right:6px"></i>' : '';
+    const icon = m.isBookmark ? '<i class="ph ph-bookmark-simple-fill" style="font-size:11px;color:var(--brand);margin-right:6px"></i>' : '';
     const preview = m.text ? esc(m.text) : '(empty)';
     html.push(`<button class="marks-item" onclick="goToMark('${esc(m.id)}')">
       <div class="marks-item-preview">${icon}${preview}</div>
