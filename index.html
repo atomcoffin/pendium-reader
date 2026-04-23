@@ -1329,6 +1329,11 @@ body.r-mode-editing .r-inner {
 }
 .toc-item:hover { background: var(--linen); color: var(--ink); }
 .toc-item.active { color: var(--brand-ink); font-weight: 600; }
+/* Nested entries — chapter titles inside parts/books. Indent by depth and
+   shrink slightly to read as visually subordinate to top-level entries. */
+.toc-item[data-depth="1"] { padding-left: 40px; font-size: 12.5px; }
+.toc-item[data-depth="2"] { padding-left: 56px; font-size: 12px; }
+.toc-item[data-depth="3"] { padding-left: 72px; font-size: 12px; }
 
 /* ===== Marks panel ===== Slides in from the right (complementing TOC on
    left). Carries "Mark new passage" CTA at top, then a scrollable list of
@@ -3287,85 +3292,136 @@ async function loadEpub(file, batch = false) {
       bookChapters.push({ title: ct ? ct.textContent.trim() : `Chapter ${bookChapters.length + 1}`, html: body.innerHTML });
     }
 
-    const bookToc = bookChapters.map((ch, i) => ({ title: ch.title, index: i }));
-    // EPUB 2: TOC lives in the NCX (navMap / navPoint).
+    // Default fallback TOC: one entry per chapter using the title we
+    // extracted from each chapter file (or "Chapter N" if none was found).
+    const fallbackToc = bookChapters.map((ch, i) => ({ title: ch.title, index: i }));
+
+    // Helper — given an HREF (possibly with #anchor) referenced from a TOC
+    // entry, find the bookChapters index it corresponds to. Tries multiple
+    // path-resolution strategies because EPUBs are inconsistent about
+    // whether HREFs are relative to the OPF root, the nav file, or absolute
+    // within the zip.
+    function _findChapterByHref(href, refDir) {
+      const cleanHref = href.split('#')[0];
+      if (!cleanHref) return -1;
+      const resolved = refDir ? resolveHref(refDir, cleanHref) : cleanHref;
+      for (let i = 0; i < bookChapters.length; i++) {
+        const chHref = manifest[spineItems[i]?.getAttribute('idref')];
+        if (!chHref) continue;
+        const chFullPath = rootDir + chHref;
+        // Try every reasonable comparison — full path match, basename match,
+        // suffix match. Robust to the various ways publishers structure paths.
+        if (chFullPath === resolved ||
+            chHref === cleanHref ||
+            chHref.endsWith(cleanHref) ||
+            chHref.endsWith('/' + cleanHref) ||
+            chFullPath.endsWith('/' + cleanHref)) {
+          return i;
+        }
+      }
+      return -1;
+    }
+
+    // EPUB 2 NCX parser. Walks the navMap recursively so nested navPoints
+    // (common pattern: parts/sections containing the actual chapters) get
+    // included. Each entry preserves its nesting depth so the TOC panel
+    // could indent later if we want to, but for now we flatten to a single
+    // list since all entries point to actual content files.
+    let ncxToc = [];
     const ncxItem = opfDoc.querySelector('item[media-type="application/x-dtbncx+xml"]');
     if (ncxItem) {
       const ncxFile = zip.file(rootDir + ncxItem.getAttribute('href')) || zip.file(ncxItem.getAttribute('href'));
       if (ncxFile) {
         const ncxDoc = new DOMParser().parseFromString(await ncxFile.async('text'), 'application/xml');
-        const navPoints = ncxDoc.querySelectorAll('navMap > navPoint');
-        if (navPoints.length > 0) {
-          bookToc.length = 0;
-          navPoints.forEach(np => {
-            const label = np.querySelector('navLabel text');
-            const content = np.querySelector('content');
-            if (label && content) {
-              const src = content.getAttribute('src').split('#')[0];
-              const idx = bookChapters.findIndex((_, i) => {
-                const h = manifest[spineItems[i]?.getAttribute('idref')];
-                return h === src || h?.endsWith(src);
-              });
-              if (idx >= 0) bookToc.push({ title: label.textContent.trim(), index: idx });
+        // NCX paths are resolved relative to the NCX file's own directory,
+        // not the OPF root (though they're often the same). Safer to use
+        // the NCX dir explicitly.
+        const ncxHref = ncxItem.getAttribute('href');
+        const ncxFullPath = rootDir + ncxHref;
+        const ncxDir = ncxFullPath.includes('/') ? ncxFullPath.substring(0, ncxFullPath.lastIndexOf('/') + 1) : '';
+        const walkNavPoints = (parent, depth) => {
+          // Direct children only — recursion handles deeper levels. Without
+          // this, querySelectorAll('navPoint') would double-count nested
+          // entries (collecting them once at each ancestor level).
+          for (const np of Array.from(parent.children)) {
+            if (np.tagName !== 'navPoint' && np.localName !== 'navPoint') continue;
+            const labelEl = np.querySelector(':scope > navLabel > text') ||
+                            np.querySelector('navLabel text');
+            const contentEl = np.querySelector(':scope > content') ||
+                              np.querySelector('content');
+            if (labelEl && contentEl) {
+              const src = contentEl.getAttribute('src') || '';
+              const idx = _findChapterByHref(src, ncxDir);
+              if (idx >= 0) {
+                ncxToc.push({ title: labelEl.textContent.trim(), index: idx, depth });
+              }
+            }
+            walkNavPoints(np, depth + 1);
+          }
+        };
+        const navMap = ncxDoc.querySelector('navMap');
+        if (navMap) walkNavPoints(navMap, 0);
+      }
+    }
+
+    // EPUB 3 nav.xhtml parser. Walks all <a href> inside the <nav epub:type="toc">,
+    // which naturally descends nested <ol>/<li> structures via querySelectorAll.
+    let navToc = [];
+    const navItem = opfDoc.querySelector('item[properties~="nav"]');
+    if (navItem) {
+      const navHref = navItem.getAttribute('href');
+      const navPath = rootDir + navHref;
+      const navFile = zip.file(navPath) || zip.file(navHref);
+      if (navFile) {
+        const navDoc = new DOMParser().parseFromString(await navFile.async('text'), 'application/xhtml+xml');
+        let tocNav = null;
+        const allNavs = navDoc.querySelectorAll('nav');
+        for (const n of allNavs) {
+          const t = n.getAttribute('epub:type') || n.getAttributeNS('http://www.idpf.org/2007/ops', 'type');
+          if (t && /\btoc\b/.test(t)) { tocNav = n; break; }
+        }
+        if (!tocNav) {
+          for (const n of allNavs) {
+            if (n.getAttribute('role') === 'doc-toc') { tocNav = n; break; }
+          }
+        }
+        if (!tocNav && allNavs.length > 0) tocNav = allNavs[0];
+        if (tocNav) {
+          const navDir = navPath.includes('/') ? navPath.substring(0, navPath.lastIndexOf('/') + 1) : '';
+          const links = tocNav.querySelectorAll('a[href]');
+          links.forEach(a => {
+            const href = a.getAttribute('href');
+            if (!href) return;
+            const idx = _findChapterByHref(href, navDir);
+            if (idx >= 0) {
+              // Compute approximate depth by walking up the OL ancestry —
+              // each enclosing <ol> represents one level of indentation.
+              let depth = 0;
+              let p = a.parentElement;
+              while (p && p !== tocNav) {
+                if (p.tagName && p.tagName.toLowerCase() === 'ol') depth++;
+                p = p.parentElement;
+              }
+              navToc.push({ title: a.textContent.trim(), index: idx, depth: Math.max(0, depth - 1) });
             }
           });
         }
       }
     }
-    // EPUB 3: TOC lives in an XHTML nav document marked with properties="nav".
-    // If NCX didn't produce a custom TOC (either missing or empty), try nav.
-    if (bookToc.length === 0 || bookToc.every((item, i) => item.title === bookChapters[i]?.title)) {
-      const navItem = opfDoc.querySelector('item[properties~="nav"]');
-      if (navItem) {
-        const navHref = navItem.getAttribute('href');
-        const navPath = rootDir + navHref;
-        const navFile = zip.file(navPath) || zip.file(navHref);
-        if (navFile) {
-          const navDoc = new DOMParser().parseFromString(await navFile.async('text'), 'application/xhtml+xml');
-          // Locate the <nav> with epub:type="toc"; fall back to role or first nav.
-          let tocNav = null;
-          const allNavs = navDoc.querySelectorAll('nav');
-          for (const n of allNavs) {
-            const t = n.getAttribute('epub:type') || n.getAttributeNS('http://www.idpf.org/2007/ops', 'type');
-            if (t && /\btoc\b/.test(t)) { tocNav = n; break; }
-          }
-          if (!tocNav) {
-            for (const n of allNavs) {
-              if (n.getAttribute('role') === 'doc-toc') { tocNav = n; break; }
-            }
-          }
-          if (!tocNav && allNavs.length > 0) tocNav = allNavs[0];
-          if (tocNav) {
-            // Paths in nav are resolved relative to the nav file's location.
-            const navDir = navPath.includes('/') ? navPath.substring(0, navPath.lastIndexOf('/') + 1) : '';
-            const links = tocNav.querySelectorAll('a[href]');
-            const newToc = [];
-            links.forEach(a => {
-              const href = a.getAttribute('href').split('#')[0];
-              if (!href) return;
-              // Resolve against the nav doc's directory
-              const resolvedFromNav = resolveHref(navDir, href);
-              const idx = bookChapters.findIndex((_, i) => {
-                const chHref = manifest[spineItems[i]?.getAttribute('idref')];
-                if (!chHref) return false;
-                const chFullPath = rootDir + chHref;
-                return chFullPath === resolvedFromNav ||
-                       chHref === href ||
-                       chHref.endsWith(href) ||
-                       chHref.endsWith('/' + href);
-              });
-              if (idx >= 0) {
-                newToc.push({ title: a.textContent.trim(), index: idx });
-              }
-            });
-            if (newToc.length > 0) {
-              bookToc.length = 0;
-              newToc.forEach(t => bookToc.push(t));
-            }
-          }
-        }
-      }
+
+    // Pick the best TOC: prefer whichever produced more entries (typically
+    // the EPUB 3 nav since it's hierarchical-by-design and we walk it
+    // properly). Fall back to fallbackToc (one entry per chapter file)
+    // only if both parsers came up empty.
+    let bookToc;
+    if (navToc.length >= ncxToc.length && navToc.length > 0) {
+      bookToc = navToc;
+    } else if (ncxToc.length > 0) {
+      bookToc = ncxToc;
+    } else {
+      bookToc = fallbackToc;
     }
+
 
     const finalToc = bookToc.length > 0 ? bookToc : bookChapters.map((ch, i) => ({ title: ch.title, index: i }));
     const contentSize = bookChapters.reduce((s, c) => s + (c.html?.length || 0), 0);
@@ -4228,10 +4284,17 @@ function caretRangeAtPoint(x, y) {
 }
 
 // ===== TOC =====
+// Renders the table of contents in the sliding panel. Depth comes from the
+// EPUB's hierarchical TOC structure (nested navPoints in NCX, nested <ol>
+// in EPUB 3 nav). Top-level entries (parts, books) sit flush; chapter
+// entries inside them indent. Depth caps at 3 to prevent deeply nested
+// reference books from making the panel unreadable.
 function buildTOC() {
-  $('toc-list').innerHTML = toc.map(item =>
-    `<button class="toc-item${item.index === currentChapterIndex ? ' active' : ''}" onclick="goToChapter(${item.index})">${esc(item.title)}</button>`
-  ).join('');
+  $('toc-list').innerHTML = toc.map(item => {
+    const depth = Math.min(item.depth || 0, 3);
+    const cls = `toc-item${item.index === currentChapterIndex ? ' active' : ''}${depth > 0 ? ' toc-item-nested' : ''}`;
+    return `<button class="${cls}" data-depth="${depth}" onclick="goToChapter(${item.index})">${esc(item.title)}</button>`;
+  }).join('');
 }
 function toggleTOC() { $('ov-toc').classList.toggle('open'); }
 
