@@ -4401,23 +4401,84 @@ function measureSpreads() {
 }
 
 // Apply the current spread by translating the pages container.
-function applySpread() {
+// When animate=true (passed only by readerNext / readerPrev), runs a
+// fade+tiny-slide transition: the current spread fades out while drifting
+// 14px in the turn direction, then the new spread fades in while drifting
+// from 14px the other way back to 0. Programmatic jumps (resize, chapter
+// render, go-to-location) pass animate=false and snap instantly.
+let _animatingTurn = false;
+function applySpread(animate = false, direction = 1) {
   const pagesEl = $('r-pages');
   const bookEl = $('r-book');
   const spreadWidth = bookEl.clientWidth;
   const style = getComputedStyle(pagesEl);
   const gap = parseFloat(style.columnGap) || 80;
   const pairAdvance = spreadWidth + gap;
-  pagesEl.style.transform = `translateX(${-currentSpread * pairAdvance}px)`;
+  const targetX = -currentSpread * pairAdvance;
+
+  if (!animate) {
+    // Instant application. Clear any lingering transition so the jump is
+    // truly a snap (a stale transition would animate the translate).
+    pagesEl.style.transition = 'none';
+    pagesEl.style.opacity = '1';
+    pagesEl.style.transform = `translateX(${targetX}px)`;
+    // Force reflow so the next transition-change doesn't batch with this
+    // snap into a single animated frame.
+    void pagesEl.offsetHeight;
+    pagesEl.style.transition = '';
+    return;
+  }
+
+  if (_animatingTurn) return;
+  _animatingTurn = true;
+
+  const drift = 14;
+  const phaseOutMs = 90;
+  const phaseInMs = 110;
+
+  // Phase 1: fade current spread out while drifting in the turn direction.
+  // Keep the transform anchored at the OLD spread's position — the current
+  // translateX is whatever applySpread last set it to.
+  pagesEl.style.transition = `opacity ${phaseOutMs}ms ease, transform ${phaseOutMs}ms ease`;
+  pagesEl.style.opacity = '0';
+  // Current computed transform + drift.
+  const currentTransform = pagesEl.style.transform;
+  // Extract current X — conservative parse so we don't regex for perf.
+  const m = /translateX\(([-0-9.]+)px\)/.exec(currentTransform);
+  const currentX = m ? parseFloat(m[1]) : 0;
+  pagesEl.style.transform = `translateX(${currentX + (-direction * drift)}px)`;
+
+  // Phase 2: after fade-out completes, snap to the new spread (offset by
+  // +drift in the incoming direction), then fade in while drifting to 0.
+  setTimeout(() => {
+    // Snap to pre-fade-in position (no transition).
+    pagesEl.style.transition = 'none';
+    pagesEl.style.transform = `translateX(${targetX + (direction * drift)}px)`;
+    // Force reflow so the next property change starts a fresh transition.
+    void pagesEl.offsetHeight;
+    // Kick off the fade-in + drift-to-zero.
+    pagesEl.style.transition = `opacity ${phaseInMs}ms ease, transform ${phaseInMs}ms ease`;
+    pagesEl.style.opacity = '1';
+    pagesEl.style.transform = `translateX(${targetX}px)`;
+    // Unlock input once fade-in completes (with a small buffer so the last
+    // frame paints before another click can queue).
+    setTimeout(() => {
+      _animatingTurn = false;
+      // Reset transition to stylesheet default so future calls aren't
+      // stuck with our overrides.
+      pagesEl.style.transition = '';
+    }, phaseInMs + 20);
+  }, phaseOutMs);
 }
 
 // Navigate one spread forward. Crosses into next chapter at the end.
 function readerNext() {
   if (!currentBook) return;
   if (readerInteractionBlocked()) return;
+  if (_animatingTurn) return;
   if (currentSpread < totalSpreads - 1) {
     currentSpread++;
-    applySpread();
+    applySpread(true, 1);
     updateProgress();
     saveProgress();
   } else if (currentChapterIndex < chapters.length - 1) {
@@ -4435,9 +4496,10 @@ function readerNext() {
 function readerPrev() {
   if (!currentBook) return;
   if (readerInteractionBlocked()) return;
+  if (_animatingTurn) return;
   if (currentSpread > 0) {
     currentSpread--;
-    applySpread();
+    applySpread(true, -1);
     updateProgress();
     saveProgress();
   } else if (currentChapterIndex > 0) {
