@@ -889,11 +889,6 @@ body.r-ui-visible .r-footer-ref {
   height: 100%;
   overflow: hidden;
   position: relative;
-  /* Explicit z-index keeps the slot (and its stacking-context inner) below
-     click zones (z-index: 3). Without this, `will-change: transform` on
-     .r-slot-inner creates a stacking context that can interfere with
-     click-zone hit-testing on some browsers. */
-  z-index: 1;
 }
 
 .r-slot-inner {
@@ -4500,12 +4495,11 @@ function measureSpreads() {
 // the left slot alone shows the current page.
 //
 // When animate=true (passed only by readerNext / readerPrev), each slot
-// runs its own fade+drift animation independently. Both start at the
-// same instant and run in sync — decoupled mechanics, identical timing.
-// This looks like the old single-container animation but each page-slot
-// is actually its own independent animation (see animateSlot below),
-// which is the architectural foundation for per-slot effects later
-// without changing how page turns look today.
+// runs a pure slide — a single continuous transform transition from its
+// current X to its new target X. No fade, no drift, no snap. Both slots
+// slide at the same instant in sync. The continuity of the slide (rather
+// than a two-phase fade) is what makes rapid reading feel natural: the
+// eye tracks motion, not an interruption.
 //
 // Programmatic jumps (resize, chapter render, go-to-location) pass
 // animate=false and snap instantly with both slots in sync.
@@ -4544,57 +4538,34 @@ function applySpread(animate = false, direction = 1) {
   if (_animatingTurn) return;
   _animatingTurn = true;
 
-  const drift = 20;
-  const phaseOutMs = 140;
-  const pauseMs = 60;   // brief empty state between fade-out end and fade-in start
-  const phaseInMs = 180;
+  const durationMs = 300;
   // Gentle curve — accelerates slowly and decelerates slowly, gives the
-  // animation a restful feel rather than a quick flash.
+  // slide a restful feel rather than a linear whoosh.
   const ease = 'cubic-bezier(0.4, 0, 0.2, 1)';
 
-  // Run the full fade-out → snap → fade-in sequence for ONE slot. Returns
-  // a promise that resolves when the slot's animation finishes. Scheduling
-  // is relative to when this function is called, not to a shared clock —
-  // so the caller controls stagger by delaying each call independently.
+  // Pure slide: each slot's inner translates from its current X to its new
+  // target X over the full duration. No fade, no drift, no snap-between-
+  // phases. The animation is a single continuous movement per slot.
   const animateSlot = (el, targetX) => new Promise(resolve => {
-    // Phase 1: fade out + drift in turn direction.
-    el.style.transition = `opacity ${phaseOutMs}ms ${ease}, transform ${phaseOutMs}ms ${ease}`;
-    el.style.opacity = '0';
-    const m = /translateX\(([-0-9.]+)px\)/.exec(el.style.transform);
-    const currentX = m ? parseFloat(m[1]) : 0;
-    el.style.transform = `translateX(${currentX + (-direction * drift)}px)`;
-    // Phase 2: after fade-out completes AND a brief pause, snap to the new
-    // page (offset by +drift opposite direction), then fade in drifting
-    // back to target. The pause lets the page feel momentarily absent —
-    // calm beat rather than an instant handoff.
+    // Make sure any leftover inline opacity / stale transition is cleared
+    // so the transform transition is the only thing animating.
+    el.style.opacity = '';
+    el.style.transition = `transform ${durationMs}ms ${ease}`;
+    el.style.transform = `translateX(${targetX}px)`;
     setTimeout(() => {
-      el.style.transition = 'none';
-      el.style.transform = `translateX(${targetX + (direction * drift)}px)`;
-      void el.offsetHeight; // reflow before starting the new transition
-      el.style.transition = `opacity ${phaseInMs}ms ${ease}, transform ${phaseInMs}ms ${ease}`;
-      el.style.opacity = '1';
-      el.style.transform = `translateX(${targetX}px)`;
-      // Clear inline opacity/transition once the fade-in settles so later
-      // code paths (fadeSwap) aren't defeated by stale inline opacity:1.
-      setTimeout(() => {
-        el.style.transition = '';
-        el.style.opacity = '';
-        resolve();
-      }, phaseInMs + 20);
-    }, phaseOutMs + pauseMs);
+      el.style.transition = '';
+      resolve();
+    }, durationMs + 20);
   });
 
-  // Both slots start their animations at the same instant. Each slot
-  // still runs its own animateSlot() independently (they've been decoupled
-  // from the shared-timer approach of Phase A), but kicked off in sync.
+  // Both slots start at the same instant, in sync.
   const leftDone = animateSlot(leftInner, leftTargetX);
   const rightDone = animateSlot(rightInner, rightTargetX);
 
-  // Unlock input once both slots have finished their turns. A defensive
-  // fallback also clears _animatingTurn after a reasonable max duration,
-  // in case a promise never resolves (e.g. an error in a setTimeout chain
-  // that would otherwise leave the reader permanently locked).
-  const maxTotalMs = phaseOutMs + pauseMs + phaseInMs + 100;
+  // Unlock once both slots have finished. Defensive timeout covers any
+  // edge case where a promise never resolves (error in setTimeout chain,
+  // interrupted animation, etc.) — prevents _animatingTurn getting stuck.
+  const maxTotalMs = durationMs + 100;
   let settled = false;
   Promise.all([leftDone, rightDone]).then(() => {
     if (settled) return;
@@ -5028,62 +4999,68 @@ function cancelHold(completed) {
 // Only enabled on devices with a real hover-capable pointer (desktop mouse / trackpad).
 // On touch devices, browsers synthesize phantom mouse events that would otherwise
 // trigger this UI mid-swipe — gate the whole IIFE behind a pointer-capability check.
-// ===== TEMP DIAGNOSTIC (outside any gate) =====
-// Logs every mousedown on document. If this doesn't fire when clicking
-// the reader, then global mouse events are being suppressed entirely.
-// If it fires but the IIFE-gated one doesn't, the matchMedia gate is
-// the problem. Remove after debugging.
-document.addEventListener('mousedown', (e) => {
-  console.log('[global-mousedown]',
-    'target:', e.target.tagName, e.target.className || '(no class)',
-    'id:', e.target.id || '(none)',
-    'x,y:', e.clientX, e.clientY,
-    'button:', e.button);
-});
-// Also log a sample of mousemove (throttled) so we can see if hover-logic
-// would even run over the zone. Only logs when over a click zone.
-let _lastMMLog = 0;
-document.addEventListener('mousemove', (e) => {
-  const now = Date.now();
-  if (now - _lastMMLog < 200) return;
-  const zone = e.target.closest && e.target.closest('.r-click-zone');
-  if (!zone) return;
-  _lastMMLog = now;
-  console.log('[global-mousemove-in-zone]',
-    'target:', e.target.tagName, e.target.className || '(no class)',
-    'zone dir:', zone.dataset.dir);
-});
-// Also log matchMedia result on load so we know if the IIFE gate trips.
-console.log('[hover-capability-check]',
-  'matches:', window.matchMedia('(hover: hover) and (pointer: fine)').matches);
-
+// ===== MOUSE CLICK-AND-HOLD =====
+// Hover shows empty ring with arrow; press starts the fill timer.
+//
+// We want this behavior only when there's a real pointer device (mouse /
+// trackpad). On touch devices, browsers synthesize mouse events from
+// taps — if we ran the hold-ring on those events the UI would flicker
+// mid-swipe. Historically we used `matchMedia('(hover:hover) and
+// (pointer:fine)')` as the gate, but that comes back FALSE on some
+// desktop browsers (notably Opera in default config, some hybrid tablet
+// configs, some accessibility setups). So: treat the matchMedia result
+// as a hint, and also activate if we observe an actual `mousemove`
+// event whose `movementX/Y` is non-zero (which touch-synthesized mouse
+// events don't produce). Either signal is sufficient.
 (() => {
-  const hasPointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-  if (!hasPointer) return;
+  let activated = false;
+  const activate = () => {
+    if (activated) return;
+    activated = true;
 
-  document.addEventListener('mousemove', (e) => {
-    if (readerInteractionBlocked()) { if (_hoverDir) hideHover(); return; }
-    const zone = e.target.closest && e.target.closest('.r-click-zone');
-    if (zone) {
+    document.addEventListener('mousemove', (e) => {
+      if (readerInteractionBlocked()) { if (_hoverDir) hideHover(); return; }
+      const zone = e.target.closest && e.target.closest('.r-click-zone');
+      if (zone) {
+        const dir = zone.dataset.dir;
+        if (dir !== _hoverDir) showHover(dir, e.clientX, e.clientY);
+        else _positionRing(e.clientX, e.clientY);
+      } else if (_hoverDir) {
+        hideHover();
+      }
+    });
+    document.addEventListener('mousedown', (e) => {
+      if (readerInteractionBlocked()) return;
+      const zone = e.target.closest && e.target.closest('.r-click-zone');
+      if (!zone || e.button !== 0) return;
       const dir = zone.dataset.dir;
-      if (dir !== _hoverDir) showHover(dir, e.clientX, e.clientY);
-      else _positionRing(e.clientX, e.clientY);
-    } else if (_hoverDir) {
-      hideHover();
+      if (!dir) return;
+      startHold(dir, e.clientX, e.clientY);
+      e.preventDefault();
+    });
+    document.addEventListener('mouseup', () => cancelHold());
+    document.addEventListener('mouseleave', () => { hideHover(); cancelHold(); });
+    window.addEventListener('blur', () => { hideHover(); cancelHold(); });
+  };
+
+  // Fast path: if the browser says it has a fine pointer with hover,
+  // trust that and activate immediately.
+  if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+    activate();
+    return;
+  }
+
+  // Fallback: watch for a real mouse movement. Touch-synthesized mouse
+  // events have movementX/Y of 0 (they're point-in-time, not continuous),
+  // so a non-zero movement is a reliable signal that a real pointer is
+  // in use. Once we see one, attach the handlers permanently.
+  const probe = (e) => {
+    if ((e.movementX && e.movementX !== 0) || (e.movementY && e.movementY !== 0)) {
+      window.removeEventListener('mousemove', probe);
+      activate();
     }
-  });
-  document.addEventListener('mousedown', (e) => {
-    if (readerInteractionBlocked()) return;
-    const zone = e.target.closest && e.target.closest('.r-click-zone');
-    if (!zone || e.button !== 0) return;
-    const dir = zone.dataset.dir;
-    if (!dir) return;
-    startHold(dir, e.clientX, e.clientY);
-    e.preventDefault();
-  });
-  document.addEventListener('mouseup', () => cancelHold());
-  document.addEventListener('mouseleave', () => { hideHover(); cancelHold(); });
-  window.addEventListener('blur', () => { hideHover(); cancelHold(); });
+  };
+  window.addEventListener('mousemove', probe, { passive: true });
 })();
 
 // ===== DEBUG: reveal interaction zones =====
