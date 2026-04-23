@@ -4494,12 +4494,13 @@ function measureSpreads() {
 // S is currentSpread. On mobile (right slot hidden, _pagesPerSpread=1),
 // the left slot alone shows the current page.
 //
-// When animate=true (passed only by readerNext / readerPrev), runs a
-// staggered per-slot fade+drift: each slot fades out while drifting in the
-// turn direction, then fades in from the opposite direction back to its
-// target. The two slots' animations are independent — one leads, the
-// other lags by ~55ms — giving the impression of pages turning in
-// sequence rather than a whole spread swapping at once.
+// When animate=true (passed only by readerNext / readerPrev), each slot
+// runs its own fade+drift animation independently. Both start at the
+// same instant and run in sync — decoupled mechanics, identical timing.
+// This looks like the old single-container animation but each page-slot
+// is actually its own independent animation (see animateSlot below),
+// which is the architectural foundation for per-slot effects later
+// without changing how page turns look today.
 //
 // Programmatic jumps (resize, chapter render, go-to-location) pass
 // animate=false and snap instantly with both slots in sync.
@@ -4541,14 +4542,6 @@ function applySpread(animate = false, direction = 1) {
   const drift = 14;
   const phaseOutMs = 90;
   const phaseInMs = 110;
-  // Stagger between the two slots. Small enough to still feel simultaneous
-  // at a glance, large enough for the eye to register them as separate
-  // page turns rather than one synchronized swap. The slot that leads
-  // depends on direction: on next, the LEFT page leaves first (the page
-  // you just finished reading exits your attention first); on prev, the
-  // RIGHT page leaves first (you're reversing — the most-recently-seen
-  // page backs out first).
-  const staggerMs = 55;
 
   // Run the full fade-out → snap → fade-in sequence for ONE slot. Returns
   // a promise that resolves when the slot's animation finishes. Scheduling
@@ -4580,22 +4573,13 @@ function applySpread(animate = false, direction = 1) {
     }, phaseOutMs);
   });
 
-  // Stagger: for next (direction=1), left leads, right lags. For prev
-  // (direction=-1), right leads, left lags. Lead slot starts at t=0;
-  // lag slot starts at t=staggerMs. Mobile single-page mode has only the
-  // left slot visible, so stagger collapses to 0 (no "sequence" to show
-  // when there's only one page on screen).
-  const singlePage = _pagesPerSpread === 1;
-  const leadIsLeft = direction === 1;
-  const leftDelay = singlePage ? 0 : (leadIsLeft ? 0 : staggerMs);
-  const rightDelay = singlePage ? 0 : (leadIsLeft ? staggerMs : 0);
+  // Both slots start their animations at the same instant. Each slot
+  // still runs its own animateSlot() independently (they've been decoupled
+  // from the shared-timer approach of Phase A), but kicked off in sync.
+  const leftDone = animateSlot(leftInner, leftTargetX);
+  const rightDone = animateSlot(rightInner, rightTargetX);
 
-  const leftDone = new Promise(resolve =>
-    setTimeout(() => animateSlot(leftInner, leftTargetX).then(resolve), leftDelay));
-  const rightDone = new Promise(resolve =>
-    setTimeout(() => animateSlot(rightInner, rightTargetX).then(resolve), rightDelay));
-
-  // Unlock input once both slots have finished their independent turns.
+  // Unlock input once both slots have finished their turns.
   Promise.all([leftDone, rightDone]).then(() => {
     _animatingTurn = false;
   });
