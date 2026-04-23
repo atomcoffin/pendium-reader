@@ -2,7 +2,7 @@
   "name": "Tomen",
   "short_name": "Tomen",
   "description": "A minimal, beautiful ebook reader",
-  "id": "/pendium-reader/",
+  "id": "/tomen/",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
