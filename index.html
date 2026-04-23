@@ -891,6 +891,17 @@ body.r-ui-visible .r-footer-ref {
   position: relative;
 }
 
+.r-slot-right {
+  /* The right slot is a rendering twin — same content as the left slot
+     but never receives user interaction. Disabling selection and pointer
+     events ensures taps, sentence-select, and editing-mode selections all
+     resolve against the left slot (the authoritative tree for
+     saveEditingMark, anchor capture, and offset math). */
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  pointer-events: none;
+}
+
 .r-slot-inner {
   /* column-count + column-fill: auto + constrained height forces content
      overflow into additional columns (one per "page"). Gap between these
@@ -4389,10 +4400,11 @@ function renderChapter() {
   updateReaderRefs();
   // Reset transforms on both slot inners before measuring. Clear transitions
   // so the reset is an instant snap, then force reflow before restoring.
+  // Opacity is NOT touched here — fadeSwap uses .r-spread.fade to drive inner
+  // opacity via CSS, and clobbering it inline would kill the chapter fade.
   for (const inner of [leftInner, rightInner]) {
     inner.style.transition = 'none';
     inner.style.transform = 'translateX(0)';
-    inner.style.opacity = '1';
   }
   void leftInner.offsetHeight; // force reflow
   for (const inner of [leftInner, rightInner]) {
@@ -4518,9 +4530,11 @@ function applySpread(animate = false, direction = 1) {
   if (!animate) {
     // Instant application. Clear any lingering transition so the jump is
     // truly a snap (a stale transition would animate the translate).
+    // Opacity is NOT forced to 1 here — fadeSwap uses .r-spread.fade to
+    // drive inner opacity via CSS, and clobbering it inline would kill
+    // the chapter fade. The animated path resets opacity itself.
     for (const [inner, tx] of [[leftInner, leftTargetX], [rightInner, rightTargetX]]) {
       inner.style.transition = 'none';
-      inner.style.opacity = '1';
       inner.style.transform = `translateX(${tx}px)`;
     }
     // Force reflow so the next transition-change doesn't batch with this
