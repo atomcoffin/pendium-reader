@@ -910,38 +910,35 @@ body.r-mode-editing .r-click-zone {
 .r-hold-ring.dir-prev .r-hold-arrow-prev { display: block; }
 .r-hold-ring.dir-next .r-hold-arrow-next { display: block; }
 
-/* Swipe-to-turn edge glow. Tall ember bloom on whichever side the user is
-   swiping toward. Opacity scales with swipe progress. */
+/* Swipe-to-turn edge stripe. Chartreuse vertical bar flush against the
+   edge being turned (left for prev, right for next), spanning top to
+   bottom. Width is driven by --swipe-progress (0 to 1) set by JS during
+   the swipe, growing from 0px to 6px during normal swipe and reaching
+   8px once the swipe passes the threshold for committing the page turn.
+   The .threshold-reached class fires the wider state with a brief
+   transition so the user gets clear visual confirmation that lifting
+   their finger now will actually turn the page.
+   Pointer-events: none — this is purely a visual indicator, no
+   interactivity of its own. */
 .r-swipe-ring {
   position: absolute;
   top: 0; bottom: 0;
-  width: 240px;
   pointer-events: none;
-  opacity: 0;
-  transition: opacity 80ms linear;
+  background: var(--brand);
+  width: calc(var(--swipe-progress, 0) * 6px);
+  opacity: 0.9;
+  transition: width 60ms linear, opacity 80ms linear;
   z-index: 5;
+  /* Subtle outer glow so the stripe feels lit rather than painted on,
+     especially against dark theme. Stays inside the page bounds since
+     it's a box-shadow with small spread. */
+  box-shadow: 0 0 12px color-mix(in srgb, var(--brand) 50%, transparent);
 }
-.r-swipe-ring.dir-prev {
-  left: 0;
-  background: radial-gradient(
-    ellipse 65% 45% at left center,
-    rgba(212, 101, 74, 0.92) 0%,
-    rgba(212, 101, 74, 0.6)  16%,
-    rgba(212, 101, 74, 0.28) 38%,
-    rgba(212, 101, 74, 0.08) 65%,
-    rgba(212, 101, 74, 0)    95%
-  );
-}
-.r-swipe-ring.dir-next {
-  right: 0;
-  background: radial-gradient(
-    ellipse 65% 45% at right center,
-    rgba(212, 101, 74, 0.92) 0%,
-    rgba(212, 101, 74, 0.6)  16%,
-    rgba(212, 101, 74, 0.28) 38%,
-    rgba(212, 101, 74, 0.08) 65%,
-    rgba(212, 101, 74, 0)    95%
-  );
+.r-swipe-ring.dir-prev { left: 0; right: auto; }
+.r-swipe-ring.dir-next { right: 0; left: auto; }
+.r-swipe-ring.threshold-reached {
+  width: 8px;
+  opacity: 1;
 }
 
 /* Debug mode — reveals click/touch interaction zones.
@@ -4236,12 +4233,23 @@ document.addEventListener('keydown', (e) => {
     const dir = dx < 0 ? 'next' : 'prev';
     ring.classList.toggle('dir-prev', dir === 'prev');
     ring.classList.toggle('dir-next', dir === 'next');
+    // Ratio is 0 at no swipe, 1 at threshold-reached. CSS uses --swipe-progress
+    // to interpolate width from 0 to 6px. Pow(0.7) curve so the stripe grows
+    // a bit faster early on, then plateaus near threshold — matches how the
+    // user's swipe feels (small motion = obvious response, then diminishing).
     const ratio = Math.min(1, Math.abs(dx) / thresh);
-    ring.style.opacity = Math.pow(ratio, 0.7).toFixed(3);
+    const eased = Math.pow(ratio, 0.7);
+    ring.style.setProperty('--swipe-progress', eased.toFixed(3));
+    // Pop to wider/fuller state once committed — clear "you can let go now"
+    // signal. Threshold reached at ratio = 1 (i.e., dx >= thresh in either
+    // direction).
+    ring.classList.toggle('threshold-reached', ratio >= 1);
   }
   function hideSwipeProgress() {
     const ring = swipeRing();
-    if (ring) ring.style.opacity = '';
+    if (!ring) return;
+    ring.style.removeProperty('--swipe-progress');
+    ring.classList.remove('threshold-reached');
   }
 
   rc.addEventListener('touchstart', (e) => {
