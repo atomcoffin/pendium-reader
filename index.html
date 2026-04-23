@@ -5028,6 +5028,35 @@ function cancelHold(completed) {
 // Only enabled on devices with a real hover-capable pointer (desktop mouse / trackpad).
 // On touch devices, browsers synthesize phantom mouse events that would otherwise
 // trigger this UI mid-swipe — gate the whole IIFE behind a pointer-capability check.
+// ===== TEMP DIAGNOSTIC (outside any gate) =====
+// Logs every mousedown on document. If this doesn't fire when clicking
+// the reader, then global mouse events are being suppressed entirely.
+// If it fires but the IIFE-gated one doesn't, the matchMedia gate is
+// the problem. Remove after debugging.
+document.addEventListener('mousedown', (e) => {
+  console.log('[global-mousedown]',
+    'target:', e.target.tagName, e.target.className || '(no class)',
+    'id:', e.target.id || '(none)',
+    'x,y:', e.clientX, e.clientY,
+    'button:', e.button);
+});
+// Also log a sample of mousemove (throttled) so we can see if hover-logic
+// would even run over the zone. Only logs when over a click zone.
+let _lastMMLog = 0;
+document.addEventListener('mousemove', (e) => {
+  const now = Date.now();
+  if (now - _lastMMLog < 200) return;
+  const zone = e.target.closest && e.target.closest('.r-click-zone');
+  if (!zone) return;
+  _lastMMLog = now;
+  console.log('[global-mousemove-in-zone]',
+    'target:', e.target.tagName, e.target.className || '(no class)',
+    'zone dir:', zone.dataset.dir);
+});
+// Also log matchMedia result on load so we know if the IIFE gate trips.
+console.log('[hover-capability-check]',
+  'matches:', window.matchMedia('(hover: hover) and (pointer: fine)').matches);
+
 (() => {
   const hasPointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
   if (!hasPointer) return;
@@ -5046,12 +5075,6 @@ function cancelHold(completed) {
   document.addEventListener('mousedown', (e) => {
     if (readerInteractionBlocked()) return;
     const zone = e.target.closest && e.target.closest('.r-click-zone');
-    // TEMPORARY DIAGNOSTIC — remove after debug
-    console.log('[click-debug] mousedown target:',
-      e.target.tagName, e.target.className || '(no class)',
-      'id:', e.target.id || '(none)',
-      'found zone:', !!zone,
-      'button:', e.button);
     if (!zone || e.button !== 0) return;
     const dir = zone.dataset.dir;
     if (!dir) return;
