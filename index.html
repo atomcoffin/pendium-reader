@@ -138,13 +138,68 @@ html, body {
 .lib-brand {
   font-family: var(--font-read); font-size: 20px; font-weight: 400;
   letter-spacing: -0.3px; color: var(--ink); line-height: 1;
-  white-space: nowrap; margin-right: auto;
+  white-space: nowrap;
 }
 .lib-brand .greeting-name {
   color: var(--brand-ink); cursor: pointer;
   border-bottom: 1px dashed transparent;
 }
 .lib-brand .greeting-name:hover { border-bottom-color: var(--brand-ink); }
+
+/* Library search. Sits between the greeting and the toolbar, taking the
+   flex growth slot so the toolbar stays pinned right. The input is styled
+   minimally — single-underline focus ring, no drop-shadow, no pill border —
+   to match Tomen's typographic rather than chromed aesthetic. */
+.lib-search {
+  position: relative;
+  flex: 0 1 240px;
+  min-width: 0;
+  margin-left: 20px;
+  margin-right: auto;
+  display: flex; align-items: center;
+}
+.lib-search-icon {
+  position: absolute; left: 8px; top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  color: var(--fog);
+  pointer-events: none;
+  transition: color 140ms ease;
+}
+.lib-search-input {
+  width: 100%;
+  padding: 7px 28px 7px 28px;
+  border: none;
+  border-bottom: 0.5px solid var(--border);
+  background: transparent;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 140ms ease;
+  box-sizing: border-box;
+}
+.lib-search-input::placeholder { color: var(--fog); }
+.lib-search-input:focus { border-bottom-color: var(--brand-ink); }
+.lib-search:focus-within .lib-search-icon { color: var(--brand-ink); }
+.lib-search-clear {
+  position: absolute; right: 4px; top: 50%;
+  transform: translateY(-50%);
+  width: 20px; height: 20px;
+  border: none; background: transparent;
+  color: var(--fog);
+  cursor: pointer;
+  font-size: 13px; line-height: 1;
+  display: none;
+  align-items: center; justify-content: center;
+  border-radius: 3px;
+  transition: color 140ms ease, background 140ms ease;
+}
+.lib-search-clear:hover {
+  color: var(--brand-ink);
+  background: var(--linen);
+}
+.lib-search.has-value .lib-search-clear { display: flex; }
 
 .lib-toolbar { display: flex; align-items: center; gap: 6px; }
 
@@ -311,6 +366,22 @@ html, body {
 .empty-lib .ph { font-size: 48px; color: var(--fog); margin-bottom: 16px; opacity: 0.4; line-height: 1; }
 .empty-lib h3 { font-family: var(--font-read); font-size: 20px; color: var(--stone); margin-bottom: 4px; font-weight: 400; }
 .empty-lib p { font-size: 13px; color: var(--fog); max-width: 260px; line-height: 1.5; }
+.empty-lib-action {
+  margin-top: 16px;
+  padding: 8px 16px;
+  border: 0.5px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+.empty-lib-action:hover {
+  border-color: var(--brand-ink);
+  color: var(--brand-ink);
+}
 
 /* === TEXT VIEW === */
 .view-text { display: flex; flex-direction: column; gap: 0; }
@@ -1876,8 +1947,18 @@ body.r-mode-editing .r-inner {
 
 /* Responsive */
 @media (max-width: 480px) {
-  .lib-header { padding: 12px 12px; gap: 8px; }
+  /* On phones, let the search drop to its own row under the header so the
+     toolbar icons don't compress into unusable tap targets. Flex-wrap on
+     lib-header with full-width search + order:10 moves it below. */
+  .lib-header { padding: 12px 12px; gap: 8px; flex-wrap: wrap; }
   .lib-brand { font-size: 16px; }
+  .lib-search {
+    order: 10;
+    flex: 1 1 100%;
+    margin-left: 0;
+    margin-right: 0;
+    margin-top: 4px;
+  }
   .lib-body { padding: 0 12px 12px; }
   .view-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 14px; }
   .tv-title { font-size: 22px; }
@@ -1893,6 +1974,7 @@ body.r-mode-editing .r-inner {
 }
 @media (min-width: 481px) and (max-width: 768px) {
   .lib-header { padding: 14px 20px; }
+  .lib-search { flex-basis: 180px; margin-left: 12px; }
   .spine { --spine-scale: 0.65; }
   .view-spine { padding: 0 32px 20px 20px; }
 }
@@ -1975,6 +2057,20 @@ body.r-mode-editing .r-inner {
 <div class="screen active" id="screen-lib">
   <div class="lib-header">
     <span class="lib-brand" id="lib-greeting"></span>
+    <div class="lib-search" id="lib-search">
+      <i class="ph ph-magnifying-glass lib-search-icon" aria-hidden="true"></i>
+      <input type="text" id="lib-search-input" class="lib-search-input"
+        placeholder="Search library"
+        aria-label="Search library"
+        oninput="setLibrarySearch(this.value)"
+        onkeydown="if (event.key === 'Escape') { this.value = ''; setLibrarySearch(''); this.blur(); }">
+      <button class="lib-search-clear" id="lib-search-clear"
+        onclick="clearLibrarySearch()"
+        aria-label="Clear search"
+        tabindex="-1">
+        <i class="ph ph-x"></i>
+      </button>
+    </div>
     <div class="lib-toolbar">
       <div class="import-wrap">
         <button class="icon-btn" onclick="toggleImportMenu()" title="Import books">
@@ -2336,6 +2432,10 @@ let toc = [];
 let uiVisible = true;
 let currentView = localStorage.getItem('tomen_view') || 'spine';
 let currentSort = localStorage.getItem('tomen_sort') || 'title';
+// Active library search query. Not persisted — a fresh session opens to the
+// full library rather than a confusingly-filtered view. Empty string means
+// no filter; all other values go through normalizeForSearch().
+let librarySearchQuery = '';
 
 // ===== INDEXEDDB STORAGE =====
 const DB_NAME = 'tomen';
@@ -3097,8 +3197,46 @@ function getLastReadId() {
   return localStorage.getItem('tomen_lastRead') || null;
 }
 
+// ===== LIBRARY SEARCH =====
+// Filters the library by a substring match against normalized title + author.
+// Normalization strips diacritics and lowercases so "camus" finds "Camús"
+// and "kafka" finds "KAFKA". Matching is plain substring — no fuzzy / regex
+// — which is what users expect from a library search box.
+
+function normalizeForSearch(s) {
+  return (s || '')
+    .toString()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .trim();
+}
+
+function setLibrarySearch(q) {
+  librarySearchQuery = q || '';
+  // Update the wrapper's has-value class so the × clear button shows/hides.
+  const wrap = $('lib-search');
+  if (wrap) wrap.classList.toggle('has-value', !!librarySearchQuery.trim());
+  renderLibrary();
+}
+
+function clearLibrarySearch() {
+  const input = $('lib-search-input');
+  if (input) input.value = '';
+  setLibrarySearch('');
+  if (input) input.focus();
+}
+
 function getSortedLibrary() {
-  const sorted = [...library];
+  // Filter first, then sort. The filter is a no-op if the query is empty,
+  // so unfiltered calls keep the original behavior.
+  const q = normalizeForSearch(librarySearchQuery);
+  const pool = q
+    ? library.filter(b =>
+        normalizeForSearch(b.title).includes(q) ||
+        normalizeForSearch(b.author).includes(q))
+    : [...library];
+  const sorted = q ? pool : pool;  // pool is already a fresh array in both branches
   switch (currentSort) {
     case 'title':
       sorted.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
@@ -3117,13 +3255,18 @@ function getSortedLibrary() {
       break;
   }
 
-  // Pull last-read book to front
-  const lastId = getLastReadId();
-  if (lastId) {
-    const idx = sorted.findIndex(b => b.id === lastId);
-    if (idx > 0) {
-      const [book] = sorted.splice(idx, 1);
-      sorted.unshift(book);
+  // Pull last-read book to front — but only when NOT searching. If the user
+  // typed a query, the order they want is "best match for my query first,"
+  // not "my last-read book plus some matches." Skipping the pin during
+  // search avoids a confusing front-of-list surprise.
+  if (!q) {
+    const lastId = getLastReadId();
+    if (lastId) {
+      const idx = sorted.findIndex(b => b.id === lastId);
+      if (idx > 0) {
+        const [book] = sorted.splice(idx, 1);
+        sorted.unshift(book);
+      }
     }
   }
 
@@ -3141,6 +3284,17 @@ function renderLibrary() {
     return;
   }
   const sorted = getSortedLibrary();
+  // Active-search empty state — distinct from "no books" so the copy can
+  // suggest clearing the search rather than adding a book.
+  if (sorted.length === 0 && librarySearchQuery.trim()) {
+    body.innerHTML = `<div class="empty-lib">
+      <i class="ph ph-magnifying-glass"></i>
+      <h3>No matches</h3>
+      <p>Nothing in your library matches "${esc(librarySearchQuery.trim())}".</p>
+      <button class="empty-lib-action" onclick="clearLibrarySearch()">Clear search</button>
+    </div>`;
+    return;
+  }
   if (currentView === 'text') renderTextView(body, sorted);
   else if (currentView === 'grid') renderGridView(body, sorted);
   else renderSpineView(body, sorted);
