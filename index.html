@@ -509,13 +509,16 @@ shadow. The whole row is meant to read as a clean chart of colors + types.
   max-height: 85vh;
   width: max-content;
   min-width: 100%;
-  padding: 40px 40px 28px 28px;
+  padding: 14px 40px 28px 28px;
 }
 
 /* The spine is positioned so absolutely-placed children (fill layer, title,
    last-read dot) can stack cleanly. Color is set inline per-book via
    --spine-color (a single hex string). --spine-fill-pct drives the height
-   of the faded-bottom fill — 0% = no fill visible, 100% = fully faded. */
+   of the faded-bottom fill — 0% = no fill visible, 100% = fully faded.
+   The subtle dark outline prevents adjacent same-hue spines from blurring
+   into a single block; it's 30% black at ~4% opacity so it never looks
+   like a real border, just a seam. */
 .spine {
   flex-shrink: 0;
   position: relative;
@@ -523,6 +526,7 @@ shadow. The whole row is meant to read as a clean chart of colors + types.
   cursor: pointer;
   border-radius: 2px;
   background: var(--spine-color, #888);
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.18);
   transition: filter 140ms ease;
 }
 .spine:hover { filter: brightness(1.08); }
@@ -541,37 +545,56 @@ shadow. The whole row is meant to read as a clean chart of colors + types.
 }
 
 /* Thin line where the fill meets the unread portion. Only visible when
-   there's actual progress. Uses a darker mix of the spine color so it
-   reads as "the liquid surface" rather than an artificial divider. */
+   there's actual progress. Fixed near-black at moderate opacity so it's
+   legible on every spine color — the earlier color-mix approach was too
+   subtle on warm mid-toned spines (oranges, muted browns). */
 .spine-fill-line {
   position: absolute;
   left: 0; right: 0;
   height: 1px;
   bottom: calc(var(--spine-fill-pct, 0%) - 0.5px);
-  background: color-mix(in srgb, var(--spine-color, #888) 60%, #000);
-  opacity: 0.35;
+  background: rgba(0, 0, 0, 0.35);
   pointer-events: none;
 }
 .spine[data-progress="0"] .spine-fill-line { display: none; }
 
-/* Title zone. Full-height, centered. Writing mode vertical-rl with
-   text-orientation mixed so rotated Latin characters read top-to-bottom.
-   Font family is inherited from the spine element (set inline per-book).
-   Color is set inline via --spine-title-color based on luminance. */
-.spine-title {
+/* Title zone. Two elements:
+   - .spine-title-wrap is the positioning layer (absolute, full-spine,
+     flex alignment). Default top-aligns; .center modifier adds vertical
+     centering for short titles that would look stranded at the top.
+   - .spine-title is the rotated text. Writing-mode goes on the text
+     element, not the flex container, because combining flex with
+     vertical writing mode makes alignment properties axis-rotate in
+     surprising ways. */
+.spine-title-wrap {
   position: absolute;
-  top: 6%; left: 0; right: 0; bottom: 6%;
+  top: 4%; left: 0; right: 0; bottom: 4%;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  padding: 0 3px;
+  z-index: 2;
+  pointer-events: none;
+}
+.spine-title-wrap.center { align-items: center; }
+.spine-title {
   writing-mode: vertical-rl;
   text-orientation: mixed;
   line-height: 1.1;
   word-break: break-word;
   color: var(--spine-title-color, rgba(255,255,255,0.92));
-  padding: 0 3px;
-  z-index: 2;
-  pointer-events: none;
+  max-height: 100%;
+  /* Hang the rotated text from the top-left corner of the flex item box
+     so top-anchored titles start at the visual top of the zone. */
+  display: block;
+}
+
+/* Subtitle treatment. Renders inline inside the rotated .spine-title span,
+   smaller and italicized, so "Recursion: A Novel" reads as title + appendix
+   rather than as two disconnected words. */
+.spine-subtitle {
+  font-style: italic;
+  opacity: 0.72;
 }
 
 /* Last-read indicator. Small chartreuse dot at the base of the spine,
@@ -3056,38 +3079,33 @@ function fitHorizontal(text, maxW, maxH, maxLines, sizeHi, sizeLo) {
 
 // ===== SPINE LAYOUT =====
 // Given a spine's ACTUAL rendered width/height in pixels, compute the title's
-// fitted size. Flat-spine redesign: no secondary text, no author. Just the
-// title in the book's chosen face, fit to the full inner area.
+// fitted size. Flat-spine redesign: no author on the spine, but the subtitle
+// (if parseSpineContent splits one off) renders inline as a smaller italic
+// appendix so titles like "Recursion: A Novel" don't read as a run-on.
 //
 // fontFamily is the CSS font-family string that will actually render the
 // title — passed through to measureVertical so size fitting uses the real
 // metrics rather than the probe's default face.
 function spineLayout(book, widthPx, heightPx, fontFamily) {
   const parsed = parseSpineContent(book);
-  // Use the whole title, undivided. The series/subtitle-splitting logic in
-  // parseSpineContent was for a secondary-text treatment we no longer have.
-  // Rejoining keeps book identity intact (e.g. "Deltora Quest #3: City of
-  // the Rats" reads as a single title rather than losing its subtitle).
-  const primaryText = parsed.secondary
-    ? `${parsed.primary} ${parsed.secondary}`
-    : parsed.primary;
+  const primaryText = parsed.primary;
+  const subtitleText = parsed.secondary || null;
 
-  // Title area is the full spine minus a small vertical margin (6% top+bot
-  // matches the CSS .spine-title top/bottom). Horizontal padding is 3px
-  // on each side, also matching CSS.
+  // Title area: full inner width (minus the 3px CSS horizontal padding on
+  // each side) and most of the vertical (4% inset top/bot from CSS).
   const titleMaxW = Math.max(10, widthPx - 6);
-  const titleMaxH = Math.max(20, Math.round(heightPx * 0.88));
+  const titleMaxH = Math.max(20, Math.round(heightPx * 0.92));
 
   // Size caps scale with spine height so the same text feels right on a
   // 500px mobile spine and a 1200px desktop spine. Short titles cap bigger
   // since they can fill more of the zone with a single large glyph column.
   const hScale = Math.max(0.5, Math.min(1.0, heightPx / 1100));
   const len = primaryText.length;
-  const baseCap = len <= 4  ? 72 :
-                  len <= 8  ? 56 :
-                  len <= 16 ? 40 :
-                  len <= 30 ? 30 : 24;
-  const titleCap = Math.max(12, Math.round(baseCap * hScale));
+  const baseCap = len <= 4  ? 88 :
+                  len <= 8  ? 64 :
+                  len <= 16 ? 46 :
+                  len <= 30 ? 34 : 28;
+  const titleCap = Math.max(14, Math.round(baseCap * hScale));
 
   let title = fitVertical(primaryText, titleMaxW, titleMaxH, 10, titleCap, fontFamily);
 
@@ -3099,8 +3117,30 @@ function spineLayout(book, widthPx, heightPx, fontFamily) {
     if (wrapped.size > title.size) title = wrapped;
   }
 
+  // Subtitle size — roughly 60-70% of the title's chosen size, with a floor
+  // of 9px for legibility. Only emit a subtitle if it actually fits within
+  // the remaining zone height after the title.
+  let subtitle = null;
+  if (subtitleText) {
+    const subSize = Math.max(9, Math.round(title.size * 0.62));
+    const remainingH = Math.max(0, titleMaxH - title.height - 6);
+    // Measure the subtitle in the same column width as the title.
+    const sm = measureVertical(subtitleText, subSize, 400, remainingH, fontFamily);
+    if (sm.h <= remainingH && sm.w <= titleMaxW) {
+      subtitle = { text: subtitleText, size: subSize, weight: 400, width: sm.w, height: sm.h };
+    }
+  }
+
+  // Center the title+subtitle vertically when the combined height is well
+  // under the zone — a short title top-anchored in a tall spine looks
+  // stranded. Threshold of 55% is the same as the pre-redesign layout.
+  const combinedH = title.height + (subtitle ? subtitle.height + 6 : 0);
+  const titleCenter = combinedH < titleMaxH * 0.55;
+
   return {
-    primary: { text: primaryText, ...title }
+    primary: { text: primaryText, ...title },
+    subtitle,
+    titleCenter
   };
 }
 
@@ -3378,11 +3418,16 @@ function renderSpineView(el, books) {
       // Tighter tracking at larger sizes; looser at smaller so tall skinny
       // spines don't feel cramped.
       const spacing = p.size >= 18 ? '-0.2px' : p.size >= 12 ? '0.2px' : '0.4px';
-      const titleHtml = `<span class="spine-title"
-        style="font-size:${p.size}px;font-weight:${p.weight};letter-spacing:${spacing}">${esc(p.text)}</span>`;
+      // Subtitle, if present, renders inline with the title (same column,
+      // smaller italic). A space is inserted between them so the line
+      // break happens naturally at word boundary.
+      const subtitleHtml = layout.subtitle
+        ? `<span class="spine-subtitle" style="font-size:${layout.subtitle.size}px">${esc(' ' + layout.subtitle.text)}</span>`
+        : '';
+      const centerClass = layout.titleCenter ? ' center' : '';
+      const titleHtml = `<div class="spine-title-wrap${centerClass}"><span class="spine-title"
+        style="font-size:${p.size}px;font-weight:${p.weight};letter-spacing:${spacing}">${esc(p.text)}${subtitleHtml}</span></div>`;
       // Preserve the fill + fill-line + last-read dot; re-inject title.
-      // (Querying existing children and appending would also work but this
-      // is simpler and the nodes are cheap.)
       spineEl.innerHTML = `
         <div class="spine-fill"></div>
         <div class="spine-fill-line"></div>
