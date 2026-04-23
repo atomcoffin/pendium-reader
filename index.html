@@ -1626,6 +1626,156 @@ body.r-mode-editing .r-inner {
   letter-spacing: 0.2px;
 }
 
+/* ===== Marks v2: list-row layout with ⋯ menu button + note preview ===== */
+
+/* The row wraps the navigable preview button and the ⋯ menu button so we
+   don't nest a button inside another button. Flex so the menu trigger sits
+   flush-right without affecting the preview width reading. */
+.marks-item-row {
+  display: flex; align-items: flex-start;
+  border-left: 2px solid transparent;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+.marks-item-row:hover {
+  background: var(--linen);
+  border-left-color: var(--brand-ink);
+}
+/* When nested in a row, the preview button drops its own hover/border
+   styles — the row handles them instead. */
+.marks-item-row .marks-item {
+  flex: 1;
+  min-width: 0;
+  border-left: none;
+}
+.marks-item-row .marks-item:hover {
+  background: transparent;
+  border-left-color: transparent;
+}
+.marks-item-menu-btn {
+  flex-shrink: 0;
+  width: 32px;
+  align-self: stretch;
+  padding: 0 4px;
+  margin-right: 14px;
+  border: none; background: transparent;
+  color: var(--fog);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  border-radius: 4px;
+  /* Keep visible target large on mobile without visually dominating. */
+  display: flex; align-items: center; justify-content: center;
+  transition: color 140ms ease, background 140ms ease;
+}
+.marks-item-menu-btn:hover {
+  color: var(--brand-ink);
+  background: color-mix(in srgb, var(--brand) 8%, transparent);
+}
+.marks-item-note {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-left: 2px solid var(--brand-ink);
+  background: color-mix(in srgb, var(--brand) 4%, transparent);
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  font-style: italic;
+  line-height: 1.45;
+  color: var(--stone);
+  border-radius: 0 4px 4px 0;
+  /* Clamp note preview to 2 lines; full text visible in the editor. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Note editor — bottom-sheet overlay with textarea + actions. Reuses the
+   .settings bottom-sheet pattern. Separate class so we can tune padding /
+   textarea sizing without affecting the appearance sheet. */
+.note-editor {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: var(--card); border-radius: 20px 20px 0 0;
+  padding: 20px 24px calc(24px + env(safe-area-inset-bottom));
+  z-index: 201;
+  transform: translateY(100%);
+  transition: transform 0.25s var(--ease);
+  max-height: 80vh;
+  display: flex; flex-direction: column;
+}
+.overlay.open .note-editor { transform: translateY(0); }
+.note-editor-handle {
+  width: 32px; height: 3px;
+  background: var(--fog); border-radius: 2px;
+  margin: 0 auto 16px; opacity: 0.35;
+}
+.note-editor-label {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 1.2px; color: var(--fog); margin-bottom: 10px;
+}
+.note-editor-preview {
+  font-family: var(--font-read);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--stone);
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--brand) 10%, transparent);
+  border-radius: 6px;
+  margin-bottom: 14px;
+  /* Clamp to 3 lines — this is just a reference for what the note is about. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.note-editor-textarea {
+  width: 100%;
+  min-height: 120px;
+  max-height: 40vh;
+  padding: 12px;
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--paper);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  resize: vertical;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 140ms ease;
+}
+.note-editor-textarea:focus {
+  border-color: var(--brand-ink);
+}
+.note-editor-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+  margin-top: 14px;
+}
+.note-editor-btn {
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: 0.5px solid var(--border);
+  background: transparent;
+  font-family: var(--font-ui); font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+.note-editor-btn:hover {
+  border-color: var(--brand-ink);
+  color: var(--brand-ink);
+}
+.note-editor-btn.primary {
+  background: var(--brand);
+  border-color: var(--brand-deep);
+  color: var(--brand-text);
+  font-weight: 500;
+}
+.note-editor-btn.primary:hover {
+  background: var(--brand-deep);
+  color: var(--brand-text);
+}
+
 /* Loading */
 .loading {
   position: fixed; inset: 0; background: var(--paper);
@@ -2069,6 +2219,25 @@ body.r-mode-editing .r-inner {
   </div>
 </div>
 
+<!-- Note editor overlay. Bottom-sheet-style modal for editing the note
+     attached to a mark. Opened from the per-mark ⋯ menu. Backdrop click
+     cancels (no save). Submit via the Save button only. -->
+<div class="overlay" id="ov-note" onclick="closeNoteEditor()">
+  <div class="note-editor" onclick="event.stopPropagation()">
+    <div class="note-editor-handle"></div>
+    <div class="note-editor-label" id="note-editor-label">Note</div>
+    <div class="note-editor-preview" id="note-editor-preview"></div>
+    <textarea class="note-editor-textarea" id="note-editor-textarea"
+      placeholder="What did you think?"
+      maxlength="5000"
+      aria-label="Note"></textarea>
+    <div class="note-editor-actions">
+      <button class="note-editor-btn" onclick="closeNoteEditor()">Cancel</button>
+      <button class="note-editor-btn primary" onclick="saveNoteFromEditor()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- Profile overlay -->
 <div class="overlay" id="ov-profile" onclick="toggleProfile()">
   <div class="settings" onclick="event.stopPropagation()">
@@ -2136,6 +2305,11 @@ body.r-mode-editing .r-inner {
      expand to include Rename, Mark as finished, Export marks, etc. as
      those features land. -->
 <div class="book-menu" id="book-menu" role="menu" aria-label="Book options"></div>
+
+<!-- Per-mark contextual menu. Opened from the marks list ⋯ button or from
+     tapping a highlight in the rendered book. Shares .book-menu styling
+     so the popover looks consistent. Populated dynamically per open. -->
+<div class="book-menu" id="mark-menu" role="menu" aria-label="Mark options"></div>
 
 <!-- Confirm dialog. Modal interrupt for destructive actions. Reused for
      any destructive confirmation (delete book, clear marks, etc.) by
@@ -2458,14 +2632,19 @@ function openBookMenu(ev, bookId) {
     <button class="book-menu-item danger" role="menuitem" onclick="confirmDeleteBook('${bookId}')">
       <i class="ph ph-trash"></i>Delete book
     </button>`;
-  // Position near the clicked button. Get the button's bounding rect, then
-  // position the menu just below and left-aligned with it. Clamp to viewport
-  // so the menu never gets cut off by an edge.
-  const btn = ev.currentTarget;
-  const rect = btn.getBoundingClientRect();
-  // Show first so we can measure
+  // Show first so we can measure, then position.
   menu.classList.add('open');
-  const menuRect = menu.getBoundingClientRect();
+  positionFloatingMenu(menu, ev.currentTarget);
+}
+
+// Position a floating menu (right-aligned, below) relative to an anchor
+// element's bounding rect. Clamps to the viewport so edges don't clip.
+// Shared by openBookMenu and openMarkMenu — anywhere a popover hangs off
+// a trigger button or element. Menu must already be visible when called
+// so getBoundingClientRect returns non-zero dimensions.
+function positionFloatingMenu(menuEl, anchorEl) {
+  const rect = anchorEl.getBoundingClientRect();
+  const menuRect = menuEl.getBoundingClientRect();
   let left = rect.right - menuRect.width;
   let top = rect.bottom + 4;
   // Right-edge clamp (with 8px padding from viewport edge)
@@ -2473,13 +2652,13 @@ function openBookMenu(ev, bookId) {
     left = window.innerWidth - menuRect.width - 8;
   }
   if (left < 8) left = 8;
-  // Bottom-edge clamp — flip above the button if it would overflow
+  // Bottom-edge clamp — flip above the anchor if it would overflow
   if (top + menuRect.height > window.innerHeight - 8) {
     top = rect.top - menuRect.height - 4;
   }
   if (top < 8) top = 8;
-  menu.style.left = left + 'px';
-  menu.style.top = top + 'px';
+  menuEl.style.left = left + 'px';
+  menuEl.style.top = top + 'px';
 }
 
 function closeBookMenu() {
@@ -4719,8 +4898,14 @@ function toggleMarks() {
   if (opening) renderMarksList();
 }
 
-// Render the marks list grouped by chapter in reading order. Each mark
-// shows a text preview (line-clamped to 3 lines) plus a small meta line.
+// Render the marks list grouped by chapter in reading order. Each row is a
+// flex container with (1) the navigable preview button and (2) a ⋯ menu
+// button. Notes, if present, render below the preview as a small indented
+// quote with a brand-tinted left border.
+//
+// Rows are NOT button-in-button (invalid HTML + breaks tap on iOS). The
+// preview is a button; the menu trigger is a sibling button; the wrapper
+// is a div that carries the shared hover state.
 function renderMarksList() {
   const listEl = $('marks-list');
   const countEl = $('marks-count');
@@ -4755,9 +4940,20 @@ function renderMarksList() {
     }
     const icon = m.isBookmark ? '<i class="ph ph-bookmark-simple-fill" style="font-size:11px;color:var(--brand);margin-right:6px"></i>' : '';
     const preview = m.text ? esc(m.text) : '(empty)';
-    html.push(`<button class="marks-item" onclick="goToMark('${esc(m.id)}')">
-      <div class="marks-item-preview">${icon}${preview}</div>
-    </button>`);
+    const notePreview = m.note
+      ? `<div class="marks-item-note">${esc(m.note)}</div>`
+      : '';
+    const escId = esc(m.id);
+    html.push(`<div class="marks-item-row">
+      <button class="marks-item" onclick="goToMark('${escId}')">
+        <div class="marks-item-preview">${icon}${preview}</div>
+        ${notePreview}
+      </button>
+      <button class="marks-item-menu-btn" aria-label="Mark options"
+        onclick="openMarkMenu('${escId}', this)">
+        <i class="ph ph-dots-three-vertical"></i>
+      </button>
+    </div>`);
   }
   listEl.innerHTML = html.join('');
 }
@@ -4800,6 +4996,227 @@ function goToMark(markId) {
     });
   });
 }
+
+// ===== MARK MENU & ACTIONS (Marks v2) =====
+// Per-mark contextual menu with three actions: edit note, toggle bookmark,
+// delete. Opened from the marks list ⋯ button OR from tapping a highlight
+// span in the rendered book.
+//
+// The menu DOM is a singleton (#mark-menu), populated per open. Shares
+// .book-menu styling via positionFloatingMenu for consistent popover feel.
+
+let _markMenuId = null; // id of the mark the menu is currently open for
+
+function openMarkMenu(markId, anchorEl) {
+  if (!currentBook || !Array.isArray(currentBook.marks)) return;
+  const mark = currentBook.marks.find(m => m.id === markId);
+  if (!mark || !anchorEl) return;
+  _markMenuId = markId;
+  const menu = $('mark-menu');
+  if (!menu) return;
+  const noteLabel = mark.note ? 'Edit note' : 'Add note';
+  const bookmarkLabel = mark.isBookmark ? 'Unbookmark' : 'Bookmark';
+  const bookmarkIcon = mark.isBookmark ? 'ph-bookmark-simple' : 'ph-bookmark-simple-fill';
+  menu.innerHTML = `
+    <button class="book-menu-item" role="menuitem" onclick="openNoteEditor('${esc(markId)}')">
+      <i class="ph ph-note-pencil"></i>${noteLabel}
+    </button>
+    <button class="book-menu-item" role="menuitem" onclick="toggleMarkBookmark('${esc(markId)}')">
+      <i class="ph ${bookmarkIcon}"></i>${bookmarkLabel}
+    </button>
+    <button class="book-menu-item danger" role="menuitem" onclick="confirmDeleteMark('${esc(markId)}')">
+      <i class="ph ph-trash"></i>Delete
+    </button>`;
+  // Show first so positioning can measure, then anchor near the trigger.
+  menu.classList.add('open');
+  positionFloatingMenu(menu, anchorEl);
+}
+
+function closeMarkMenu() {
+  const menu = $('mark-menu');
+  if (menu) menu.classList.remove('open');
+  _markMenuId = null;
+}
+
+// Close on outside click. Same pattern as book-menu: mousedown so it fires
+// before the click on another trigger would re-open. Excludes the menu
+// itself and any per-mark ⋯ button or .mark-highlight span (those handlers
+// will call openMarkMenu again, so we must not close first).
+document.addEventListener('mousedown', (ev) => {
+  if (!$('mark-menu')?.classList.contains('open')) return;
+  if (ev.target.closest('#mark-menu')) return;
+  if (ev.target.closest('.marks-item-menu-btn')) return;
+  if (ev.target.closest('.mark-highlight')) return;
+  closeMarkMenu();
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && $('mark-menu')?.classList.contains('open')) {
+    closeMarkMenu();
+  }
+});
+
+// Toggle the isBookmark flag on a mark, persist, and refresh UI. No
+// confirmation — bookmarking is reversible and cheap. Updates the in-reader
+// highlight span's data attribute so CSS can restyle without a full re-wrap.
+async function toggleMarkBookmark(markId) {
+  closeMarkMenu();
+  if (!currentBook || !Array.isArray(currentBook.marks)) return;
+  const mark = currentBook.marks.find(m => m.id === markId);
+  if (!mark) return;
+  mark.isBookmark = !mark.isBookmark;
+  try {
+    await saveMark(mark);
+  } catch (err) {
+    console.error('toggleMarkBookmark save failed:', err);
+    mark.isBookmark = !mark.isBookmark; // revert in-memory on failure
+    showErrorToast("Couldn't update bookmark.");
+    return;
+  }
+  // Update the in-reader highlight span(s) for this mark, if visible.
+  const spans = document.querySelectorAll(`.mark-highlight[data-mark-id="${CSS.escape(markId)}"]`);
+  spans.forEach(s => {
+    if (mark.isBookmark) s.dataset.markBookmark = '1';
+    else delete s.dataset.markBookmark;
+  });
+  // Refresh the marks list if the panel is open.
+  if ($('ov-marks')?.classList.contains('open')) renderMarksList();
+}
+
+// Ask for confirmation, then delete. Shows a short preview of the mark text
+// in the confirmation so the user knows which highlight they're removing.
+function confirmDeleteMark(markId) {
+  closeMarkMenu();
+  if (!currentBook || !Array.isArray(currentBook.marks)) return;
+  const mark = currentBook.marks.find(m => m.id === markId);
+  if (!mark) return;
+  // Truncate preview to keep the dialog compact.
+  const preview = (mark.text || '').length > 140
+    ? mark.text.slice(0, 140).trim() + '…'
+    : (mark.text || '(empty)');
+  confirmDialog({
+    title: 'Delete this highlight?',
+    message: `<em>${esc(preview)}</em>`,
+    dangerLabel: 'Delete',
+    onConfirm: () => removeMarkAndUpdateUI(markId)
+  });
+}
+
+// Remove a mark: unwrap its highlight span(s) from the DOM (if currently
+// rendered), delete from in-memory array, delete from IDB, refresh list.
+async function removeMarkAndUpdateUI(markId) {
+  if (!currentBook || !Array.isArray(currentBook.marks)) return;
+  const idx = currentBook.marks.findIndex(m => m.id === markId);
+  if (idx === -1) return;
+  const [mark] = currentBook.marks.splice(idx, 1);
+  // Unwrap any rendered highlight spans for this mark. A mark can have
+  // multiple spans if its range was split across inline elements (em, a,
+  // footnote). Replace each span with its own text nodes and normalize
+  // the parent so adjacent text nodes re-merge.
+  const spans = document.querySelectorAll(`.mark-highlight[data-mark-id="${CSS.escape(markId)}"]`);
+  const parents = new Set();
+  spans.forEach(s => {
+    const parent = s.parentNode;
+    if (!parent) return;
+    while (s.firstChild) parent.insertBefore(s.firstChild, s);
+    parent.removeChild(s);
+    parents.add(parent);
+  });
+  parents.forEach(p => p.normalize());
+  try {
+    await deleteMarkById(markId);
+  } catch (err) {
+    console.error('deleteMarkById failed:', err);
+    // In-memory + DOM are already updated. Warn the user; on next reload
+    // the mark will reappear since the IDB record survived.
+    showErrorToast("Mark removed from view, but couldn't be deleted from storage. It may return on refresh.");
+  }
+  if ($('ov-marks')?.classList.contains('open')) renderMarksList();
+}
+
+// ===== NOTE EDITOR =====
+// Bottom-sheet overlay for authoring/editing the note attached to a mark.
+// Keeps a reference to the active mark id in _noteEditorMarkId; cleared on
+// close so a stale save can't target the wrong mark after navigation.
+
+let _noteEditorMarkId = null;
+
+function openNoteEditor(markId) {
+  closeMarkMenu();
+  if (!currentBook || !Array.isArray(currentBook.marks)) return;
+  const mark = currentBook.marks.find(m => m.id === markId);
+  if (!mark) return;
+  _noteEditorMarkId = markId;
+  const ov = $('ov-note');
+  const ta = $('note-editor-textarea');
+  const preview = $('note-editor-preview');
+  const label = $('note-editor-label');
+  if (!ov || !ta || !preview || !label) return;
+  label.textContent = mark.note ? 'Edit note' : 'Add note';
+  // Preview the mark text so the user has context for what they're annotating.
+  preview.textContent = mark.text || '';
+  ta.value = mark.note || '';
+  ov.classList.add('open');
+  // Focus after the transform transition begins so iOS pulls up the
+  // keyboard with the editor already in position.
+  setTimeout(() => {
+    ta.focus();
+    // Move caret to end for edit-existing flow so the user can append.
+    const len = ta.value.length;
+    try { ta.setSelectionRange(len, len); } catch {}
+  }, 60);
+}
+
+function closeNoteEditor() {
+  const ov = $('ov-note');
+  if (ov) ov.classList.remove('open');
+  _noteEditorMarkId = null;
+  // Blur textarea so the virtual keyboard dismisses on mobile.
+  const ta = $('note-editor-textarea');
+  if (ta) ta.blur();
+}
+
+async function saveNoteFromEditor() {
+  const markId = _noteEditorMarkId;
+  if (!markId || !currentBook || !Array.isArray(currentBook.marks)) {
+    closeNoteEditor();
+    return;
+  }
+  const mark = currentBook.marks.find(m => m.id === markId);
+  if (!mark) {
+    closeNoteEditor();
+    return;
+  }
+  const ta = $('note-editor-textarea');
+  // Trim trailing whitespace only; preserve user's internal newlines/spacing.
+  const raw = (ta?.value || '').replace(/\s+$/, '');
+  const nextNote = raw.length ? raw : null;
+  const prevNote = mark.note ?? null;
+  // No-op if unchanged — don't churn IDB or refresh UI.
+  if (nextNote === prevNote) {
+    closeNoteEditor();
+    return;
+  }
+  mark.note = nextNote;
+  try {
+    await saveMark(mark);
+  } catch (err) {
+    console.error('saveNote failed:', err);
+    mark.note = prevNote; // revert in-memory on failure
+    const q = quotaMessageForError(err);
+    showErrorToast(q || "Couldn't save your note.");
+    return;
+  }
+  closeNoteEditor();
+  if ($('ov-marks')?.classList.contains('open')) renderMarksList();
+}
+
+// Escape to cancel the note editor. Checked with higher specificity than
+// generic overlay handling so Cancel behaves consistently with the button.
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && $('ov-note')?.classList.contains('open')) {
+    closeNoteEditor();
+  }
+});
 
 // "Mark new passage" CTA handler. Closes the panel, then enters editing
 // mode so the user can select text to highlight. Small delay lets the
@@ -4896,11 +5313,23 @@ function toggleReaderUI() {
 // just resolved — the gesture already did its job and we don't want the
 // trailing click to also toggle UI. Also bails in editing mode, where the
 // sentence-select IIFE handles taps on text.
+//
+// Marks v2: a tap landing on a .mark-highlight span opens that mark's menu
+// instead of toggling UI. Checked before the gesture/default guards so a
+// swipe that ended on a highlight doesn't accidentally open the menu.
 let _gestureJustResolved = false;
 function bookAreaTapped(ev) {
   if (!isReading()) return;
   if (_gestureJustResolved) { _gestureJustResolved = false; return; }
   if (ev && ev.defaultPrevented) return;
+  // Tap on an existing highlight → open its menu. Use the span as anchor so
+  // the popover hangs right next to the tapped mark rather than the page edge.
+  const markSpan = ev && ev.target && ev.target.closest && ev.target.closest('.mark-highlight');
+  if (markSpan && markSpan.dataset && markSpan.dataset.markId) {
+    ev.stopPropagation();
+    openMarkMenu(markSpan.dataset.markId, markSpan);
+    return;
+  }
   toggleReaderUI();
 }
 
@@ -5095,6 +5524,7 @@ function highlightOneMark(rootEl, mark) {
     // Wrap target in a span
     const span = document.createElement('span');
     span.className = 'mark-highlight';
+    if (mark.id) span.dataset.markId = mark.id;
     if (mark.createdAt) span.dataset.markCreated = String(mark.createdAt);
     if (mark.isBookmark) span.dataset.markBookmark = '1';
     target.parentNode.insertBefore(span, target);
