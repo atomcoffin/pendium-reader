@@ -2364,6 +2364,15 @@ body.r-mode-editing .r-inner {
       </div>
       <div class="settings-hint">Used to estimate reading time remaining. Adjust if estimates feel off.</div>
     </div>
+    <div class="settings-section">
+      <div class="settings-label">Default typography</div>
+      <div class="theme-row">
+        <button class="theme-btn default-face-btn" data-face="serif" onclick="setGlobalReadingFace('serif')">Serif</button>
+        <button class="theme-btn default-face-btn" data-face="sans" onclick="setGlobalReadingFace('sans')">Sans</button>
+        <button class="theme-btn default-face-btn" data-face="mono" onclick="setGlobalReadingFace('mono')">Mono</button>
+      </div>
+      <div class="settings-hint">The face used when a book has no typeface of its own. Change a book's face from its Appearance panel while reading.</div>
+    </div>
       <button class="export-btn" onclick="exportLibrary()">
         <i class="ph ph-download-simple"></i>
         <span>Export library</span>
@@ -2436,6 +2445,11 @@ let currentSort = localStorage.getItem('tomen_sort') || 'title';
 // full library rather than a confusingly-filtered view. Empty string means
 // no filter; all other values go through normalizeForSearch().
 let librarySearchQuery = '';
+// Global default reading face. Applied to the reader when a book has no
+// per-book override, and visible in the library chrome (greeting, etc).
+// Persisted under the old 'tomen_readingFace' key so existing users don't
+// lose their preference on this release.
+let globalReadingFace = localStorage.getItem('tomen_readingFace') || 'serif';
 
 // ===== INDEXEDDB STORAGE =====
 const DB_NAME = 'tomen';
@@ -2595,7 +2609,10 @@ function bookMetaFromBook(book) {
     spreadIndex: book.spreadIndex || 0,
     scrollPos: book.scrollPos || 0, chapterCount: (book.chapters || []).length,
     contentSize: (book.chapters || []).reduce((s, c) => s + (c.html?.length || 0), 0),
-    spineColor: book.spineColor || null
+    spineColor: book.spineColor || null,
+    // Per-book typography override. null = use the global default. Valid
+    // values match _READING_FACES keys: 'serif' | 'sans' | 'mono'.
+    fontFace: book.fontFace || null
   };
 }
 
@@ -3602,7 +3619,8 @@ async function loadTextFile(file, batch = false) {
   library.push({
     id: book.id, title: book.title, author: book.author, cover: book.cover,
     progress: 0, chapterIndex: 0, scrollPos: 0,
-    chapterCount: 1, contentSize: html.length
+    chapterCount: 1, contentSize: html.length,
+    fontFace: null
   });
   if (!batch) renderLibrary();
 }
@@ -4175,7 +4193,8 @@ async function loadEpub(file, batch = false) {
     library.push({
       id: book.id, title: book.title, author: book.author, cover: book.cover,
       progress: 0, chapterIndex: 0, scrollPos: 0,
-      chapterCount: bookChapters.length, contentSize, spineColor
+      chapterCount: bookChapters.length, contentSize, spineColor,
+      fontFace: null
     });
     if (!batch) renderLibrary();
   } catch (err) {
@@ -4236,6 +4255,10 @@ async function openBookById(id) {
     toc = currentBook.toc;
     currentChapterIndex = currentBook.chapterIndex || 0;
     currentSpread = currentBook.spreadIndex || 0;
+    // Apply this book's typeface override, or fall back to the global
+    // default. Done BEFORE renderChapter so the first paint uses the right
+    // metrics and we don't flash-then-reflow.
+    applyReadingFace(currentBook.fontFace || globalReadingFace);
     $('r-title').textContent = currentBook.title;
     updateTopTitle();
     $('screen-lib').classList.remove('active');
@@ -4265,6 +4288,10 @@ function showLibrary() {
   $('screen-reader').classList.remove('active');
   $('screen-lib').classList.add('active');
   document.body.classList.remove('r-ui-visible');
+  // Revert to the global default face so library chrome renders consistently
+  // regardless of which book was last open. The per-book override will be
+  // re-applied the next time that book is opened.
+  applyReadingFace(globalReadingFace);
   renderLibrary();
 }
 
@@ -5917,23 +5944,90 @@ function formatReadingTime(minutes) {
 // Reading face: swap between Siche Text (serif), Uncut Sans (sans), and
 // Dolph YY (mono). Changes CSS variables only — no chapter re-render, no
 // spread remeasure needed. remeasureReader() handles the layout shift.
+//
+// There are three entry points now:
+//  - applyReadingFace(face): DOM-only. Swaps CSS variables and updates the
+//    segmented-button active state. No persistence, no side effects on
+//    currentBook. Used to render a face without committing it.
+//  - setReadingFace(face): the user-action handler wired to the Appearance
+//    panel. If a book is open, saves as a per-book override on that book.
+//    If no book is open, treats it as a global default change.
+//  - setGlobalReadingFace(face): updates the global default only, never
+//    touches the currently-open book's override. Wired to the "Default
+//    typography" picker in the Profile overlay.
 const _READING_FACES = {
   serif: { read: 'var(--font-read-serif)', display: 'var(--font-display-serif)', weight: '400' },
   sans:  { read: 'var(--font-read-sans)',  display: 'var(--font-display-sans)',  weight: '600' },
   mono:  { read: 'var(--font-read-mono)',  display: 'var(--font-display-mono)',  weight: '700' }
 };
-function setReadingFace(face) {
-  const config = _READING_FACES[face] || _READING_FACES.serif;
+
+// Low-level DOM swap. Safe to call with any face key — unknown values fall
+// back to serif. Updates both the .seg-btn[data-face] pickers (Appearance)
+// and .theme-btn[data-face] (global default picker), since either may be
+// present depending on where the change is coming from.
+function applyReadingFace(face) {
+  const key = _READING_FACES[face] ? face : 'serif';
+  const config = _READING_FACES[key];
   const root = document.documentElement.style;
   root.setProperty('--font-read-active', config.read);
   root.setProperty('--font-display-active', config.display);
   root.setProperty('--font-display-weight', config.weight);
-  document.querySelectorAll('.theme-btn[data-face], .seg-btn[data-face]').forEach(b => b.classList.toggle('active', b.dataset.face === face));
-  localStorage.setItem('tomen_readingFace', face);
-  // The swap changes metrics — different faces have different x-heights,
-  // widths, and line-boxing behavior. Remeasure so pagination reflects the
-  // new layout and we stay anchored to the user's current sentence.
+  // Only the Appearance (in-book) picker tracks the active face; the global
+  // default picker is kept in sync separately via refreshGlobalFacePicker().
+  document.querySelectorAll('.seg-btn[data-face]').forEach(b =>
+    b.classList.toggle('active', b.dataset.face === key));
   if (typeof remeasureReader === 'function') remeasureReader();
+}
+
+// Is the reader screen currently showing? Used to decide whether a face
+// change is a per-book override (book open) or a global default change.
+function isReaderActive() {
+  return $('screen-reader')?.classList.contains('active');
+}
+
+// Called from the Appearance panel. Branches based on whether a book is
+// open — in-book = override, out-of-book = global default. The Appearance
+// panel isn't actually reachable from the library screen today (it's in
+// the reader bottom bar), but the dispatch keeps the function safe either
+// way and future-proofs the call site.
+function setReadingFace(face) {
+  applyReadingFace(face);
+  if (isReaderActive() && currentBook) {
+    currentBook.fontFace = face;
+    // Mirror to the library row so the (future) spine view can pick it up
+    // without re-reading from IDB.
+    const row = library.find(b => b.id === currentBook.id);
+    if (row) row.fontFace = face;
+    saveBookMeta(currentBook).catch(err => {
+      console.error('saveBookMeta (fontFace) failed:', err);
+      showErrorToast("Couldn't save typeface for this book.");
+    });
+  } else {
+    setGlobalReadingFace(face);
+  }
+}
+
+// Updates the global default face. Never touches per-book overrides. When
+// no book is open (reader not active), this also swaps the visible face —
+// so the library/greeting chrome reflects the new default immediately.
+function setGlobalReadingFace(face) {
+  const key = _READING_FACES[face] ? face : 'serif';
+  globalReadingFace = key;
+  localStorage.setItem('tomen_readingFace', key);
+  refreshGlobalFacePicker();
+  // If the reader isn't showing a book with an override, the global face
+  // is what's on screen — reflect the change immediately.
+  if (!isReaderActive()) applyReadingFace(key);
+  else if (currentBook && !currentBook.fontFace) applyReadingFace(key);
+}
+
+// Keep the Profile overlay's "Default typography" picker in sync with the
+// current globalReadingFace. Separate from applyReadingFace's picker sync
+// because the Profile picker reflects a different value (the default)
+// independently of what's currently on screen.
+function refreshGlobalFacePicker() {
+  document.querySelectorAll('.default-face-btn[data-face]').forEach(b =>
+    b.classList.toggle('active', b.dataset.face === globalReadingFace));
 }
 
 // Keep the browser/OS notification bar color synced with Tomen's background.
@@ -6212,8 +6306,12 @@ function renderGreeting() {
 (async function init() {
   const t = localStorage.getItem('tomen_theme') || '';
   setTheme(t);
-  const face = localStorage.getItem('tomen_readingFace') || 'serif';
-  setReadingFace(face);
+  // Apply the global default face at startup. globalReadingFace was read
+  // from localStorage at declaration; applyReadingFace swaps the CSS vars
+  // and syncs the Appearance picker, and refreshGlobalFacePicker syncs
+  // the Profile picker.
+  applyReadingFace(globalReadingFace);
+  refreshGlobalFacePicker();
   const brightness = localStorage.getItem('tomen_brightness');
   setBrightness(brightness === null ? 100 : brightness);
   // Migrate any legacy global reader prefs → desktop bucket, then apply
