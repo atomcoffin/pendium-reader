@@ -978,6 +978,16 @@ body.r-mode-editing .r-inner {
   break-inside: avoid-column;
 }
 
+/* Section break — produced by the EPUB normalizer when a chapter contains
+   decorative spacers (single dashes, asterisks, ornaments) between scenes.
+   Renders as vertical space only; the decorative character itself is
+   dropped since publishers vary wildly in what glyph they use and any
+   choice we make would look wrong next to Tomen's typography. */
+.r-inner .section-break {
+  height: 1.6em;
+  break-inside: avoid-column;
+}
+
 .r-inner small { font-size: 0.85em; color: var(--stone); }
 .r-inner sub, .r-inner sup { font-size: 0.75em; line-height: 0; }
 
@@ -3067,6 +3077,130 @@ function markdownToHtml(md, fallbackTitle) {
   return joined;
 }
 
+// Class patterns that indicate div-as-paragraph. Grouped by what they
+// convert to. Order matters for chapter-title: check those FIRST so a
+// div.ct doesn't get caught by a generic div.tx pattern.
+// Matches are case-insensitive and check if ANY classname contains the
+// substring — robust to "tx1", "tx-first", "paragraph-first", etc.
+const _PARA_CLASS_HINTS = [
+  'tx', 'txt', 'para', 'paragraph', 'body-text', 'bodytext',
+  'pa', 'pfirst', 'firstpara', 'indent', 'noindent',
+];
+const _HEADING_CLASS_HINTS = [
+  'ct', 'chapter-title', 'chaptertitle', 'chap-title', 'chaptitle',
+  'chap-head', 'chapterhead', 'chapter-head', 'chapter-name',
+  'title1', 'h1', 'heading', 'chapter',
+];
+const _BREAK_CLASS_HINTS = [
+  'space-break', 'spacebreak', 'scene-break', 'scenebreak',
+  'section-break', 'sectionbreak', 'transition', 'orn',
+];
+
+function _matchesAnyClassHint(el, hints, opts = {}) {
+  if (!el.className || typeof el.className !== 'string') return false;
+  const cls = el.className.toLowerCase();
+  for (const h of hints) {
+    if (opts.substring) {
+      // Substring match — for distinctive patterns like "space-break" where
+      // publishers prefix/suffix with arbitrary vendor tokens (x04-, -orn).
+      if (cls.includes(h)) return true;
+      continue;
+    }
+    // Token-prefix match — for generic patterns like "tx" / "para" that
+    // could collide with unrelated class names if we substring-matched.
+    const tokens = cls.split(/\s+/);
+    for (const t of tokens) {
+      if (t === h || t.startsWith(h + '-') || t.startsWith(h + '_') ||
+          (/^[a-z]+\d+$/.test(t) && t.startsWith(h))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Normalize a chapter's body element in place. Converts publisher-specific
+// div-based paragraph / heading patterns into semantic <p> and <h2> tags
+// that Tomen's CSS understands. Also strips reader-specific cruft like
+// Kobo's per-sentence <span class="koboSpan"> wrappers.
+//
+// This runs once per chapter during EPUB import. The result is stored as
+// body.innerHTML in the chapter object and doesn't need to re-run at
+// render time.
+function normalizeChapterHtml(body) {
+  const doc = body.ownerDocument;
+
+  // Step 1 — strip Kobo per-sentence spans (and similar reader-injected
+  // spans). They carry no semantic value and clutter the DOM. Replace
+  // each span with its text content / children.
+  const readerSpans = body.querySelectorAll(
+    'span.koboSpan, span[id^="kobo."], span.calibreSpan'
+  );
+  for (const sp of readerSpans) {
+    const frag = doc.createDocumentFragment();
+    while (sp.firstChild) frag.appendChild(sp.firstChild);
+    sp.parentNode.replaceChild(frag, sp);
+  }
+
+  // Step 2 — convert chapter-title divs to <h2>. Check these FIRST, before
+  // paragraph conversion, so a div matching both patterns picks the more
+  // specific heading interpretation. Only the FIRST such div in the chapter
+  // becomes a heading; subsequent ones (rare, but some books have sub-
+  // headings) become <h3>.
+  const candidateHeadings = Array.from(body.querySelectorAll('div'))
+    .filter(d => _matchesAnyClassHint(d, _HEADING_CLASS_HINTS));
+  candidateHeadings.forEach((div, i) => {
+    const tag = i === 0 ? 'h2' : 'h3';
+    const h = doc.createElement(tag);
+    // Preserve inner text/markup but unwrap <b>/<strong> wrappers that
+    // publishers sometimes nest inside the heading div (the heading tag
+    // already provides the emphasis).
+    while (div.firstChild) {
+      const c = div.firstChild;
+      if (c.nodeType === 1 && /^(b|strong)$/i.test(c.tagName)) {
+        while (c.firstChild) h.appendChild(c.firstChild);
+        c.remove();
+      } else {
+        h.appendChild(c);
+      }
+    }
+    div.parentNode.replaceChild(h, div);
+  });
+
+  // Step 3 — convert paragraph-like divs to <p>. After heading conversion
+  // so we don't re-catch any we just converted.
+  const candidateParas = Array.from(body.querySelectorAll('div'))
+    .filter(d => _matchesAnyClassHint(d, _PARA_CLASS_HINTS));
+  for (const div of candidateParas) {
+    const p = doc.createElement('p');
+    // Preserve a class hint for first-paragraph-of-section ("tx1", "pfirst")
+    // in case we want to style it differently later (e.g., remove indent
+    // on first paragraph of a section). Non-blocking for now.
+    if (/(?:^|\s)(tx1|pfirst|firstpara|indent-none|noindent)(?:\s|$)/i.test(div.className || '')) {
+      p.classList.add('first-in-section');
+    }
+    while (div.firstChild) p.appendChild(div.firstChild);
+    div.parentNode.replaceChild(p, div);
+  }
+
+  // Step 4 — normalize decorative section breaks. Keep <hr> as-is (Tomen
+  // styles it). Decorative divs containing nothing but a dash / asterisk /
+  // ornament become empty <div class="section-break"> so Tomen can style
+  // them as spacing without showing random characters.
+  const breakDivs = Array.from(body.querySelectorAll('div'))
+    .filter(d => _matchesAnyClassHint(d, _BREAK_CLASS_HINTS, { substring: true }));
+  for (const div of breakDivs) {
+    // Only treat as section-break if content is short/decorative
+    // (a few characters at most). Longer content probably IS content.
+    const text = (div.textContent || '').trim();
+    if (text.length <= 3) {
+      const br = doc.createElement('div');
+      br.className = 'section-break';
+      div.parentNode.replaceChild(br, div);
+    }
+  }
+}
+
 async function loadEpub(file, batch = false) {
   if (!batch) showLoading(true);
   try {
@@ -3139,6 +3273,16 @@ async function loadEpub(file, batch = false) {
         if (h2 && imageCache[resolveHref(rootDir, h2)]) si2.setAttribute('xlink:href', imageCache[resolveHref(rootDir, h2)]);
       }
 
+      // Normalize publisher-specific markup into semantic tags Tomen's CSS
+      // already handles. EPUBs from different conversion tools (Kobo, Kindle
+      // Previewer, Calibre, Vellum) use wildly inconsistent structure —
+      // some use <p>, some use <div class="paragraph">, some use nothing
+      // but <br>. This pass standardizes common patterns BEFORE we store
+      // body.innerHTML so the rendering CSS can stay simple.
+      normalizeChapterHtml(body);
+
+      // Title extraction — now looks at both heading tags AND the normalized
+      // first .chapter-title we may have produced from div.ct or similar.
       const ct = body.querySelector('h1, h2, h3, title');
       bookChapters.push({ title: ct ? ct.textContent.trim() : `Chapter ${bookChapters.length + 1}`, html: body.innerHTML });
     }
