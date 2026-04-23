@@ -6,7 +6,7 @@
 // handler below deletes any cache whose key doesn't match this version.
 // Add new assets (fonts, icons) to ASSETS so they're cached on install.
 // =====================================================================
-const CACHE_VERSION = 'tomen-v1.9.1-debug';
+const CACHE_VERSION = 'tomen-v1.9.1';
 
 const ASSETS = [
   './',

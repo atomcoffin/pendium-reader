@@ -3335,14 +3335,11 @@ const SUPPORTED_LIST_STR = '.epub, .txt, .html, .htm, .md, .markdown';
 function isSupportedFile(name) { return SUPPORTED_EXT.some(ext => name.toLowerCase().endsWith(ext)); }
 
 async function handleFolderPick() {
-  console.log('[import-debug] handleFolderPick called at', new Date().toISOString());
   if (window.showDirectoryPicker) {
     try {
       const dirHandle = await window.showDirectoryPicker();
       const files = [];
       await collectFilesFromDir(dirHandle, files);
-      console.log('[import-debug] collectFilesFromDir yielded', files.length, 'files:',
-        files.map(f => f.name));
       if (files.length === 0) { alert(`No supported files found (${SUPPORTED_LIST_STR})`); return; }
       await importFiles(files);
     } catch (err) { if (err.name !== 'AbortError') console.error(err); }
@@ -3350,9 +3347,15 @@ async function handleFolderPick() {
     const input = document.createElement('input');
     input.type = 'file'; input.webkitdirectory = true; input.multiple = true;
     input.onchange = async (e) => {
-      const all = Array.from(e.target.files).filter(f => isSupportedFile(f.name));
-      console.log('[import-debug] webkitdirectory fallback yielded', all.length, 'files:',
-        all.map(f => f.name));
+      // Filter out files inside hidden dotfolders (e.g. Calibre's .caltrash,
+      // which stores deleted books that should not come back in on import).
+      // webkitRelativePath is the path relative to the selected root; any
+      // segment starting with '.' marks a hidden folder.
+      const all = Array.from(e.target.files).filter(f => {
+        if (!isSupportedFile(f.name)) return false;
+        const rel = f.webkitRelativePath || '';
+        return !rel.split('/').some(seg => seg.startsWith('.'));
+      });
       if (all.length === 0) { alert(`No supported files found (${SUPPORTED_LIST_STR})`); return; }
       await importFiles(all);
     };
@@ -3360,24 +3363,26 @@ async function handleFolderPick() {
   }
 }
 
+// Recursively collect supported files from a File System Access directory
+// handle. Skips hidden dotfolders (e.g. .caltrash, .DS_Store dirs) so
+// Calibre's trash, OS metadata folders, and the like don't sneak into the
+// library. Matches standard file-manager behavior where dotfiles are hidden.
 async function collectFilesFromDir(dirHandle, files) {
   for await (const entry of dirHandle.values()) {
+    if (entry.name.startsWith('.')) continue;
     if (entry.kind === 'file' && isSupportedFile(entry.name)) files.push(await entry.getFile());
     else if (entry.kind === 'directory') await collectFilesFromDir(entry, files);
   }
 }
 
 async function importFiles(files) {
-  console.log('[import-debug] importFiles called with', files.length, 'files');
   const existingTitles = new Set(library.map(b => b.title.toLowerCase()));
   const newFiles = files.filter(f => !existingTitles.has(f.name.replace(/\.[^.]+$/, '').toLowerCase()));
-  console.log('[import-debug] after dedup filter:', newFiles.length, 'files will be imported');
   if (newFiles.length === 0) { alert('All books in this folder are already in your library.'); return; }
   showLoading(true, `Importing 0 / ${newFiles.length}…`);
   let n = 0, skipped = 0;
 
   for (const file of newFiles) {
-    console.log('[import-debug] about to import:', file.name, 'size:', file.size);
     // Per-file timeout so one bad file can't hang the whole import
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('timeout after 30s')), 30000)
@@ -3399,8 +3404,6 @@ async function importFiles(files) {
     await new Promise(r => setTimeout(r, 0));
   }
 
-  console.log('[import-debug] importFiles done. library.length now:', library.length,
-    'titles:', library.map(b => b.title));
   renderLibrary();
   showLoading(false);
   if (skipped > 0) {
