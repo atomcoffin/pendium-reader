@@ -891,17 +891,6 @@ body.r-ui-visible .r-footer-ref {
   position: relative;
 }
 
-.r-slot-right {
-  /* The right slot is a rendering twin — same content as the left slot
-     but never receives user interaction. Disabling selection and pointer
-     events ensures taps, sentence-select, and editing-mode selections all
-     resolve against the left slot (the authoritative tree for
-     saveEditingMark, anchor capture, and offset math). */
-  -webkit-user-select: none !important;
-  user-select: none !important;
-  pointer-events: none;
-}
-
 .r-slot-inner {
   /* column-count + column-fill: auto + constrained height forces content
      overflow into additional columns (one per "page"). Gap between these
@@ -4582,10 +4571,16 @@ function applySpread(animate = false, direction = 1) {
       el.style.transform = `translateX(${tx}px)`;
     }
     // Unlock input once fade-in completes (with a small buffer so the last
-    // frame paints before another click can queue).
+    // frame paints before another click can queue). Crucially, CLEAR the
+    // inline opacity and transition so subsequent code paths (especially
+    // fadeSwap, which drives opacity via a CSS class) aren't defeated by
+    // the inline opacity:1 this animation just wrote.
     setTimeout(() => {
       _animatingTurn = false;
-      for (const { el } of inners) el.style.transition = '';
+      for (const { el } of inners) {
+        el.style.transition = '';
+        el.style.opacity = '';
+      }
     }, phaseInMs + 20);
   }, phaseOutMs);
 }
@@ -5775,8 +5770,15 @@ function hasEditingSelection() {
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false;
   const range = sel.getRangeAt(0);
-  const inner = $('r-inner');
-  return !!(inner && inner.contains(range.commonAncestorContainer));
+  const left = $('r-inner');
+  const right = $('r-inner-right');
+  const container = range.commonAncestorContainer;
+  // Accept a selection in either slot — both slots render the same content
+  // and character offsets are identical across trees, so a mark made on
+  // the right page resolves to the same chapter offsets as one made on
+  // the left. saveEditingMark handles tree-routing.
+  return !!((left && left.contains(container)) ||
+            (right && right.contains(container)));
 }
 
 // Save the currently-selected text as a mark on the current book. Uses the
@@ -5786,8 +5788,17 @@ function saveEditingMark(isBookmark) {
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
   const range = sel.getRangeAt(0);
-  const inner = $('r-inner');
-  if (!inner || !inner.contains(range.commonAncestorContainer)) return;
+  const left = $('r-inner');
+  const right = $('r-inner-right');
+  // Determine which slot the selection lives in. Both slots render the same
+  // content, so offsets computed against either tree are identical — but the
+  // range's DOM nodes belong to only one tree, so we must walk that specific
+  // tree to compute offsets correctly.
+  const container = range.commonAncestorContainer;
+  let inner = null;
+  if (left && left.contains(container)) inner = left;
+  else if (right && right.contains(container)) inner = right;
+  if (!inner) return;
 
   // Compute global offsets into the flattened chapter text. This lets us
   // locate the mark reliably on re-render even if the DOM nodes differ.
@@ -5821,11 +5832,12 @@ function saveEditingMark(isBookmark) {
   sel.removeAllRanges();
   exitEditingMode();
 
-  // Wrap the newly-saved mark in place — no full re-render, so no transform
-  // reset, no slide-back-to-current-spread animation. The walker in
+  // Wrap the newly-saved mark in BOTH slot trees so the highlight appears
+  // on whichever page the user is looking at (and the other slot too).
   // renderMarksForChapter skips text nodes already inside a highlight span,
   // so existing marks aren't re-wrapped.
-  renderMarksForChapter(inner, currentChapterIndex);
+  if (left) renderMarksForChapter(left, currentChapterIndex);
+  if (right) renderMarksForChapter(right, currentChapterIndex);
 }
 
 // Convert a DOM Range inside `root` to {start, end} character offsets into the
@@ -6627,10 +6639,28 @@ function applyUpdate() { if (waitingSW) waitingSW.postMessage('skipWaiting'); }
   }
 
   function isInsideInner(node) {
-    const inner = $('r-inner');
-    if (!inner || !node) return false;
+    if (!node) return false;
+    const left = $('r-inner');
+    const right = $('r-inner-right');
     const n = node.nodeType === 1 ? node : node.parentElement;
-    return !!(n && inner.contains(n));
+    if (!n) return false;
+    return !!((left && left.contains(n)) ||
+              (right && right.contains(n)));
+  }
+
+  // Locate the containing slot-inner for a given node. Returns the element
+  // with id 'r-inner' or 'r-inner-right' depending on which tree the node
+  // belongs to, or null if the node isn't in either slot. Used to scope
+  // block-ancestor walking and offset math to the correct tree.
+  function findContainingInner(node) {
+    if (!node) return null;
+    const left = $('r-inner');
+    const right = $('r-inner-right');
+    const n = node.nodeType === 1 ? node : node.parentElement;
+    if (!n) return null;
+    if (left && left.contains(n)) return left;
+    if (right && right.contains(n)) return right;
+    return null;
   }
 
   // Locate the word (or character position) under a screen point, then expand
@@ -6682,17 +6712,19 @@ function applyUpdate() { if (waitingSW) waitingSW.postMessage('skipWaiting'); }
     return null;
   }
 
-  // Walk up to the nearest block-level element we care about. Stop at r-inner
-  // if nothing matches.
+  // Walk up to the nearest block-level element we care about. Stop at the
+  // node's containing slot-inner (could be the left or right tree).
   function findBlockAncestor(node) {
     const BLOCK_TAGS = new Set(['P', 'LI', 'BLOCKQUOTE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'FIGCAPTION', 'DD', 'DT']);
-    const inner = $('r-inner');
+    const inner = findContainingInner(node);
+    if (!inner) return null;
     let el = node.nodeType === 1 ? node : node.parentElement;
     while (el && el !== inner) {
       if (BLOCK_TAGS.has(el.tagName)) return el;
       el = el.parentElement;
     }
-    // Fallback: if no block tag found, use r-inner itself (text directly in it).
+    // Fallback: if no block tag found, use the containing inner itself
+    // (text directly in it).
     return inner;
   }
 
@@ -6767,13 +6799,16 @@ function applyUpdate() { if (waitingSW) waitingSW.postMessage('skipWaiting'); }
   }
 
   // Wire up — use pointer events (unified mouse/touch). Capture phase so we
-  // can cancel the click bubbling to r-book.
-  const inner = $('r-inner');
-  if (inner) {
-    inner.addEventListener('pointerdown', onPointerDown);
-    inner.addEventListener('pointerup', onPointerUp);
-    inner.addEventListener('pointercancel', onPointerCancel);
-    inner.addEventListener('click', onClickCapture, true);
+  // can cancel the click bubbling to r-book. Both slot inners get the
+  // handlers since a user can tap-select on either the left or right page.
+  for (const id of ['r-inner', 'r-inner-right']) {
+    const inner = $(id);
+    if (inner) {
+      inner.addEventListener('pointerdown', onPointerDown);
+      inner.addEventListener('pointerup', onPointerUp);
+      inner.addEventListener('pointercancel', onPointerCancel);
+      inner.addEventListener('click', onClickCapture, true);
+    }
   }
 
   // Keep the editing toolbar's action buttons in sync with the current
