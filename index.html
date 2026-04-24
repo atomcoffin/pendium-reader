@@ -2316,7 +2316,7 @@ body.r-mode-editing .r-inner {
 </div>
 
 <!-- ===== READER SCREEN ===== -->
-<div class="screen" id="screen-reader">
+<div class="screen" id="screen-reader" onclick="screenAreaTapped(event)">
   <div class="r-progress" id="r-progress"></div>
   <!-- Reading toolbar. Now passive-only on the left (book title + chapter)
        with page turn buttons on the far right. All navigation actions
@@ -6320,6 +6320,37 @@ function bookAreaTapped(ev) {
     return;
   }
   toggleReaderUI();
+}
+
+// Click handler on the screen-reader root, catching dead-zone clicks
+// (toolbar bezels, r-content padding, anywhere not on an interactive
+// element). Routes to bookAreaTapped so the UI toggle works from anywhere
+// on the screen — not just within the book area.
+//
+// Skips when the click landed inside any element that has its OWN onclick
+// (toolbar buttons, click zones, the book, marks, etc.). Those handlers
+// have already fired during the normal bubble — running this one too
+// would double-toggle and net to no-op. We detect "already handled" by
+// walking up from the target and looking for an `onclick` attribute on
+// any ancestor between target and screen-reader (exclusive).
+function screenAreaTapped(ev) {
+  if (!isReading()) return;
+  if (!ev || !ev.target) return;
+  const screenEl = $('screen-reader');
+  let el = ev.target;
+  while (el && el !== screenEl) {
+    if (el.hasAttribute && el.hasAttribute('onclick')) {
+      // An inner element already handled this click. Don't double-fire.
+      return;
+    }
+    if (el.tagName === 'BUTTON' || el.tagName === 'A') {
+      // Buttons/anchors handle their own clicks even without inline onclick.
+      return;
+    }
+    el = el.parentElement;
+  }
+  // Click is in a true dead zone — toolbar bezel, r-content padding, etc.
+  bookAreaTapped(ev);
 }
 
 // ===== READER MODE =====
