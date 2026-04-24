@@ -1002,14 +1002,14 @@ body.r-mode-editing .r-click-zone {
   width: 0;  /* set inline by JS via rAF easing loop */
   height: 0;
   pointer-events: none;
-  opacity: 0;
-  /* Only opacity transitions via CSS. width/height/top are written
-     per-frame by the rAF loop in _ringTick — putting CSS transitions
-     on them would fight the easing and feel sluggish. CSS transitions
-     ARE briefly applied on the initial pop-in (handled inline in JS). */
-  transition: opacity 140ms ease;
+  /* Baseline opacity — the ring is always visible as a quiet hint at
+     each edge. Bumps up on hover and active. The whole element fades
+     via opacity; the interior fill has its own separate opacity driven
+     by startHold/cancelHold for the bloom-in effect. */
+  opacity: 0.35;
+  transition: opacity 180ms ease;
   z-index: 5;
-  transform: translateY(-50%);  /* center vertically on cursor Y */
+  transform: translateY(-50%);
   will-change: width, height, top, opacity;
 }
 .r-edge-ring-prev {
@@ -1023,13 +1023,12 @@ body.r-mode-editing .r-click-zone {
   /* Same, mirrored: center sits ON the right edge, only left half visible. */
   transform: translate(50%, -50%);
 }
-.r-edge-ring.hover { opacity: 0.55; }
+/* Cursor in the click zone — ring is brighter and scaling toward cursor. */
+.r-edge-ring.hover { opacity: 0.7; }
+/* Cursor is inside the visible half-disc (a click would register). */
+.r-edge-ring.armed { opacity: 0.9; }
+/* Hold is active (mousedown, disc filling). */
 .r-edge-ring.active { opacity: 1; }
-/* During the exit bounce, keep the ring at hover opacity so the size
-   shrink is actually visible. Without this, removing the .hover class
-   triggers an opacity fade that completes (140ms) much faster than the
-   size bounce (420ms), and the ring effectively just disappears. */
-.r-edge-ring.exiting { opacity: 0.55; }
 .r-edge-ring svg {
   width: 100%; height: 100%;
   overflow: visible;
@@ -1068,9 +1067,10 @@ body.r-mode-editing .r-click-zone {
   stroke: none;
   transform: scale(0);
   transform-origin: 40px 40px;  /* SVG center */
-  /* Transition applied inline by startHold — eased fill over HOLD_MS,
-     then reset to scale(0) on cancel/completion. Default is no transition
-     so idle-state scale changes don't animate. */
+  opacity: 0;
+  /* Transitions applied inline by startHold — transform AND opacity
+     ease together over HOLD_MS so the disc blooms in (grows + fades in)
+     rather than appearing at full opacity the moment it starts scaling. */
 }
 
 /* Swipe-to-turn edge stripe. Chartreuse vertical bar flush against the
@@ -4571,6 +4571,10 @@ async function openBookById(id) {
     // Always start books in reading mode (editing mode is never persisted)
     readerMode = 'reading';
     document.body.classList.remove('r-mode-editing');
+    // Initialize the edge-ring indicators to baseline size at mid-screen
+    // height, so they're immediately visible as small hints at both edges
+    // the moment the reader opens.
+    _initEdgeRings();
     renderChapter();
     buildTOC();
   } catch (err) {
@@ -5177,57 +5181,40 @@ document.addEventListener('keydown', (e) => {
 const HOLD_MS = 400;
 // Max ring radius in CSS pixels — the visible half-disc reaches this
 // far into the page area when the cursor is at the screen edge.
-const EDGE_RING_MAX_R = 220;
-// Initial radius the ring opens to as soon as the cursor enters the
-// click zone — visible but small. From here, the ring grows continuously
-// toward MAX_R as the cursor approaches the edge. There's NO floor on
-// the proximity computation — INITIAL_R is just where the entry bounce
-// lands; as soon as you start moving toward the edge the ring grows
-// from INITIAL_R smoothly without any "dead zone" where it sits still.
-const EDGE_RING_INITIAL_R = 50;
-// Minimum visible radius before the ring becomes interactive. Below this,
-// the ring is too small to deliberately click — treat as "not present"
-// even if size > 0. Avoids accidental triggers from drift or partway
-// through the entry bounce.
-const EDGE_RING_MIN_R = 24;
+// Reduced from 220 → 150; the ring was visually dominant at 220.
+const EDGE_RING_MAX_R = 150;
+// Baseline radius — the small persistent indicator always visible at
+// each edge, even when the cursor isn't in the click zone. Signals to
+// the user that the page-turn affordance is always available without
+// being noisy. Reads as a quiet hint, not a UI element.
+const EDGE_RING_BASELINE_R = 14;
+// Minimum radius for the ring to be considered an interactive target.
+// Set above the baseline so stray clicks on the small persistent
+// indicator don't trigger page turns — the user has to move the cursor
+// close enough to grow the ring to a deliberate size.
+const EDGE_RING_MIN_R = 30;
 // rAF easing factor for size/position pursuit. Each frame, the ring's
 // rendered values move (target - current) * EASE toward the target.
-// Lower = more lag (molasses), higher = snappier. 0.07 gives a deliberate
-// catch-up feel — the ring is clearly responding to your cursor, not
-// glued to it.
+// Lower = more lag (molasses), higher = snappier.
 const EDGE_RING_EASE = 0.07;
 // Click zone width as a fraction of viewport width. Page is divided into
-// 3rds: 1/3 prev | 1/3 safe (no page-turn) | 1/3 next. The "safe" middle
-// is for tap-to-toggle-UI and selection without accidentally triggering
-// the edge ring. _computeTargetRadius uses the same value.
+// 3rds: 1/3 prev | 1/3 safe (no page-turn) | 1/3 next.
 const EDGE_ZONE_FRACTION = 1 / 3;
 // Stop the rAF loop when both size and Y are within this many pixels of
 // target — avoids burning CPU on infinitesimal residuals.
 const EDGE_RING_SETTLE_THRESHOLD = 0.4;
-// (EDGE_RING_CIRC was a constant for the user-unit circumference back
-// when we set stroke-dasharray once in CSS. With non-scaling-stroke we
-// now compute the dasharray per-frame in CSS pixels — see _renderRing
-// and startHold. No longer needed.)
-// Bounce timings — entry overshoots and settles; exit eases back to 0.
-// Mirrored timings so entry and exit feel like the same gesture played
-// in reverse. 540ms is deliberately slow — the ring blooms into existence
-// rather than snapping there.
-const EDGE_RING_BOUNCE_EASE_IN = 'cubic-bezier(0.34, 1.56, 0.64, 1)';
-const EDGE_RING_BOUNCE_EASE_OUT = 'cubic-bezier(0.36, 0, 0.66, -0.56)';
-const EDGE_RING_BOUNCE_IN_MS = 540;
-const EDGE_RING_BOUNCE_OUT_MS = 420;
 
 let _holdTimer = null;
 let _holdDir = null;
 let _hoverDir = null;
 
 // Per-direction render state for the rAF easing loop. `target` values are
-// what the cursor implies right now; `current` values are what's actually
-// rendered, lagging behind via easing. `popping` marks the brief window
-// after entry when the CSS bounce transition is playing instead of rAF.
+// what the cursor implies right now (baseline when idle, larger when
+// approaching edge); `current` values are what's actually rendered,
+// lagging behind via easing.
 const _ringState = {
-  prev: { targetR: 0, currentR: 0, targetY: 0, currentY: 0, popping: false },
-  next: { targetR: 0, currentR: 0, targetY: 0, currentY: 0, popping: false }
+  prev: { targetR: 0, currentR: 0, targetY: 0, currentY: 0 },
+  next: { targetR: 0, currentR: 0, targetY: 0, currentY: 0 }
 };
 let _ringRafId = null;
 
@@ -5246,15 +5233,15 @@ function _computeTargetRadius(dir, cursorX) {
   const vw = window.innerWidth;
   const distFromEdge = dir === 'prev' ? cursorX : (vw - cursorX);
   const zoneWidth = vw * EDGE_ZONE_FRACTION;
-  if (distFromEdge < 0 || distFromEdge > zoneWidth) return 0;
+  // Outside the click zone: ring is at its baseline "always visible" size.
+  // This replaces the old "ring vanishes when cursor leaves zone" model —
+  // the ring is a persistent affordance now, not a transient one.
+  if (distFromEdge < 0 || distFromEdge > zoneWidth) return EDGE_RING_BASELINE_R;
   const proximity = 1 - (distFromEdge / zoneWidth);  // 0 at zone outer edge, 1 at screen edge
   // Slight ease — power > 1 means the ring grows slowly across most of
-  // the zone and accelerates near the edge. Combined with the linear
-  // interpolation below, this means: at zone outer edge → INITIAL_R,
-  // at screen edge → MAX_R, no dead zone where the ring sits at a fixed
-  // size before starting to grow. The growth begins immediately on entry.
+  // the zone and accelerates near the edge.
   const eased = Math.pow(proximity, 1.4);
-  return EDGE_RING_INITIAL_R + (EDGE_RING_MAX_R - EDGE_RING_INITIAL_R) * eased;
+  return EDGE_RING_BASELINE_R + (EDGE_RING_MAX_R - EDGE_RING_BASELINE_R) * eased;
 }
 
 // Test whether the cursor is "inside" the visible half-disc — uses the
@@ -5286,13 +5273,6 @@ function _ringTick() {
   let stillAnimating = false;
   for (const dir of ['prev', 'next']) {
     const s = _ringState[dir];
-    if (s.popping) {
-      // CSS bounce transition is playing — don't fight it from JS this
-      // frame. The transition will end and subsequent ticks will resume
-      // rAF easing from wherever the bounce landed.
-      stillAnimating = true;
-      continue;
-    }
     const dR = s.targetR - s.currentR;
     const dY = s.targetY - s.currentY;
     if (Math.abs(dR) > EDGE_RING_SETTLE_THRESHOLD || Math.abs(dY) > EDGE_RING_SETTLE_THRESHOLD) {
@@ -5300,7 +5280,7 @@ function _ringTick() {
       s.currentY += dY * EDGE_RING_EASE;
       _renderRing(dir);
       stillAnimating = true;
-    } else if (s.currentR > 0 || Math.abs(dR) > 0 || Math.abs(dY) > 0) {
+    } else if (Math.abs(dR) > 0 || Math.abs(dY) > 0) {
       // Snap to settled state and render one final frame.
       s.currentR = s.targetR;
       s.currentY = s.targetY;
@@ -5318,15 +5298,45 @@ function _ensureRingTicking() {
   if (_ringRafId == null) _ringRafId = requestAnimationFrame(_ringTick);
 }
 
+// Initialize the edge rings to their baseline state — visible at each
+// edge, mid-screen vertically, at BASELINE_R radius. Called when the
+// reader opens so the rings are immediately visible as small hints
+// rather than appearing only when the cursor approaches an edge.
+function _initEdgeRings() {
+  const midY = window.innerHeight / 2;
+  for (const dir of ['prev', 'next']) {
+    const state = _ringState[dir];
+    state.currentR = EDGE_RING_BASELINE_R;
+    state.targetR = EDGE_RING_BASELINE_R;
+    state.currentY = midY;
+    state.targetY = midY;
+    const ring = _ringForDir(dir);
+    if (ring) {
+      ring.classList.remove('hover', 'active', 'armed', 'exiting');
+      const size = EDGE_RING_BASELINE_R * 2;
+      ring.style.width = size + 'px';
+      ring.style.height = size + 'px';
+      ring.style.top = midY + 'px';
+    }
+    const fill = _fillForDir(dir);
+    if (fill) {
+      fill.style.transition = 'none';
+      fill.style.transform = 'scale(0)';
+      fill.style.opacity = '0';
+    }
+  }
+}
+
 // Set the target values for a ring based on cursor position. The rAF
 // loop will catch up. The opposite-direction ring is told to shrink
 // to 0 (rAF will ease it down).
 function _updateEdgeRing(dir, cursorX, cursorY) {
   const otherDir = dir === 'prev' ? 'next' : 'prev';
-  const otherRing = _ringForDir(otherDir);
   const otherState = _ringState[otherDir];
-  if (otherRing) { otherRing.classList.remove('hover', 'active'); }
-  otherState.targetR = 0;
+  const otherRing = _ringForDir(otherDir);
+  if (otherRing) { otherRing.classList.remove('hover', 'active', 'armed'); }
+  // Other-side ring returns to baseline, not 0 — it's always visible now.
+  otherState.targetR = EDGE_RING_BASELINE_R;
 
   const state = _ringState[dir];
   state.targetR = _computeTargetRadius(dir, cursorX);
@@ -5343,59 +5353,15 @@ function showHover(dir, x, y) {
 
   ring.classList.remove('active', 'exiting', 'armed');
   ring.classList.add('hover');
-  // ALWAYS reset the fill disc on entry — covers the case where a
-  // previous hold completed (disc got left at scale(1)) and the user
-  // re-entered the zone. Without this reset, the new hover-state ring
-  // would render fully filled from the start.
+  // Reset the fill disc in case a prior hold completed and left it scaled.
   if (fill) {
     fill.style.transition = 'none';
     fill.style.transform = 'scale(0)';
+    fill.style.opacity = '0';
   }
-
-  // Initial pop-in: jump current Y to cursor (no Y easing on entry — that
-  // would look like the ring is starting in the wrong place and slowly
-  // sliding to you). Then play a one-shot CSS bounce on width/height
-  // from 0 → INITIAL_R*2. After the bounce ends, rAF takes over for any
-  // further size changes driven by proximity.
-  state.currentY = y;
-  state.targetY = y;
-
-  // If the ring isn't already visible, do the entry bounce. If it IS
-  // visible (rapid re-entry), skip the bounce and just resume rAF.
-  if (state.currentR < EDGE_RING_MIN_R) {
-    state.popping = true;
-    state.currentR = 0;
-    state.targetR = EDGE_RING_INITIAL_R;
-    // Snap at 0 with no transition, then play the slow back-out bounce
-    // to INITIAL_R. The 540ms duration is deliberately leisurely —
-    // the ring blooms into existence rather than snapping there.
-    ring.style.transition = 'none';
-    ring.style.width = '0';
-    ring.style.height = '0';
-    ring.style.top = y + 'px';
-    void ring.offsetHeight;  // reflow
-    ring.style.transition = `width ${EDGE_RING_BOUNCE_IN_MS}ms ${EDGE_RING_BOUNCE_EASE_IN}, height ${EDGE_RING_BOUNCE_IN_MS}ms ${EDGE_RING_BOUNCE_EASE_IN}`;
-    const popSize = EDGE_RING_INITIAL_R * 2;
-    ring.style.width = popSize + 'px';
-    ring.style.height = popSize + 'px';
-    setTimeout(() => {
-      // Only finalize the bounce if we're still in this same hover —
-      // a quick out-and-back-in could have started another bounce that
-      // we shouldn't stomp.
-      if (!state.popping) return;
-      state.popping = false;
-      state.currentR = EDGE_RING_INITIAL_R;
-      // Clear inline transitions so rAF's per-frame width/height writes
-      // don't trigger CSS transitions on every frame (would feel sluggish).
-      ring.style.transition = '';
-      // Refresh target with current cursor position — cursor may have
-      // moved during the bounce, so target may differ from INITIAL.
-      _updateEdgeRing(dir, x, y);
-    }, EDGE_RING_BOUNCE_IN_MS);
-  }
-
-  // Always set targets even if popping (rAF will pick them up after bounce).
-  state.targetR = Math.max(state.targetR, _computeTargetRadius(dir, x));
+  // Set target values — rAF loop will ease from wherever the ring
+  // currently is (likely baseline) to the new cursor-driven target.
+  state.targetR = _computeTargetRadius(dir, x);
   state.targetY = y;
   _ensureRingTicking();
 }
@@ -5407,42 +5373,15 @@ function hideHover() {
   const ring = _ringForDir(dir);
   const state = _ringState[dir];
   if (!ring) return;
-  // Don't shrink if a hold is in progress — the active ring should
-  // stay visible until the hold completes or cancels.
+  // Don't shrink if a hold is in progress — the active ring should stay
+  // at its click-time size until the hold completes or cancels.
   if (_holdTimer) return;
 
-  // Swap .hover for .exiting so opacity stays at hover level (0.55) for
-  // the duration of the size bounce. Without this, removing .hover would
-  // trigger the opacity-out transition (140ms) which races and beats the
-  // size shrink (420ms), making the ring "just disappear" instead of
-  // bouncing out.
   ring.classList.remove('hover', 'active', 'armed');
-  ring.classList.add('exiting');
-
-  // Exit bounce — mirror of the entry bounce, played as a one-shot CSS
-  // transition. Suspend rAF for this direction (popping=true blocks it
-  // from writing width/height), animate down to 0, then mark fully
-  // hidden and drop opacity.
-  state.popping = true;
-  state.targetR = 0;
-  // Read current rendered values so the transition starts from where
-  // rAF last left off (in case we interrupted mid-grow).
-  const startSize = state.currentR * 2;
-  ring.style.transition = 'none';
-  ring.style.width = startSize + 'px';
-  ring.style.height = startSize + 'px';
-  void ring.offsetHeight;  // reflow
-  ring.style.transition = `width ${EDGE_RING_BOUNCE_OUT_MS}ms ${EDGE_RING_BOUNCE_EASE_OUT}, height ${EDGE_RING_BOUNCE_OUT_MS}ms ${EDGE_RING_BOUNCE_EASE_OUT}`;
-  ring.style.width = '0';
-  ring.style.height = '0';
-  setTimeout(() => {
-    if (!state.popping) return;  // re-entered before exit completed
-    state.popping = false;
-    state.currentR = 0;
-    state.targetR = 0;
-    ring.style.transition = '';
-    ring.classList.remove('exiting');  // now opacity fades to 0 (already invisible by size)
-  }, EDGE_RING_BOUNCE_OUT_MS);
+  // Target baseline, not 0 — the ring is a persistent affordance now.
+  // rAF loop eases currentR toward baseline smoothly.
+  state.targetR = EDGE_RING_BASELINE_R;
+  _ensureRingTicking();
 }
 
 function startHold(dir, x, y) {
@@ -5451,17 +5390,18 @@ function startHold(dir, x, y) {
   const ring = _ringForDir(dir);
   const fill = _fillForDir(dir);
   if (!ring || !fill) return;
-  // Don't reposition during hold — the ring stays where the user clicked,
-  // even if the cursor drifts a little. The interior fill is the focal
-  // point now.
-  // Start the disc at scale(0) — no transition, just a snap to 0 — then
-  // kick off the transition to scale(1) over HOLD_MS. Soft ease matches
-  // the rest of the reader's "flowy" feel.
+  // Start the disc at scale(0), opacity 0 — no transition, just a snap
+  // to the empty state — then kick off the transition to scale(1),
+  // opacity 1 over HOLD_MS. Opacity fading in parallel with the scale
+  // keeps the brand color from appearing abruptly at full intensity;
+  // instead it blooms in gently.
   fill.style.transition = 'none';
   fill.style.transform = 'scale(0)';
+  fill.style.opacity = '0';
   void fill.getBoundingClientRect();  // reflow
-  fill.style.transition = `transform ${HOLD_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+  fill.style.transition = `transform ${HOLD_MS}ms cubic-bezier(0.4, 0, 0.2, 1), opacity ${HOLD_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`;
   fill.style.transform = 'scale(1)';
+  fill.style.opacity = '1';
   ring.classList.remove('hover', 'exiting');
   ring.classList.add('active');
   _holdTimer = setTimeout(() => {
@@ -5483,46 +5423,30 @@ function cancelHold(completed) {
   if (!ring) return;
   ring.classList.remove('active');
   // Interior fill handling:
-  // - If completed (page turn fired): snap back to scale(0) instantly so
-  //   the next hold starts from empty. No user-visible "post-turn" state.
-  // - If canceled (user released before completion): ease back to scale(0)
-  //   so there's a gentle "pulling back" feel rather than a pop.
+  // - If completed (page turn fired): snap back to scale(0) + opacity 0
+  //   instantly so the next hold starts from empty.
+  // - If canceled (user released before completion): ease back smoothly.
   if (fill) {
     if (completed) {
       fill.style.transition = 'none';
       fill.style.transform = 'scale(0)';
+      fill.style.opacity = '0';
     } else {
-      // Reverse shrink — slightly faster than the hold grow so it feels
-      // like the hold is being undone, not re-reversed.
-      fill.style.transition = `transform 200ms cubic-bezier(0.4, 0, 0.2, 1)`;
+      fill.style.transition = `transform 200ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms ease`;
       fill.style.transform = 'scale(0)';
+      fill.style.opacity = '0';
     }
   }
+  const state = _ringState[dir];
   if (_hoverDir === dir) {
+    // Cursor still in zone — restore hover state, let rAF pull the ring
+    // back to its proximity-driven size.
     ring.classList.add('hover');
   } else {
-    ring.classList.remove('hover');
-    ring.classList.add('exiting');
-    // Cursor has already left the zone — play the exit bounce.
-    const state = _ringState[dir];
-    state.popping = true;
-    state.targetR = 0;
-    const startSize = state.currentR * 2;
-    ring.style.transition = 'none';
-    ring.style.width = startSize + 'px';
-    ring.style.height = startSize + 'px';
-    void ring.offsetHeight;
-    ring.style.transition = `width ${EDGE_RING_BOUNCE_OUT_MS}ms ${EDGE_RING_BOUNCE_EASE_OUT}, height ${EDGE_RING_BOUNCE_OUT_MS}ms ${EDGE_RING_BOUNCE_EASE_OUT}`;
-    ring.style.width = '0';
-    ring.style.height = '0';
-    setTimeout(() => {
-      if (!state.popping) return;
-      state.popping = false;
-      state.currentR = 0;
-      state.targetR = 0;
-      ring.style.transition = '';
-      ring.classList.remove('exiting');
-    }, EDGE_RING_BOUNCE_OUT_MS);
+    // Cursor has left — target baseline, rAF eases the shrink.
+    ring.classList.remove('hover', 'armed');
+    state.targetR = EDGE_RING_BASELINE_R;
+    _ensureRingTicking();
   }
 }
 
