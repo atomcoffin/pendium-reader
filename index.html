@@ -117,6 +117,54 @@
   --border: rgba(62, 50, 40, 0.06);
 }
 
+/* Rose Paper — warm cream paper with a dusty rose accent. Editorial
+   companion to Sepia: same general warmth but with a pink accent in
+   place of chartreuse. Brand color replaced with rose across the app —
+   progress bar, marks, last-read dot all pick up the rose automatically
+   via the --brand variable. Best for afternoon fiction-reading. */
+.rose-paper {
+  --paper: #F7EEE6; --linen: #EFE3D7; --card: #FAF3EB;
+  --paper-edge: #E1D1C1;
+  --ink: #2A1D1A; --stone: #7A5A52; --fog: #A58272;
+  --brand: #D66B88;
+  --brand-ink: #A03E5A;
+  --brand-deep: #B85272;
+  --brand-text: #FFFFFF;
+  --border: rgba(42, 29, 26, 0.08);
+}
+
+/* Inkwell — deep navy paper with brass accent. Library/antiquarian
+   rather than tech. Best for late-night reading where Dark theme feels
+   too cold. Text is warm cream (#D8D0BC), not white, to avoid the
+   surgical-white-on-black feel. */
+.inkwell {
+  --paper: #161D2E; --linen: #0F1420; --card: #1F2638;
+  --paper-edge: #2A3348;
+  --ink: #D8D0BC; --stone: #8A8470; --fog: #5E5A4F;
+  --brand: #E3B564;
+  --brand-ink: #E3B564;
+  --brand-deep: #C89A4A;
+  --brand-text: #1A1610;
+  --border: rgba(216, 208, 188, 0.08);
+  --shadow-cover: 0 4px 16px rgba(0, 0, 0, 0.28);
+  --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.44);
+}
+
+/* Graphite — slate paper with NO color accent. The brand variables are
+   deliberately mapped to dark gray, giving highlights, progress bars,
+   and marks a monochrome editorial feel. Most minimal of the six
+   themes; most confident stylistically. */
+.graphite {
+  --paper: #E8E6E2; --linen: #DDDAD4; --card: #F0EEEA;
+  --paper-edge: #C8C5BE;
+  --ink: #23221F; --stone: #666560; --fog: #A09D97;
+  --brand: #4A4944;
+  --brand-ink: #4A4944;
+  --brand-deep: #35342F;
+  --brand-text: #E8E6E2;
+  --border: rgba(35, 34, 31, 0.08);
+}
+
 html, body {
   height: 100%; overflow: hidden;
   background: var(--paper);
@@ -1334,6 +1382,15 @@ body.r-mode-editing .r-inner {
   letter-spacing: 1.2px; color: var(--fog); margin-bottom: 10px;
 }
 .theme-row { display: flex; gap: 8px; }
+/* Grid variant used by the six-theme picker in the Profile overlay. Two
+   rows of three — light themes on top, dark on bottom. The flex pill
+   doesn't scale well past four items; a grid does. Re-uses .theme-btn
+   styles unchanged. */
+.theme-row-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
 .theme-btn {
   flex: 1; padding: 10px; border-radius: var(--radius-sm);
   border: 1.5px solid var(--border); background: transparent;
@@ -1600,6 +1657,33 @@ body.r-mode-editing .r-inner {
 }
 .seg-btn.active:hover {
   color: var(--brand-text);
+}
+
+/* Grid variant for segmented rows that would otherwise overflow. Used by
+   the six-theme picker. Drops the pill shell (would look bad with 2x3)
+   and renders each button as its own smaller pill. Two columns by
+   default, three on viewports with more room. */
+.seg-row-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+}
+.seg-row-grid .seg-btn {
+  padding: 8px 10px;
+  border: 0.5px solid var(--border);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+.seg-row-grid .seg-btn:hover {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.seg-row-grid .seg-btn.active {
+  background: var(--brand);
+  color: var(--brand-text);
+  border-color: var(--brand);
 }
 
 /* Compact slider row — horizontal layout with optional leading icon and
@@ -2327,10 +2411,13 @@ body.r-mode-editing .r-inner {
     <div class="settings-primary">
       <div class="settings-row">
         <div class="settings-row-label">Theme</div>
-        <div class="seg-row">
+        <div class="seg-row seg-row-grid">
           <button class="seg-btn active" data-theme="" onclick="setTheme('')">Light</button>
           <button class="seg-btn" data-theme="sepia" onclick="setTheme('sepia')">Sepia</button>
+          <button class="seg-btn" data-theme="rose-paper" onclick="setTheme('rose-paper')">Rose</button>
+          <button class="seg-btn" data-theme="graphite" onclick="setTheme('graphite')">Graphite</button>
           <button class="seg-btn" data-theme="dark" onclick="setTheme('dark')">Dark</button>
+          <button class="seg-btn" data-theme="inkwell" onclick="setTheme('inkwell')">Inkwell</button>
         </div>
       </div>
       <div class="settings-row">
@@ -2466,10 +2553,13 @@ body.r-mode-editing .r-inner {
     </div>
     <div class="settings-section">
       <div class="settings-label">Theme</div>
-      <div class="theme-row">
+      <div class="theme-row theme-row-grid">
         <button class="theme-btn active" data-theme="" onclick="setTheme('')">Light</button>
         <button class="theme-btn" data-theme="sepia" onclick="setTheme('sepia')">Sepia</button>
+        <button class="theme-btn" data-theme="rose-paper" onclick="setTheme('rose-paper')">Rose</button>
+        <button class="theme-btn" data-theme="graphite" onclick="setTheme('graphite')">Graphite</button>
         <button class="theme-btn" data-theme="dark" onclick="setTheme('dark')">Dark</button>
+        <button class="theme-btn" data-theme="inkwell" onclick="setTheme('inkwell')">Inkwell</button>
       </div>
     </div>
     <div class="settings-section">
@@ -6258,14 +6348,21 @@ document.addEventListener('click', e => {
 // update the OS-level notification bar / status bar color so it blends with
 // Tomen's background rather than showing a default bar.
 const _THEME_PAPER_COLORS = {
-  '':      '#FAF6F1',  // light (default)
-  'sepia': '#F4ECD8',
-  'dark':  '#1A1614'
+  '':           '#FAF6F1',  // light (default)
+  'sepia':      '#F4ECD8',
+  'dark':       '#1A1614',
+  'rose-paper': '#F7EEE6',
+  'inkwell':    '#161D2E',
+  'graphite':   '#E8E6E2'
 };
+// List of all non-default theme class names. Used by setTheme to remove
+// the previous theme before applying a new one — keeping this as a single
+// source of truth so adding a future theme only requires one edit here.
+const _THEME_CLASSES = ['dark', 'sepia', 'rose-paper', 'inkwell', 'graphite'];
 function setTheme(theme) {
   // Remove old theme classes without wiping other body classes (r-ui-visible,
   // r-mode-editing, r-debug, etc.)
-  document.body.classList.remove('dark', 'sepia');
+  _THEME_CLASSES.forEach(c => document.body.classList.remove(c));
   if (theme) document.body.classList.add(theme);
   // Scope to buttons that actually carry a data-theme attribute — otherwise
   // we'd also toggle face/paragraph/align buttons which share .theme-btn.
