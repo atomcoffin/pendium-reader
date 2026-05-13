@@ -979,9 +979,12 @@ body.r-ui-visible .r-progress {
   position: absolute;
   left: 0; right: 0;
   z-index: 10;
-  /* Warm paper with a whisper of ember — recedes against content but has a
-     subtle brand temperature, not a neutral grey. */
-  background: color-mix(in srgb, var(--paper) 96%, var(--brand) 4%);
+  /* Brand-forward toolbar — paper with a confident wash of the theme's
+     brand color so the UI surface reads as unmistakably "ours" without
+     overpowering the page. Dark themes override this below to keep the bg
+     subtle (heavy brand mix on near-black bases muddies into olive) and
+     instead use a bright brand stripe at the page-facing edge. */
+  background: color-mix(in srgb, var(--paper) 78%, var(--brand) 22%);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   transition: opacity 180ms ease, transform 220ms var(--ease);
@@ -989,13 +992,40 @@ body.r-ui-visible .r-progress {
 }
 .r-toolbar-top {
   top: 0;
-  border-bottom: 0.5px solid color-mix(in srgb, var(--brand) 8%, var(--border));
+  border-bottom: 1px solid color-mix(in srgb, var(--brand) 60%, var(--border));
   padding: calc(8px + env(safe-area-inset-top, 0px)) 0 8px 0;
 }
 .r-toolbar-bottom {
   bottom: 0;
-  border-top: 0.5px solid color-mix(in srgb, var(--brand) 8%, var(--border));
+  border-top: 1px solid color-mix(in srgb, var(--brand) 60%, var(--border));
   padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px)) 0;
+}
+/* Dark-theme toolbar treatment — bg stays close to paper (mixing a bright
+   brand into a near-black base produces muddy olive), and the page-facing
+   edge gets a clean 1.5px brand stripe at ~75% to express the same
+   "branded UI" intensity expressed differently for a dark substrate. */
+body.dark .r-toolbar,
+body.inkwell .r-toolbar,
+body.crt .r-toolbar {
+  background: color-mix(in srgb, var(--paper) 90%, var(--brand) 10%);
+}
+body.dark .r-toolbar-top,
+body.inkwell .r-toolbar-top,
+body.crt .r-toolbar-top {
+  border-bottom: 1.5px solid color-mix(in srgb, var(--brand) 75%, transparent);
+}
+body.dark .r-toolbar-bottom,
+body.inkwell .r-toolbar-bottom,
+body.crt .r-toolbar-bottom {
+  border-top: 1.5px solid color-mix(in srgb, var(--brand) 75%, transparent);
+}
+/* Icon hover inside the now-branded bar — the default --linen hover bg
+   blends into the brand wash and disappears. Switch to a brand-mixed
+   chip so the affordance still reads. Active state stays --brand-ink
+   which is calibrated to be readable as text on each theme's paper. */
+.r-toolbar .icon-btn:hover {
+  background: color-mix(in srgb, var(--brand) 22%, transparent);
+  color: var(--brand-ink);
 }
 /* Inner container is a three-column grid: left cluster, centered title,
    right cluster. Constrained to 720px on desktop so the items sit close
@@ -1834,96 +1864,161 @@ body.r-mode-editing .r-inner {
   color: var(--stone); min-width: 32px; text-align: center;
 }
 
-/* ===== Settings panel redesign =====
-   Compact grouped layout replacing the flat list. Three groups — Display,
-   Typography, Layout — in a two-column grid on desktop, single column on
-   mobile. Group headers demarcate concept clusters; rows are label+control
-   pairs aligned on a shared baseline. The existing .settings classes (handle,
-   etc.) still apply; .settings-redesign just swaps the content padding and
-   enables the grid. */
+/* ===== Appearance panel =====
+   Single-surface compact layout — theme swatches up top, paired
+   control rows in the middle, paragraph trio clustered at the bottom.
+   No label column (captions are micro-headers above each control) and
+   no progressive-disclosure tier. The existing .settings classes
+   (handle, bottom-sheet transitions, etc.) still apply; .settings-compact
+   just swaps the content padding. */
 
-.settings-redesign {
-  padding: 16px 24px 28px;
+.settings-compact {
+  padding: 14px 24px 28px;
   max-height: 80vh;
 }
 
-.settings-grid {
+/* Compact Appearance panel — no label column, no progressive-disclosure
+   tier. All controls live on one surface, paired into rows where the two
+   controls are short enough to share, and clustered into a single row
+   for the paragraph trio. The caption sits inline above each control
+   group as a micro-label, freeing the ~110px the old label column ate. */
+.settings-compact .set-section {
+  max-width: 640px;
+  margin: 0 auto 14px;
+}
+.settings-compact .set-section:last-child {
+  margin-bottom: 0;
+}
+
+/* Micro-caption above each control group — replaces the old left-column
+   label. Uppercase + tracked so it reads as a header not a sentence, and
+   stone-colored so it stays subordinate to the actual control. */
+.set-caption {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--stone);
+  margin-bottom: 6px;
+}
+
+/* Paired-cell row — two related controls side by side. Each cell owns
+   its own caption + control; the row evenly divides horizontal space.
+   On narrow viewports the cells stack (defined in the mobile block). */
+.set-pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 24px 32px;
-  max-width: 1100px;
-  margin: 0 auto;
+  gap: 24px;
+  max-width: 640px;
+  margin: 0 auto 14px;
+}
+.set-cell {
+  min-width: 0;
 }
 
-/* ===== Two-tier Appearance panel =====
-   Primary surface shows the four most-adjusted controls (theme, face,
-   size, line height). Secondary surface (brightness, width, paragraphs,
-   spacing, alignment) hides behind a "More" toggle and expands in place.
-   The split reduces the common-case scanning load from 9 controls to 4
-   while preserving access to the rest for the rare case.
-
-   Single-column layout at all widths — the panel is a bottom sheet, not
-   a desktop settings dialog. Horizontal space would just stretch the
-   segmented controls without adding clarity. */
-.settings-primary {
+/* Theme picker as color swatches. Each chip is a flat circle showing
+   that theme's paper as the base with the brand color as an inset dot.
+   Active state = a brand ring around the chip + brand-colored name. */
+.theme-swatches {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+.theme-swatch {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  max-width: 560px;
-  margin: 0 auto;
-}
-
-/* The "More" toggle button itself. Low-weight — this is a progressive
-   disclosure affordance, not a primary action. Dashed border signals
-   "there's more behind this" without competing visually with the real
-   controls above it. */
-.settings-more-toggle {
-  display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin: 22px auto 0;
-  padding: 8px 16px;
+  gap: 6px;
+  padding: 6px 4px;
   background: transparent;
-  border: 0.5px dashed var(--stone);
-  border-radius: 999px;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.theme-swatch:hover {
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+.swatch-chip {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 0.5px solid var(--border);
+  position: relative;
+  transition: box-shadow 140ms ease;
+  flex-shrink: 0;
+}
+/* Inset brand dot — the small mark inside each swatch that previews
+   that theme's brand color against its paper. Conveys both surfaces in
+   one ~28px chip. */
+.swatch-chip::after {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+}
+/* Per-theme swatch colors. Mirrors the actual --paper and --brand values
+   from each theme block so the chips genuinely preview each theme. */
+.swatch-chip[data-swatch="light"]   { background: #FAF6F1; }
+.swatch-chip[data-swatch="light"]::after   { background: #C8FF00; }
+.swatch-chip[data-swatch="paper"]   { background: #E8E1CE; }
+.swatch-chip[data-swatch="paper"]::after   { background: #B8D000; }
+.swatch-chip[data-swatch="sepia"]   { background: #F4ECD8; }
+.swatch-chip[data-swatch="sepia"]::after   { background: #B8D800; }
+.swatch-chip[data-swatch="dark"]    { background: #1A1614; }
+.swatch-chip[data-swatch="dark"]::after    { background: #B8E635; }
+.swatch-chip[data-swatch="inkwell"] { background: #152220; }
+.swatch-chip[data-swatch="inkwell"]::after { background: #B8E635; }
+.swatch-chip[data-swatch="crt"]     { background: #0A0805; }
+.swatch-chip[data-swatch="crt"]::after     { background: #FFD080; }
+
+.theme-swatch.active .swatch-chip {
+  box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--brand);
+}
+.swatch-name {
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   color: var(--stone);
-  cursor: pointer;
-  max-width: 560px;
-  width: 100%;
-  transition: color 140ms ease, border-color 140ms ease;
-  opacity: 0.75;
+  white-space: nowrap;
 }
-.settings-more-toggle:hover {
-  opacity: 1;
-  color: var(--ink);
-  border-color: var(--ink);
-}
-.settings-more-toggle .ph {
-  font-size: 14px;
-  transition: transform 180ms ease;
-}
-.settings-more-toggle.expanded .ph {
-  transform: rotate(180deg);
+.theme-swatch.active .swatch-name {
+  color: var(--brand-ink);
 }
 
-/* Secondary surface — shown only when the toggle is clicked. Thin rule
-   at the top visually separates it from the primary surface so the two
-   tiers read as distinct, not continuous. */
-.settings-advanced {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  max-width: 560px;
-  margin: 18px auto 0;
-  padding-top: 18px;
+/* Paragraph cluster — three control groups (Paragraphs / Spacing / Align)
+   share one row. Spacing gets more horizontal room than the two icon
+   pairs because it carries three text labels rather than two glyphs. */
+.set-paragraph-cluster {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 16px;
+  align-items: end;
+  max-width: 640px;
+  margin: 0 auto;
+  padding-top: 14px;
   border-top: 0.5px dashed var(--border);
 }
-.settings-advanced[hidden] {
-  display: none;
+.set-pcell {
+  min-width: 0;
+}
+
+/* Icon-only segmented row — drops the flex:1 stretch behavior so each
+   icon button is a fixed compact width rather than spreading to fill
+   the available horizontal space. Used by Paragraphs and Align where
+   word labels would be wasteful next to clear icons. */
+.seg-row-icon .seg-btn {
+  flex: 0 0 auto;
+  width: 36px;
+  padding: 6px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.seg-row-icon .seg-btn .ph {
+  font-size: 16px;
+  line-height: 1;
 }
 
 /* Font size slider endpoints — small/large A glyphs rather than a numeric
@@ -1936,49 +2031,6 @@ body.r-mode-editing .r-inner {
   min-width: 14px;
   text-align: center;
   user-select: none;
-}
-
-/* Layout group spans both columns because it has more rows than the others
-   and looks balanced as a wide section below the two top groups. */
-.settings-group-wide {
-  grid-column: 1 / -1;
-}
-
-.settings-group {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-/* Group header — small uppercase label with a thin rule underneath to
-   visually separate from the row list. Same color family as other UI
-   captions; slightly heavier than body UI. */
-.settings-group-header {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 1.2px;
-  color: var(--stone);
-  padding-bottom: 6px;
-  border-bottom: 0.5px solid var(--border);
-  margin-bottom: 2px;
-}
-
-/* Row — label on the left, control on the right. Shared baseline; fixed
-   label width so controls align across rows within a group. */
-.settings-row {
-  display: grid;
-  grid-template-columns: 110px 1fr;
-  align-items: center;
-  gap: 14px;
-  min-height: 32px;
-}
-
-.settings-row-label {
-  font-family: var(--font-ui);
-  font-size: 12px;
-  color: var(--stone);
-  font-weight: 500;
 }
 
 /* Segmented control — the all-new replacement for the old .theme-row +
@@ -2092,22 +2144,19 @@ body.r-mode-editing .r-inner {
   text-align: right;
 }
 
-/* Mobile: single column, keep group headers, preserve row structure. */
+/* Mobile: pair-rows collapse to single column, theme swatches reflow to
+   three-per-row, paragraph cluster stays a row but shrinks gaps. */
 @media (max-width: 768px) {
-  .settings-redesign {
-    padding: 14px 20px 24px;
+  .settings-compact {
+    padding: 12px 18px 22px;
   }
-  .settings-grid {
+  .set-pair {
     grid-template-columns: 1fr;
-    gap: 18px;
+    gap: 12px;
   }
-  .settings-group-wide {
-    grid-column: auto;
-  }
-  /* Labels get slightly narrower on mobile to leave more room for controls. */
-  .settings-row {
-    grid-template-columns: 100px 1fr;
-    gap: 10px;
+  .theme-swatches {
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
   }
   .seg-btn {
     padding: 7px 8px;
@@ -2115,16 +2164,22 @@ body.r-mode-editing .r-inner {
   }
 }
 
-/* Very narrow screens — stack label above control so segmented rows have
-   full row width. Keeps the layout honest rather than squeezing. */
+/* Very narrow screens — theme swatches go to two rows of three so each
+   chip + label has enough room; paragraph cluster also wraps. */
 @media (max-width: 420px) {
-  .settings-row {
-    grid-template-columns: 1fr;
+  .theme-swatches {
+    grid-template-columns: repeat(3, 1fr);
     gap: 6px;
-    min-height: 0;
   }
-  .settings-row-label {
-    font-size: 11px;
+  .set-paragraph-cluster {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 16px;
+  }
+  /* Spacing's three labels need full width on narrow screens, so let it
+     break to the second row spanning both columns. */
+  .set-paragraph-cluster .set-pcell:nth-child(2) {
+    grid-column: 1 / -1;
+    order: 3;
   }
 }
 
@@ -3067,100 +3122,127 @@ body.lib-select-mode .spine {
   </div>
 </div>
 
-<!-- Settings overlay. Three groups (Display / Typography / Layout) with
-     compact two-column layout on desktop, stacked single column on mobile.
-     Each group has a small uppercase header demarcated by a rule. -->
+<!-- Settings overlay. Single-surface Appearance panel: theme swatches,
+     paired control rows, and a clustered paragraph trio. -->
 <div class="overlay" id="ov-settings" role="dialog" aria-modal="true" aria-label="Appearance" onclick="toggleSettings()">
-  <div class="settings settings-redesign" onclick="event.stopPropagation()">
+  <div class="settings settings-compact" onclick="event.stopPropagation()">
     <div class="settings-handle"></div>
 
-    <!-- Primary surface: the four most-adjusted controls. Shown every time
-         the panel opens. No group headers — groups would be fiction at
-         four controls. The controls are visually distinct enough on their
-         own (Theme = segmented, Face = segmented, Size + Line height =
-         sliders) that you scan by shape, not by group label. -->
-    <div class="settings-primary">
-      <div class="settings-row">
-        <div class="settings-row-label">Theme</div>
-        <div class="seg-row">
-          <button class="seg-btn active" data-theme="" onclick="setTheme('')">Light</button>
-          <button class="seg-btn" data-theme="paper" onclick="setTheme('paper')">Paper</button>
-          <button class="seg-btn" data-theme="sepia" onclick="setTheme('sepia')">Sepia</button>
-          <button class="seg-btn" data-theme="dark" onclick="setTheme('dark')">Dark</button>
-          <button class="seg-btn" data-theme="inkwell" onclick="setTheme('inkwell')">Inkwell</button>
-          <button class="seg-btn" data-theme="crt" onclick="setTheme('crt')">CRT</button>
-        </div>
+    <!-- Theme picker: color swatches with word labels underneath. The swatch
+         itself previews the theme's paper + brand, so users scan by
+         appearance rather than reading six labels. Active state = full
+         brand ring around the chip. -->
+    <div class="set-section">
+      <div class="set-caption">Theme</div>
+      <div class="theme-swatches">
+        <button class="theme-swatch active" data-theme="" onclick="setTheme('')" aria-label="Light theme">
+          <span class="swatch-chip" data-swatch="light"></span>
+          <span class="swatch-name">Light</span>
+        </button>
+        <button class="theme-swatch" data-theme="paper" onclick="setTheme('paper')" aria-label="Paper theme">
+          <span class="swatch-chip" data-swatch="paper"></span>
+          <span class="swatch-name">Paper</span>
+        </button>
+        <button class="theme-swatch" data-theme="sepia" onclick="setTheme('sepia')" aria-label="Sepia theme">
+          <span class="swatch-chip" data-swatch="sepia"></span>
+          <span class="swatch-name">Sepia</span>
+        </button>
+        <button class="theme-swatch" data-theme="dark" onclick="setTheme('dark')" aria-label="Dark theme">
+          <span class="swatch-chip" data-swatch="dark"></span>
+          <span class="swatch-name">Dark</span>
+        </button>
+        <button class="theme-swatch" data-theme="inkwell" onclick="setTheme('inkwell')" aria-label="Inkwell theme">
+          <span class="swatch-chip" data-swatch="inkwell"></span>
+          <span class="swatch-name">Inkwell</span>
+        </button>
+        <button class="theme-swatch" data-theme="crt" onclick="setTheme('crt')" aria-label="CRT theme">
+          <span class="swatch-chip" data-swatch="crt"></span>
+          <span class="swatch-name">CRT</span>
+        </button>
       </div>
-      <div class="settings-row">
-        <div class="settings-row-label">Face</div>
+    </div>
+
+    <!-- Paired rows: each row holds two related controls side by side. On
+         desktop they're two columns; on narrow viewports they stack. The
+         caption sits inline above its control so we drop the wide label
+         column entirely. -->
+    <div class="set-pair">
+      <div class="set-cell">
+        <div class="set-caption">Typeface</div>
         <div class="seg-row">
           <button class="seg-btn active" data-face="serif" onclick="setReadingFace('serif')">Serif</button>
           <button class="seg-btn" data-face="sans" onclick="setReadingFace('sans')">Sans</button>
           <button class="seg-btn" data-face="mono" onclick="setReadingFace('mono')">Mono</button>
         </div>
       </div>
-      <div class="settings-row">
-        <div class="settings-row-label">Size</div>
+      <div class="set-cell">
+        <div class="set-caption">Size</div>
         <div class="slider-row">
           <span class="slider-icon-text" aria-hidden="true" style="font-size:11px">A</span>
           <input type="range" min="14" max="28" value="18" id="sl-fontsize" oninput="setFontSize(this.value)">
           <span class="slider-icon-text" aria-hidden="true" style="font-size:16px">A</span>
         </div>
       </div>
-      <div class="settings-row">
-        <div class="settings-row-label">Line height</div>
-        <div class="slider-row">
-          <input type="range" min="14" max="24" value="18" id="sl-lineheight" oninput="setLineHeight(this.value)">
-        </div>
-      </div>
     </div>
 
-    <!-- Secondary surface: controls you set once and rarely change. Toggled
-         by .settings-more-toggle. When expanded, .settings-advanced shows
-         with a top border acting as a visual separator from the primary
-         surface — signals that this is a different tier, not just more rows. -->
-    <button class="settings-more-toggle" id="settings-more-toggle" onclick="toggleAdvancedSettings()">
-      <span id="settings-more-label">More</span>
-      <i class="ph ph-caret-down" id="settings-more-icon" aria-hidden="true"></i>
-    </button>
-
-    <div class="settings-advanced" id="settings-advanced" hidden>
-      <div class="settings-row">
-        <div class="settings-row-label">Brightness</div>
-        <div class="slider-row">
-          <i class="ph ph-sun slider-icon" aria-hidden="true"></i>
-          <input type="range" min="0" max="100" value="100" id="sl-brightness" oninput="setBrightness(this.value)">
-          <span class="slider-value" id="brightness-display">100</span>
-        </div>
-      </div>
-      <div class="settings-row">
-        <div class="settings-row-label">Width</div>
+    <div class="set-pair">
+      <div class="set-cell">
+        <div class="set-caption">Width</div>
         <div class="seg-row">
           <button class="seg-btn" data-width="900" onclick="setReadingWidth(900)">Narrow</button>
           <button class="seg-btn active" data-width="1200" onclick="setReadingWidth(1200)">Medium</button>
           <button class="seg-btn" data-width="1500" onclick="setReadingWidth(1500)">Wide</button>
         </div>
       </div>
-      <div class="settings-row">
-        <div class="settings-row-label">Paragraphs</div>
-        <div class="seg-row">
-          <button class="seg-btn active" data-pstyle="block" onclick="setParagraphStyle('block')">Block</button>
-          <button class="seg-btn" data-pstyle="indent" onclick="setParagraphStyle('indent')">Indent</button>
+      <div class="set-cell">
+        <div class="set-caption">Line height</div>
+        <div class="slider-row">
+          <input type="range" min="14" max="24" value="18" id="sl-lineheight" oninput="setLineHeight(this.value)">
         </div>
       </div>
-      <div class="settings-row">
-        <div class="settings-row-label">Spacing</div>
+    </div>
+
+    <div class="set-section">
+      <div class="set-caption">Brightness</div>
+      <div class="slider-row">
+        <i class="ph ph-sun slider-icon" aria-hidden="true"></i>
+        <input type="range" min="0" max="100" value="100" id="sl-brightness" oninput="setBrightness(this.value)">
+      </div>
+    </div>
+
+    <!-- Paragraph cluster: three small icon/word groups on one row, each
+         labeled with its own micro-caption. Replaces three full-width
+         pill rows (Paragraphs / Spacing / Alignment) that collectively
+         spent most of their pixels on whitespace. -->
+    <div class="set-paragraph-cluster">
+      <div class="set-pcell">
+        <div class="set-caption">Paragraphs</div>
+        <div class="seg-row seg-row-icon">
+          <button class="seg-btn active" data-pstyle="block" onclick="setParagraphStyle('block')" aria-label="Block paragraphs">
+            <i class="ph ph-rows" aria-hidden="true"></i>
+          </button>
+          <button class="seg-btn" data-pstyle="indent" onclick="setParagraphStyle('indent')" aria-label="Indented paragraphs">
+            <i class="ph ph-text-indent" aria-hidden="true"></i>
+          </button>
+        </div>
+      </div>
+      <div class="set-pcell">
+        <div class="set-caption">Spacing</div>
         <div class="seg-row">
           <button class="seg-btn" data-pspacing="7" onclick="setParagraphSpacing(7)">Tight</button>
           <button class="seg-btn active" data-pspacing="10" onclick="setParagraphSpacing(10)">Normal</button>
           <button class="seg-btn" data-pspacing="14" onclick="setParagraphSpacing(14)">Loose</button>
         </div>
       </div>
-      <div class="settings-row">
-        <div class="settings-row-label">Alignment</div>
-        <div class="seg-row">
-          <button class="seg-btn active" data-align="justify" onclick="setTextAlign('justify')">Justify</button>
-          <button class="seg-btn" data-align="left" onclick="setTextAlign('left')">Left</button>
+      <div class="set-pcell">
+        <div class="set-caption">Align</div>
+        <div class="seg-row seg-row-icon">
+          <button class="seg-btn active" data-align="justify" onclick="setTextAlign('justify')" aria-label="Justified">
+            <i class="ph ph-text-align-justify" aria-hidden="true"></i>
+          </button>
+          <button class="seg-btn" data-align="left" onclick="setTextAlign('left')" aria-label="Left-aligned">
+            <i class="ph ph-text-align-left" aria-hidden="true"></i>
+          </button>
         </div>
       </div>
     </div>
@@ -7717,38 +7799,7 @@ function tryHighlightByText(rootEl, mark) {
 
 // ===== SETTINGS =====
 function toggleSettings() {
-  const ov = $('ov-settings');
-  const willOpen = !ov.classList.contains('open');
-  ov.classList.toggle('open');
-  // Reset the Advanced section to collapsed every time the panel opens.
-  // The two-tier design's whole point is that common-case opens start
-  // fast — reaching for a primary control shouldn't require the user
-  // to visually skim past the advanced section first. If the user
-  // actually wants the advanced controls, one tap on "More" reveals
-  // them; we don't persist that state because it's case-specific.
-  if (willOpen) {
-    const adv = $('settings-advanced');
-    const btn = $('settings-more-toggle');
-    const label = $('settings-more-label');
-    if (adv) adv.hidden = true;
-    if (btn) btn.classList.remove('expanded');
-    if (label) label.textContent = 'More';
-  }
-}
-
-// Expand/collapse the advanced section of the Appearance panel. Flips the
-// hidden attr on .settings-advanced, rotates the chevron, and swaps the
-// label text between "More" and "Less". Pure UI toggle — no state
-// persistence, no side effects on preferences.
-function toggleAdvancedSettings() {
-  const adv = $('settings-advanced');
-  const btn = $('settings-more-toggle');
-  const label = $('settings-more-label');
-  if (!adv || !btn || !label) return;
-  const expand = adv.hidden;
-  adv.hidden = !expand;
-  btn.classList.toggle('expanded', expand);
-  label.textContent = expand ? 'Less' : 'More';
+  $('ov-settings').classList.toggle('open');
 }
 
 // ===== PROFILE =====
@@ -7990,7 +8041,9 @@ function setTheme(theme) {
   if (theme) document.body.classList.add(theme);
   // Scope to buttons that actually carry a data-theme attribute — otherwise
   // we'd also toggle face/paragraph/align buttons which share .theme-btn.
-  document.querySelectorAll('.theme-btn[data-theme], .seg-btn[data-theme]').forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
+  // Appearance panel uses .theme-swatch chips; Profile overlay still uses
+  // the older .theme-btn / .seg-btn variants.
+  document.querySelectorAll('.theme-btn[data-theme], .seg-btn[data-theme], .theme-swatch[data-theme]').forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
   localStorage.setItem('tomen_theme', theme);
   updateSystemBarColor(theme);
 }
@@ -8005,8 +8058,6 @@ function setBrightness(value) {
   document.documentElement.style.setProperty('--brightness-dim', dim);
   const slider = $('sl-brightness');
   if (slider && slider.value != String(v)) slider.value = v;
-  const display = $('brightness-display');
-  if (display) display.textContent = v;
   localStorage.setItem('tomen_brightness', String(v));
 }
 
