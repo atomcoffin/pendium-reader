@@ -2818,9 +2818,24 @@ body.lib-select-mode .spine {
 }
 .icon-btn .update-dot[hidden] { display: none; }
 
-/* About-Tomen section inside the Profile overlay. Sits above Colophon as
-   an app-meta row: current version + a single context-sensitive action
-   button (Check for updates → Install update when one is waiting). */
+/* Export buttons in the Backup section — side-by-side rather than two
+   stacked full-width cards. The .export-btn rule's width:100% is
+   overridden here by flex:1, so each button takes equal share of the
+   row. Single hint below covers both. */
+.export-row {
+  display: flex;
+  gap: 8px;
+}
+.export-row .export-btn {
+  flex: 1;
+  width: auto;
+}
+
+/* About-Tomen row — single line: version + separator + status + a
+   right-aligned action cluster. Replaces the older stacked layout
+   (status row + actions row) that ate vertical space without adding
+   information. The action cluster shows "Check" by default and
+   reveals "Install update" only when a waiting SW is detected. */
 .about-row {
   display: flex;
   align-items: center;
@@ -2829,46 +2844,47 @@ body.lib-select-mode .spine {
   font-size: 12px;
   color: var(--stone);
   position: relative;
+  flex-wrap: wrap;
 }
 .about-version { color: var(--ink); font-weight: 500; }
 .about-sep { opacity: 0.5; }
 .about-status { color: var(--stone); }
 .about-status.is-update { color: var(--brand-ink); font-weight: 600; }
-.about-actions {
-  margin-top: 10px;
+.about-inline-actions {
+  margin-left: auto;
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
 }
 .about-btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 6px;
+  padding: 5px 10px;
   border-radius: var(--radius-sm);
   border: 0.5px solid var(--border);
   background: transparent;
-  color: var(--ink);
+  color: var(--stone);
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   cursor: pointer;
   transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 .about-btn:hover { border-color: var(--brand-ink); color: var(--brand-ink); }
 .about-btn[disabled] { opacity: 0.55; cursor: default; }
-.about-btn[disabled]:hover { border-color: var(--border); color: var(--ink); }
+.about-btn[disabled]:hover { border-color: var(--border); color: var(--stone); }
 .about-btn.is-primary {
   background: var(--brand);
   color: var(--brand-text);
   border-color: var(--brand);
+  font-weight: 600;
 }
 .about-btn.is-primary:hover {
   background: var(--brand-deep);
   border-color: var(--brand-deep);
   color: var(--brand-text);
 }
-.about-btn .ph { font-size: 14px; }
+.about-btn .ph { font-size: 13px; }
 
 #file-input { display: none; }
 
@@ -3405,16 +3421,19 @@ body.lib-select-mode .spine {
       </div>
       <div class="settings-hint">The face used when a book has no typeface of its own. Change a book's face from its Appearance panel while reading.</div>
     </div>
-      <button class="export-btn" onclick="exportLibrary()">
-        <i class="ph ph-download-simple"></i>
-        <span>Export library</span>
-      </button>
-      <div class="settings-hint">Downloads your entire library, reading progress, and marks as a single file. Keep it safe — it's a complete backup.</div>
-      <button class="export-btn" onclick="exportMarksMarkdown()" style="margin-top:10px">
-        <i class="ph ph-quotes"></i>
-        <span>Export marks (Markdown)</span>
-      </button>
-      <div class="settings-hint">A clean Markdown file of every highlight and note across your library, grouped by book and chapter. Paste into Obsidian, Readwise, Notion, or any notes app.</div>
+    <div class="settings-section">
+      <div class="settings-label">Backup</div>
+      <div class="export-row">
+        <button class="export-btn" onclick="exportLibrary()">
+          <i class="ph ph-download-simple"></i>
+          <span>Export library</span>
+        </button>
+        <button class="export-btn" onclick="exportMarksMarkdown()">
+          <i class="ph ph-quotes"></i>
+          <span>Export marks</span>
+        </button>
+      </div>
+      <div class="settings-hint">Library is a full JSON backup of books, progress, and marks. Marks export to Markdown — paste into Obsidian, Readwise, Notion, or any notes app.</div>
     </div>
     <div class="settings-section">
       <div class="settings-label">About Tomen</div>
@@ -3422,18 +3441,18 @@ body.lib-select-mode .spine {
         <span class="about-version" id="about-version">Tomen</span>
         <span class="about-sep">·</span>
         <span class="about-status" id="about-status">Up to date</span>
+        <div class="about-inline-actions">
+          <button class="about-btn" id="about-check-btn" onclick="checkForUpdate(true)" title="Check for updates">
+            <i class="ph ph-arrows-clockwise" aria-hidden="true"></i>
+            <span id="about-check-label">Check</span>
+          </button>
+          <button class="about-btn is-primary" id="about-install-btn" onclick="applyUpdate()" hidden>
+            <i class="ph ph-download-simple" aria-hidden="true"></i>
+            <span>Install update</span>
+          </button>
+        </div>
       </div>
-      <div class="about-actions">
-        <button class="about-btn" id="about-check-btn" onclick="checkForUpdate(true)">
-          <i class="ph ph-arrows-clockwise" aria-hidden="true"></i>
-          <span id="about-check-label">Check for updates</span>
-        </button>
-        <button class="about-btn is-primary" id="about-install-btn" onclick="applyUpdate()" hidden>
-          <i class="ph ph-download-simple" aria-hidden="true"></i>
-          <span>Install update</span>
-        </button>
-      </div>
-      <div class="settings-hint">Checked automatically every 15 minutes while Tomen is open. Click Check to look right now.</div>
+      <div class="settings-hint">Checks automatically every 15 minutes while Tomen is open.</div>
     </div>
     <div class="settings-section">
       <div class="settings-label">Colophon</div>
