@@ -1557,22 +1557,22 @@ body.r-ui-visible .r-footer-ref {
   width: 0;  /* set inline by JS via rAF easing loop */
   height: 0;
   pointer-events: none;
-  /* Soft brand bloom — a radial gradient with the theme's brand color
-     fading from the center to transparent. The visible half (only one
-     side is on-screen due to the edge-anchored translate below) reads
-     as a chartreuse haze hugging the page margin, not a drawn button.
-     Replaces the older outlined SVG ring so the rings feel like
-     family with the toolbar's brand-tinted wash and the seg-btn fills
-     — Tomen's design language is brand-tinted areas, not stroked
-     geometry. The bloom intensifies on .armed and again on .active
-     (hold in progress) via background overrides below. Idle alphas
-     are deliberately high enough to read on the lightest themes
-     (where brand chartreuse fights cream paper for contrast). */
+  /* Solar-bloom — a near-solid brand disc with a fuzzy atmospheric
+     halo at the perimeter. The first two stops hold the alpha nearly
+     flat through the inner half of the radius so the core reads as
+     solid brand color; the last three stops ramp it down in the outer
+     half to create the "fuzzy edge" / "looking at the sun" character.
+     Visible half (one side is off-screen due to the edge-anchored
+     translate below) reads as a chartreuse disc with a soft halo
+     bleeding into the page margin. Tunes per state via the overrides
+     below — armed and active hold the plateau longer for a stronger
+     core. */
   background: radial-gradient(
     circle at center,
-    color-mix(in srgb, var(--brand) 55%, transparent) 0%,
-    color-mix(in srgb, var(--brand) 28%, transparent) 45%,
-    color-mix(in srgb, var(--brand) 8%, transparent) 75%,
+    color-mix(in srgb, var(--brand) 80%, transparent) 0%,
+    color-mix(in srgb, var(--brand) 75%, transparent) 45%,
+    color-mix(in srgb, var(--brand) 30%, transparent) 75%,
+    color-mix(in srgb, var(--brand) 6%, transparent) 92%,
     transparent 100%
   );
   border-radius: 50%;
@@ -1601,21 +1601,25 @@ body.r-ui-visible .r-footer-ref {
 .r-edge-ring.armed {
   background: radial-gradient(
     circle at center,
-    color-mix(in srgb, var(--brand) 80%, transparent) 0%,
-    color-mix(in srgb, var(--brand) 45%, transparent) 50%,
-    color-mix(in srgb, var(--brand) 14%, transparent) 80%,
+    color-mix(in srgb, var(--brand) 95%, transparent) 0%,
+    color-mix(in srgb, var(--brand) 90%, transparent) 50%,
+    color-mix(in srgb, var(--brand) 40%, transparent) 78%,
+    color-mix(in srgb, var(--brand) 10%, transparent) 93%,
     transparent 100%
   );
 }
-/* Hold is active (mousedown / touch release at armed). The iris fill
-   inside takes over as the visual focus, so the bloom can simplify to
-   a near-solid backing. */
+/* Hold is active (mousedown / touch release at armed). Plateau extends
+   further out so the core sits at near-full brand saturation; the
+   iris fill (a solid brand circle scaling from clip 0% to clip 50%)
+   animates on top of it and reads as the disc "consolidating" the
+   bloom from atmosphere into commitment. */
 .r-edge-ring.active {
   background: radial-gradient(
     circle at center,
-    color-mix(in srgb, var(--brand) 95%, transparent) 0%,
-    color-mix(in srgb, var(--brand) 55%, transparent) 60%,
-    color-mix(in srgb, var(--brand) 18%, transparent) 85%,
+    var(--brand) 0%,
+    color-mix(in srgb, var(--brand) 92%, transparent) 60%,
+    color-mix(in srgb, var(--brand) 45%, transparent) 82%,
+    color-mix(in srgb, var(--brand) 12%, transparent) 95%,
     transparent 100%
   );
 }
