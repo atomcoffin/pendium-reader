@@ -968,7 +968,18 @@ html, body {
   grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
   gap: 20px;
 }
-.gc { cursor: pointer; position: relative; }
+/* content-visibility:auto defers rendering of offscreen cards entirely
+   — the browser skips paint, layout, and image decode for any .gc that
+   isn't in (or near) the viewport. For a 40-book grid where only ~12
+   cards are visible at any time, this drops the per-frame work by
+   roughly 3×. contain-intrinsic-size reserves a placeholder height so
+   the scrollbar doesn't jump as cards render in. */
+.gc {
+  cursor: pointer;
+  position: relative;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
+}
 .gc:hover .gc-cover { transform: translateY(-2px); }
 .gc-cover { cursor: pointer; }
 .gc-title, .gc-author { cursor: pointer; }
