@@ -2099,56 +2099,36 @@ body.r-mode-editing .r-inner {
 /* Theme picker as color swatches. Each chip is a flat circle showing
    that theme's paper as the base with the brand color as an inset dot.
    Active state = a brand ring around the chip + brand-colored name. */
-.theme-swatches {
-  display: grid;
-  gap: 8px;
-}
-.theme-swatches.is-reading { grid-template-columns: repeat(4, 1fr); }
-.theme-swatches.is-experimental { grid-template-columns: repeat(6, 1fr); }
-
-/* Group header — small uppercase caption with a hairline rule trailing
-   off to the right. Separates the practical "Reading" themes from
-   the vibe-first "Experimental" themes without adding chrome weight. */
-.theme-group-header {
-  display: flex;
+/* Current-theme display button. Sits where the swatch grid used to —
+   shows the active theme's chip + name and opens the floating
+   .theme-menu on click. Compact pill style so the picker reads as a
+   single control rather than a wall of options. */
+.theme-current {
+  display: inline-flex;
   align-items: center;
   gap: 10px;
-  font-family: var(--font-ui);
-  font-size: 9px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 1.4px;
-  color: var(--fog);
-  margin-top: 14px;
-  margin-bottom: 8px;
-}
-.theme-group-header::after {
-  content: '';
-  flex: 1;
-  height: 0.5px;
-  background: var(--border);
-}
-/* First header in a section doesn't need a top margin — the section
-   caption above it already provides spacing. */
-.theme-group-header:first-of-type,
-.set-section > .theme-group-header:first-child,
-.settings-section > .theme-group-header:first-child {
-  margin-top: 0;
-}
-.theme-swatch {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 4px;
+  padding: 5px 12px 5px 6px;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
   background: transparent;
-  border: 0;
-  border-radius: 8px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
   cursor: pointer;
-  transition: background 140ms ease;
+  transition: border-color 140ms ease;
 }
-.theme-swatch:hover {
-  background: color-mix(in srgb, var(--ink) 4%, transparent);
+.theme-current:hover { border-color: var(--brand-ink); }
+.theme-current .swatch-chip {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.theme-current-name { line-height: 1; }
+.theme-current .ph-caret-down {
+  font-size: 12px;
+  color: var(--stone);
+  margin-left: 2px;
 }
 .swatch-chip {
   width: 28px;
@@ -2191,19 +2171,88 @@ body.r-mode-editing .r-inner {
 .swatch-chip[data-swatch="brutalist"] { background: #FFFFFF; border: 1.5px solid #000000; }
 .swatch-chip[data-swatch="brutalist"]::after { background: #FF0000; }
 
-.theme-swatch.active .swatch-chip {
-  box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--brand);
+/* Theme picker menu — floating popover listing every theme. Each item
+   pairs a chip and a name; experimental themes carry a small flask
+   icon at the right side to mark them as vibe-first. Mirrors the
+   .book-menu shape so popovers across the app feel related. */
+.theme-menu {
+  position: fixed;
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-float);
+  padding: 4px;
+  z-index: 300;
+  min-width: 200px;
+  display: none;
+  font-family: var(--font-ui);
 }
-.swatch-name {
+.theme-menu.open { display: block; }
+.theme-menu-section {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--fog);
+  padding: 8px 12px 4px;
+  border-top: 0.5px solid var(--border);
+  margin-top: 2px;
+}
+.theme-menu-section:first-child {
+  border-top: none;
+  margin-top: 0;
+}
+.theme-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  border-radius: 4px;
+  text-align: left;
+}
+.theme-menu-item:hover { background: var(--linen); }
+.theme-menu-item.is-active {
+  color: var(--brand-ink);
+  font-weight: 600;
+}
+.theme-menu-item .swatch-chip {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.theme-menu-name { line-height: 1; }
+.theme-menu-tag {
+  margin-left: auto;
+  font-size: 14px;
+  color: var(--fog);
+  line-height: 1;
+}
+.theme-menu-item.is-active .theme-menu-tag { color: var(--brand-ink); }
+
+/* Typeface lock state — when a theme hardcodes a face (Terminal /
+   Brutalist force monospace), the seg-row dims and gets a small
+   italic note below explaining why. The user's saved face preference
+   is preserved underneath; the lock is purely visual + behavioral. */
+.face-cell.is-locked .seg-row {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.face-lock-note {
+  display: none;
+  margin-top: 6px;
   font-family: var(--font-ui);
   font-size: 11px;
-  font-weight: 500;
-  color: var(--stone);
-  white-space: nowrap;
-}
-.theme-swatch.active .swatch-name {
   color: var(--brand-ink);
+  font-style: italic;
 }
+.face-cell.is-locked .face-lock-note { display: block; }
 
 /* Paragraph cluster — three control groups (Paragraphs / Spacing / Align)
    share one row. Spacing gets more horizontal room than the two icon
@@ -2371,8 +2420,6 @@ body.r-mode-editing .r-inner {
     grid-template-columns: 1fr;
     gap: 12px;
   }
-  .theme-swatches.is-reading { grid-template-columns: repeat(4, 1fr); gap: 4px; }
-  .theme-swatches.is-experimental { grid-template-columns: repeat(3, 1fr); gap: 4px; }
   .seg-btn {
     padding: 7px 8px;
     font-size: 12px;
@@ -2382,8 +2429,6 @@ body.r-mode-editing .r-inner {
 /* Very narrow screens — theme swatches go to two rows of three so each
    chip + label has enough room; paragraph cluster also wraps. */
 @media (max-width: 420px) {
-  .theme-swatches.is-reading { grid-template-columns: repeat(2, 1fr); gap: 6px; }
-  .theme-swatches.is-experimental { grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .set-paragraph-cluster {
     grid-template-columns: 1fr 1fr;
     gap: 12px 16px;
@@ -3416,52 +3461,11 @@ body.lib-select-mode .spine {
          brand ring around the chip. -->
     <div class="set-section">
       <div class="set-caption">Theme</div>
-      <div class="theme-group-header">Reading</div>
-      <div class="theme-swatches is-reading">
-        <button class="theme-swatch active" data-theme="" onclick="setTheme('')" aria-label="Light theme">
-          <span class="swatch-chip" data-swatch="light"></span>
-          <span class="swatch-name">Light</span>
-        </button>
-        <button class="theme-swatch" data-theme="paper" onclick="setTheme('paper')" aria-label="Paper theme">
-          <span class="swatch-chip" data-swatch="paper"></span>
-          <span class="swatch-name">Paper</span>
-        </button>
-        <button class="theme-swatch" data-theme="dark" onclick="setTheme('dark')" aria-label="Dark theme">
-          <span class="swatch-chip" data-swatch="dark"></span>
-          <span class="swatch-name">Dark</span>
-        </button>
-        <button class="theme-swatch" data-theme="inkwell" onclick="setTheme('inkwell')" aria-label="Inkwell theme">
-          <span class="swatch-chip" data-swatch="inkwell"></span>
-          <span class="swatch-name">Inkwell</span>
-        </button>
-      </div>
-      <div class="theme-group-header">Experimental</div>
-      <div class="theme-swatches is-experimental">
-        <button class="theme-swatch" data-theme="crt" onclick="setTheme('crt')" aria-label="CRT theme">
-          <span class="swatch-chip" data-swatch="crt"></span>
-          <span class="swatch-name">CRT</span>
-        </button>
-        <button class="theme-swatch" data-theme="terminal" onclick="setTheme('terminal')" aria-label="Terminal theme">
-          <span class="swatch-chip" data-swatch="terminal"></span>
-          <span class="swatch-name">Terminal</span>
-        </button>
-        <button class="theme-swatch" data-theme="blueprint" onclick="setTheme('blueprint')" aria-label="Blueprint theme">
-          <span class="swatch-chip" data-swatch="blueprint"></span>
-          <span class="swatch-name">Blueprint</span>
-        </button>
-        <button class="theme-swatch" data-theme="riso" onclick="setTheme('riso')" aria-label="Risograph theme">
-          <span class="swatch-chip" data-swatch="riso"></span>
-          <span class="swatch-name">Risograph</span>
-        </button>
-        <button class="theme-swatch" data-theme="mimeo" onclick="setTheme('mimeo')" aria-label="Mimeograph theme">
-          <span class="swatch-chip" data-swatch="mimeo"></span>
-          <span class="swatch-name">Mimeo</span>
-        </button>
-        <button class="theme-swatch" data-theme="brutalist" onclick="setTheme('brutalist')" aria-label="Brutalist theme">
-          <span class="swatch-chip" data-swatch="brutalist"></span>
-          <span class="swatch-name">Brutalist</span>
-        </button>
-      </div>
+      <button class="theme-current" type="button" aria-haspopup="menu" aria-label="Change theme" onclick="openThemeMenu(event)">
+        <span class="swatch-chip" data-swatch="light"></span>
+        <span class="theme-current-name">Light</span>
+        <i class="ph ph-caret-down" aria-hidden="true"></i>
+      </button>
     </div>
 
     <!-- Paired rows: each row holds two related controls side by side. On
@@ -3469,13 +3473,14 @@ body.lib-select-mode .spine {
          caption sits inline above its control so we drop the wide label
          column entirely. -->
     <div class="set-pair">
-      <div class="set-cell">
+      <div class="set-cell face-cell">
         <div class="set-caption">Typeface</div>
         <div class="seg-row">
           <button class="seg-btn active" data-face="serif" onclick="setReadingFace('serif')">Serif</button>
           <button class="seg-btn" data-face="sans" onclick="setReadingFace('sans')">Sans</button>
           <button class="seg-btn" data-face="mono" onclick="setReadingFace('mono')">Mono</button>
         </div>
+        <div class="face-lock-note" id="face-lock-note"></div>
       </div>
       <div class="set-cell">
         <div class="set-caption">Size</div>
@@ -3632,52 +3637,11 @@ body.lib-select-mode .spine {
     </div>
     <div class="settings-section">
       <div class="settings-label">Theme</div>
-      <div class="theme-group-header">Reading</div>
-      <div class="theme-swatches is-reading">
-        <button class="theme-swatch active" data-theme="" onclick="setTheme('')" aria-label="Light theme">
-          <span class="swatch-chip" data-swatch="light"></span>
-          <span class="swatch-name">Light</span>
-        </button>
-        <button class="theme-swatch" data-theme="paper" onclick="setTheme('paper')" aria-label="Paper theme">
-          <span class="swatch-chip" data-swatch="paper"></span>
-          <span class="swatch-name">Paper</span>
-        </button>
-        <button class="theme-swatch" data-theme="dark" onclick="setTheme('dark')" aria-label="Dark theme">
-          <span class="swatch-chip" data-swatch="dark"></span>
-          <span class="swatch-name">Dark</span>
-        </button>
-        <button class="theme-swatch" data-theme="inkwell" onclick="setTheme('inkwell')" aria-label="Inkwell theme">
-          <span class="swatch-chip" data-swatch="inkwell"></span>
-          <span class="swatch-name">Inkwell</span>
-        </button>
-      </div>
-      <div class="theme-group-header">Experimental</div>
-      <div class="theme-swatches is-experimental">
-        <button class="theme-swatch" data-theme="crt" onclick="setTheme('crt')" aria-label="CRT theme">
-          <span class="swatch-chip" data-swatch="crt"></span>
-          <span class="swatch-name">CRT</span>
-        </button>
-        <button class="theme-swatch" data-theme="terminal" onclick="setTheme('terminal')" aria-label="Terminal theme">
-          <span class="swatch-chip" data-swatch="terminal"></span>
-          <span class="swatch-name">Terminal</span>
-        </button>
-        <button class="theme-swatch" data-theme="blueprint" onclick="setTheme('blueprint')" aria-label="Blueprint theme">
-          <span class="swatch-chip" data-swatch="blueprint"></span>
-          <span class="swatch-name">Blueprint</span>
-        </button>
-        <button class="theme-swatch" data-theme="riso" onclick="setTheme('riso')" aria-label="Risograph theme">
-          <span class="swatch-chip" data-swatch="riso"></span>
-          <span class="swatch-name">Risograph</span>
-        </button>
-        <button class="theme-swatch" data-theme="mimeo" onclick="setTheme('mimeo')" aria-label="Mimeograph theme">
-          <span class="swatch-chip" data-swatch="mimeo"></span>
-          <span class="swatch-name">Mimeo</span>
-        </button>
-        <button class="theme-swatch" data-theme="brutalist" onclick="setTheme('brutalist')" aria-label="Brutalist theme">
-          <span class="swatch-chip" data-swatch="brutalist"></span>
-          <span class="swatch-name">Brutalist</span>
-        </button>
-      </div>
+      <button class="theme-current" type="button" aria-haspopup="menu" aria-label="Change theme" onclick="openThemeMenu(event)">
+        <span class="swatch-chip" data-swatch="light"></span>
+        <span class="theme-current-name">Light</span>
+        <i class="ph ph-caret-down" aria-hidden="true"></i>
+      </button>
     </div>
     <div class="set-pair settings-section">
       <div class="set-cell">
@@ -3758,6 +3722,62 @@ body.lib-select-mode .spine {
      tapping a highlight in the rendered book. Shares .book-menu styling
      so the popover looks consistent. Populated dynamically per open. -->
 <div class="book-menu" id="mark-menu" role="menu" aria-label="Mark options"></div>
+
+<!-- Theme picker menu. Singleton popover opened from the .theme-current
+     button in either Appearance or Profile. Each item is a chip + name
+     pair; experimental themes get a small flask icon to mark them as
+     vibe-first rather than reading-first. Floats above the overlays via
+     z-index 300; positioned at open time relative to the trigger. -->
+<div class="theme-menu" id="theme-menu" role="menu" aria-label="Choose theme">
+  <div class="theme-menu-section">Reading</div>
+  <button class="theme-menu-item" role="menuitem" data-theme="" onclick="pickTheme('')">
+    <span class="swatch-chip" data-swatch="light"></span>
+    <span class="theme-menu-name">Light</span>
+  </button>
+  <button class="theme-menu-item" role="menuitem" data-theme="paper" onclick="pickTheme('paper')">
+    <span class="swatch-chip" data-swatch="paper"></span>
+    <span class="theme-menu-name">Paper</span>
+  </button>
+  <button class="theme-menu-item" role="menuitem" data-theme="dark" onclick="pickTheme('dark')">
+    <span class="swatch-chip" data-swatch="dark"></span>
+    <span class="theme-menu-name">Dark</span>
+  </button>
+  <button class="theme-menu-item" role="menuitem" data-theme="inkwell" onclick="pickTheme('inkwell')">
+    <span class="swatch-chip" data-swatch="inkwell"></span>
+    <span class="theme-menu-name">Inkwell</span>
+  </button>
+  <div class="theme-menu-section">Experimental</div>
+  <button class="theme-menu-item" role="menuitem" data-theme="crt" onclick="pickTheme('crt')">
+    <span class="swatch-chip" data-swatch="crt"></span>
+    <span class="theme-menu-name">CRT</span>
+    <i class="ph ph-flask theme-menu-tag" aria-hidden="true" title="Experimental"></i>
+  </button>
+  <button class="theme-menu-item" role="menuitem" data-theme="terminal" onclick="pickTheme('terminal')">
+    <span class="swatch-chip" data-swatch="terminal"></span>
+    <span class="theme-menu-name">Terminal</span>
+    <i class="ph ph-flask theme-menu-tag" aria-hidden="true" title="Experimental"></i>
+  </button>
+  <button class="theme-menu-item" role="menuitem" data-theme="blueprint" onclick="pickTheme('blueprint')">
+    <span class="swatch-chip" data-swatch="blueprint"></span>
+    <span class="theme-menu-name">Blueprint</span>
+    <i class="ph ph-flask theme-menu-tag" aria-hidden="true" title="Experimental"></i>
+  </button>
+  <button class="theme-menu-item" role="menuitem" data-theme="riso" onclick="pickTheme('riso')">
+    <span class="swatch-chip" data-swatch="riso"></span>
+    <span class="theme-menu-name">Risograph</span>
+    <i class="ph ph-flask theme-menu-tag" aria-hidden="true" title="Experimental"></i>
+  </button>
+  <button class="theme-menu-item" role="menuitem" data-theme="mimeo" onclick="pickTheme('mimeo')">
+    <span class="swatch-chip" data-swatch="mimeo"></span>
+    <span class="theme-menu-name">Mimeo</span>
+    <i class="ph ph-flask theme-menu-tag" aria-hidden="true" title="Experimental"></i>
+  </button>
+  <button class="theme-menu-item" role="menuitem" data-theme="brutalist" onclick="pickTheme('brutalist')">
+    <span class="swatch-chip" data-swatch="brutalist"></span>
+    <span class="theme-menu-name">Brutalist</span>
+    <i class="ph ph-flask theme-menu-tag" aria-hidden="true" title="Experimental"></i>
+  </button>
+</div>
 
 <!-- Dictionary popover. Opened by long-press (touch) or double-click
      (desktop) on a word in the reader. Pulls definitions from
@@ -8395,16 +8415,95 @@ const _THEME_PAPER_COLORS = {
 // the previous theme before applying a new one — keeping this as a single
 // source of truth so adding a future theme only requires one edit here.
 const _THEME_CLASSES = ['dark', 'inkwell', 'paper', 'crt', 'terminal', 'blueprint', 'riso', 'mimeo', 'brutalist'];
+// Theme metadata for the picker: display name, category (drives the
+// "Reading"/"Experimental" grouping in the menu), and forcesFace (if
+// present, the theme hardcodes that reading face, so the Appearance
+// panel's Typeface row is locked to prevent the user from making a
+// change that would have no visible effect under this theme).
+const _THEME_INFO = {
+  '':          { name: 'Light',     category: 'reading' },
+  'paper':     { name: 'Paper',     category: 'reading' },
+  'dark':      { name: 'Dark',      category: 'reading' },
+  'inkwell':   { name: 'Inkwell',   category: 'reading' },
+  'crt':       { name: 'CRT',       category: 'experimental' },
+  'terminal':  { name: 'Terminal',  category: 'experimental', forcesFace: 'mono' },
+  'blueprint': { name: 'Blueprint', category: 'experimental' },
+  'riso':      { name: 'Risograph', category: 'experimental' },
+  'mimeo':     { name: 'Mimeo',     category: 'experimental' },
+  'brutalist': { name: 'Brutalist', category: 'experimental', forcesFace: 'mono' }
+};
 function setTheme(theme) {
   // Remove old theme classes without wiping other body classes (r-ui-visible,
   // r-mode-editing, r-debug, etc.)
   _THEME_CLASSES.forEach(c => document.body.classList.remove(c));
   if (theme) document.body.classList.add(theme);
-  // Both Appearance and Profile theme pickers use .theme-swatch chips.
-  document.querySelectorAll('.theme-swatch[data-theme]').forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
+  const info = _THEME_INFO[theme || ''] || _THEME_INFO[''];
+  // Sync every .theme-current trigger (Appearance + Profile) so the
+  // displayed chip + name reflect the new theme.
+  document.querySelectorAll('.theme-current').forEach(btn => {
+    const chip = btn.querySelector('.swatch-chip');
+    const name = btn.querySelector('.theme-current-name');
+    if (chip) chip.dataset.swatch = theme || 'light';
+    if (name) name.textContent = info.name;
+  });
+  // Sync the theme menu's active marker, in case it's open during a
+  // programmatic theme change (rare but cheap to keep correct).
+  document.querySelectorAll('.theme-menu-item[data-theme]').forEach(item => {
+    item.classList.toggle('is-active', item.dataset.theme === (theme || ''));
+  });
+  // Typeface lock — when the theme hardcodes a reading face, dim the
+  // Appearance panel's Face row and show an explanatory note. The
+  // saved face preference is left untouched; the lock is visual only.
+  const faceCell = document.querySelector('.face-cell');
+  if (faceCell) {
+    const forced = info.forcesFace;
+    faceCell.classList.toggle('is-locked', !!forced);
+    const note = $('face-lock-note');
+    if (note && forced) {
+      const faceLabel = forced.charAt(0).toUpperCase() + forced.slice(1);
+      note.textContent = `${info.name} requires ${faceLabel}.`;
+    }
+  }
   localStorage.setItem('tomen_theme', theme);
   updateSystemBarColor(theme);
 }
+
+// Theme menu: open/close + apply. The menu is a singleton popover
+// positioned at the trigger via positionFloatingMenu (the same helper
+// the book/mark menus use). Toggle semantics — clicking the trigger
+// while open closes it.
+function openThemeMenu(ev) {
+  const menu = $('theme-menu');
+  if (!menu) return;
+  if (menu.classList.contains('open')) {
+    closeThemeMenu();
+    return;
+  }
+  // Mark the current theme as active before measuring so the
+  // is-active style doesn't trigger a layout shift after open.
+  const current = localStorage.getItem('tomen_theme') || '';
+  menu.querySelectorAll('.theme-menu-item[data-theme]').forEach(item => {
+    item.classList.toggle('is-active', item.dataset.theme === current);
+  });
+  menu.classList.add('open');
+  positionFloatingMenu(menu, ev.currentTarget);
+  ev.stopPropagation();
+}
+function closeThemeMenu() { $('theme-menu')?.classList.remove('open'); }
+function pickTheme(theme) { setTheme(theme); closeThemeMenu(); }
+// Outside-click + Escape close handlers. Mousedown rather than click so
+// the menu closes before any subsequent click on a different control.
+document.addEventListener('mousedown', (ev) => {
+  if (!$('theme-menu')?.classList.contains('open')) return;
+  if (ev.target.closest('.theme-menu')) return;
+  if (ev.target.closest('.theme-current')) return;
+  closeThemeMenu();
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && $('theme-menu')?.classList.contains('open')) {
+    closeThemeMenu();
+  }
+});
 
 // Brightness: a visual dim overlay driven by --brightness-dim. Slider value
 // 0-100 maps to overlay opacity 0.7-0 (inverted — "brighter" = less overlay).
