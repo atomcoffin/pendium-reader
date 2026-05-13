@@ -3368,6 +3368,37 @@ body.lib-select-mode .col-item {
       </button>
     </div>
     <div class="lib-toolbar">
+      <!-- Grid card-size slider (visible only when grid view is active)
+           sits to the LEFT of the view switcher so the size control
+           reads as a property of the view choice it modifies. -->
+      <div class="lib-size" aria-label="Grid card size">
+        <i class="ph ph-square" aria-hidden="true"></i>
+        <input type="range" min="100" max="260" step="10" value="150" id="sl-libsize" oninput="setLibrarySize(this.value)" title="Card size">
+        <i class="ph ph-square is-large" aria-hidden="true"></i>
+      </div>
+      <!-- View switcher: Grid (default) → Columns → Table. Grid leads
+           because it's the most-used and the new-user default. -->
+      <div class="view-switch" id="view-switch" role="radiogroup" aria-label="Library view">
+        <button class="icon-btn active" data-view="grid" onclick="setView('grid')" title="Grid — browse covers" aria-label="Grid view" role="radio" aria-checked="true">
+          <i class="ph ph-squares-four"></i>
+        </button>
+        <button class="icon-btn" data-view="columns" onclick="setView('columns')" title="Columns — scan titles fast" aria-label="Columns view" role="radio" aria-checked="false">
+          <i class="ph ph-text-columns"></i>
+        </button>
+        <button class="icon-btn" data-view="table" onclick="setView('table')" title="Table — full details" aria-label="Table view" role="radio" aria-checked="false">
+          <i class="ph ph-rows"></i>
+        </button>
+      </div>
+      <select class="sort-select" id="sort-select" onchange="setSort(this.value)">
+        <option value="title">A — Z</option>
+        <option value="title-desc">Z — A</option>
+        <option value="author">Author</option>
+        <option value="recent">Recent</option>
+        <option value="progress">Progress</option>
+      </select>
+      <!-- Import sits next to Profile on the right edge — both are
+           account/library-management actions, conceptually distinct
+           from the view/sort controls in the middle. -->
       <div class="import-wrap">
         <button class="icon-btn" onclick="toggleImportMenu()" title="Import books" aria-label="Import books">
           <i class="ph ph-upload-simple"></i>
@@ -3383,29 +3414,6 @@ body.lib-select-mode .col-item {
           </button>
         </div>
       </div>
-      <div class="view-switch" id="view-switch" role="radiogroup" aria-label="Library view">
-        <button class="icon-btn" data-view="columns" onclick="setView('columns')" title="Columns — scan titles fast" aria-label="Columns view" role="radio" aria-checked="false">
-          <i class="ph ph-text-columns"></i>
-        </button>
-        <button class="icon-btn active" data-view="grid" onclick="setView('grid')" title="Grid — browse covers" aria-label="Grid view" role="radio" aria-checked="true">
-          <i class="ph ph-squares-four"></i>
-        </button>
-        <button class="icon-btn" data-view="table" onclick="setView('table')" title="Table — full details" aria-label="Table view" role="radio" aria-checked="false">
-          <i class="ph ph-rows"></i>
-        </button>
-      </div>
-      <div class="lib-size" aria-label="Grid card size">
-        <i class="ph ph-square" aria-hidden="true"></i>
-        <input type="range" min="100" max="260" step="10" value="150" id="sl-libsize" oninput="setLibrarySize(this.value)" title="Card size">
-        <i class="ph ph-square is-large" aria-hidden="true"></i>
-      </div>
-      <select class="sort-select" id="sort-select" onchange="setSort(this.value)">
-        <option value="title">A — Z</option>
-        <option value="title-desc">Z — A</option>
-        <option value="author">Author</option>
-        <option value="recent">Recent</option>
-        <option value="progress">Progress</option>
-      </select>
       <button class="icon-btn" id="lib-profile-btn" onclick="toggleProfile()" title="Profile & settings" aria-label="Profile and settings">
         <i class="ph ph-user"></i>
         <span class="update-dot" id="lib-profile-update-dot" hidden></span>
@@ -9857,9 +9865,14 @@ document.addEventListener('keydown', e => {
 // ===== GREETING =====
 function getGreeting() {
   const h = new Date().getHours();
+  // Late-night readers (between midnight and ~5am) get an
+  // acknowledging phrase rather than "Good evening" 18 hours after
+  // sundown — Tomen knows you're up late, and that's fine.
+  if (h < 5)  return 'Reading late';
   if (h < 12) return 'Good morning';
   if (h < 17) return 'Good afternoon';
-  return 'Good evening';
+  if (h < 22) return 'Good evening';
+  return 'Good night';
 }
 
 function renderGreeting() {
