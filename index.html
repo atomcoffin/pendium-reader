@@ -1904,20 +1904,32 @@ body.r-mode-editing .r-inner {
 /* Settings */
 .settings {
   position: fixed; bottom: 0; left: 0; right: 0;
-  background: var(--card); border-radius: 20px 20px 0 0;
-  padding: 20px 28px 32px; z-index: 201;
+  background: var(--card);
+  /* Brutalist treatment: sharp top edge instead of a rounded sheet,
+     hard border above instead of a soft fade, every internal control
+     follows the same vocabulary (rectangles, hairlines, monospace
+     numerics). The bottom-sheet behavior stays — only the visual
+     language changes. */
+  border-radius: 0;
+  border-top: 1.5px solid var(--ink);
+  padding: 18px 28px 32px; z-index: 201;
   transform: translateY(100%); transition: transform 0.25s var(--ease);
-  max-height: 70vh; overflow-y: auto;
+  max-height: 75vh; overflow-y: auto;
 }
 .overlay.open .settings { transform: translateY(0); }
-.settings-handle { width: 32px; height: 3px; background: var(--fog); border-radius: 2px; margin: 0 auto 20px; opacity: 0.35; }
+.settings-handle {
+  width: 48px; height: 2px; background: var(--ink);
+  border-radius: 0;
+  margin: 0 auto 16px;
+  opacity: 0.5;
+}
 .settings-section {
   max-width: 640px;
   margin: 0 auto 18px;
 }
 .settings-label {
   font-size: 10px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 1.2px; color: var(--fog); margin-bottom: 10px;
+  letter-spacing: 1.2px; color: var(--stone); margin-bottom: 8px;
 }
 /* Export button in profile overlay — icon + word chip. Sized to share a
    row with a sibling export button via .export-row's flex layout. */
@@ -1927,17 +1939,21 @@ body.r-mode-editing .r-inner {
   gap: 10px;
   width: 100%;
   padding: 10px 14px;
-  border-radius: var(--radius-sm);
-  border: 1.5px solid var(--border);
+  /* Brutalist — hard ink border, no rounded corners. */
+  border-radius: 0;
+  border: 1px solid var(--ink);
   background: transparent;
   font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 500;
   color: var(--ink);
   cursor: pointer;
-  transition: border-color 150ms ease, color 150ms ease;
+  transition: background 150ms ease, color 150ms ease;
 }
-.export-btn:hover { border-color: var(--brand-ink); color: var(--brand-ink); }
+.export-btn:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
 .export-btn .ph { font-size: 16px; }
 
 /* Small caption under a settings row — explains what the control does
@@ -2003,6 +2019,56 @@ body.r-mode-editing .r-inner {
   max-height: 80vh;
 }
 
+/* Scope banner at the top of the Appearance panel — names what these
+   controls modify ("this book") and offers a clear escape hatch to
+   the global-settings panel. Two columns: label on the left, link
+   chip on the right. Hairline rule under the row separates the
+   banner from the controls that follow. */
+.set-scope {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 640px;
+  margin: 0 auto 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ink);
+}
+.set-scope-label {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.4px;
+  color: var(--ink);
+}
+.set-scope-label .set-scope-context {
+  font-weight: 500;
+  color: var(--stone);
+}
+.set-scope-global {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+.set-scope-global:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+.set-scope-global .ph { font-size: 12px; }
+
 /* Compact Appearance panel — no label column, no progressive-disclosure
    tier. All controls live on one surface, paired into rows where the two
    controls are short enough to share, and clustered into a single row
@@ -2054,46 +2120,52 @@ body.r-mode-editing .r-inner {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 5px 12px 5px 6px;
-  border: 0.5px solid var(--border);
-  border-radius: 999px;
+  padding: 7px 12px 7px 8px;
+  /* Brutalist: hard 1px border, no radius. The chip retains its
+     circle visual identity since "color sample" is universally a
+     circle, but everything else around it is rectangular. */
+  border: 1px solid var(--ink);
+  border-radius: 0;
   background: transparent;
   font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 500;
   color: var(--ink);
   cursor: pointer;
-  transition: border-color 140ms ease;
+  transition: background 140ms ease;
 }
-.theme-current:hover { border-color: var(--brand-ink); }
+.theme-current:hover {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
 .theme-current .swatch-chip {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
 }
 .theme-current-name { line-height: 1; }
 .theme-current .ph-caret-down {
   font-size: 12px;
-  color: var(--stone);
+  color: var(--ink);
   margin-left: 2px;
 }
 .swatch-chip {
   width: 28px;
   height: 28px;
-  border-radius: 50%;
-  border: 0.5px solid var(--border);
+  /* Brutalist square swatches — matches the rest of the panel's
+     no-rounded-corners vocabulary. Hard ink border for definition. */
+  border-radius: 0;
+  border: 1px solid var(--ink);
   position: relative;
   transition: box-shadow 140ms ease;
   flex-shrink: 0;
 }
-/* Inset brand dot — the small mark inside each swatch that previews
-   that theme's brand color against its paper. Conveys both surfaces in
-   one ~28px chip. */
+/* Inset brand mark — small inner square showing the theme's brand
+   color over its paper. Conveys both surfaces in one chip. */
 .swatch-chip::after {
   content: '';
   position: absolute;
-  inset: 7px;
-  border-radius: 50%;
+  inset: 6px;
+  border-radius: 0;
 }
 /* Per-theme swatch colors. Mirrors the actual --paper and --brand values
    from each theme block so the chips genuinely preview each theme. */
@@ -2123,9 +2195,12 @@ body.r-mode-editing .r-inner {
 .theme-menu {
   position: fixed;
   background: var(--card);
-  border: 0.5px solid var(--border);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-float);
+  /* Brutalist popover — hard 1px ink border, no rounded corners,
+     drop the floating shadow for a flatter "stamp on the page"
+     feel. Matches the bottom-sheet panel's vocabulary. */
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  box-shadow: none;
   padding: 4px;
   z-index: 300;
   min-width: 200px;
@@ -2152,17 +2227,17 @@ body.r-mode-editing .r-inner {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 7px 10px;
+  padding: 8px 10px;
   border: none;
   background: transparent;
   font-family: var(--font-ui);
   font-size: 13px;
   color: var(--ink);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 0;
   text-align: left;
 }
-.theme-menu-item:hover { background: var(--linen); }
+.theme-menu-item:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
 .theme-menu-item.is-active {
   color: var(--brand-ink);
   font-weight: 600;
@@ -2200,37 +2275,20 @@ body.r-mode-editing .r-inner {
 .face-cell.is-locked .face-lock-note { display: block; }
 
 /* Paragraph cluster — three control groups (Paragraphs / Spacing / Align)
-   share one row. Spacing gets more horizontal room than the two icon
-   pairs because it carries three text labels rather than two glyphs. */
+   share one row, each with icon + text labels. Each cell sizes to its
+   content so the row reads as three related but distinct controls. */
 .set-paragraph-cluster {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 16px;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px;
   align-items: end;
   max-width: 640px;
   margin: 0 auto;
   padding-top: 14px;
-  border-top: 0.5px dashed var(--border);
+  border-top: 1px solid var(--ink);
 }
 .set-pcell {
   min-width: 0;
-}
-
-/* Icon-only segmented row — drops the flex:1 stretch behavior so each
-   icon button is a fixed compact width rather than spreading to fill
-   the available horizontal space. Used by Paragraphs and Align where
-   word labels would be wasteful next to clear icons. */
-.seg-row-icon .seg-btn {
-  flex: 0 0 auto;
-  width: 36px;
-  padding: 6px 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.seg-row-icon .seg-btn .ph {
-  font-size: 16px;
-  line-height: 1;
 }
 
 /* Font size slider endpoints — small/large A glyphs rather than a numeric
@@ -2245,39 +2303,52 @@ body.r-mode-editing .r-inner {
   user-select: none;
 }
 
-/* Segmented control — pill container with children dividing the space.
-   Active state uses filled brand with brand-text for strong legibility. */
+/* Brutalist segmented control — hard rectangle container, items
+   divided by interior 1px borders rather than gaps, active state is
+   a solid brand fill with no rounded corners. Reads as a deliberate
+   typographic control rather than a soft modern pill. */
 .seg-row {
   display: flex;
-  background: color-mix(in srgb, var(--ink) 5%, transparent);
-  border: 0.5px solid var(--border);
-  border-radius: 999px;
-  padding: 2px;
-  gap: 2px;
+  background: transparent;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  padding: 0;
+  gap: 0;
 }
 .seg-btn {
   flex: 1;
-  padding: 6px 10px;
+  padding: 8px 12px;
   border: 0;
+  border-left: 1px solid var(--ink);
   background: transparent;
   font-family: var(--font-ui);
   font-size: 12px;
   font-weight: 500;
-  color: var(--stone);
+  color: var(--ink);
   cursor: pointer;
-  border-radius: 999px;
+  border-radius: 0;
   transition: background 140ms ease, color 140ms ease;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
+.seg-btn:first-child { border-left: 0; }
 .seg-btn:hover {
-  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
 }
 .seg-btn.active {
   background: var(--brand);
   color: var(--brand-text);
 }
 .seg-btn.active:hover {
+  background: var(--brand-deep);
   color: var(--brand-text);
+}
+.seg-btn .ph {
+  font-size: 14px;
+  line-height: 1;
 }
 
 /* Grid variant for segmented rows that would otherwise overflow. Used by
@@ -2307,21 +2378,21 @@ body.r-mode-editing .r-inner {
   border-color: var(--brand);
 }
 
-/* Compact slider row — horizontal layout with optional leading icon and
-   trailing value display. Track is thin, thumb smaller than the old
-   range-row pattern to match the overall density reduction. */
+/* Brutalist slider row — square thumb, ink-line track, monospace
+   numeric value at the end. Track is taller than the rounded
+   version (3px instead of 2px) for a more definite line. */
 .slider-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 .slider-row input[type="range"] {
   flex: 1;
   -webkit-appearance: none;
   appearance: none;
-  height: 2px;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--ink) 12%, transparent);
+  height: 3px;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--ink) 22%, transparent);
   outline: none;
   cursor: pointer;
 }
@@ -2329,30 +2400,31 @@ body.r-mode-editing .r-inner {
   -webkit-appearance: none;
   width: 14px;
   height: 14px;
-  border-radius: 50%;
+  border-radius: 0;
   background: var(--brand);
+  border: 1px solid var(--ink);
   cursor: pointer;
-  border: 0;
 }
 .slider-row input[type="range"]::-moz-range-thumb {
   width: 14px;
   height: 14px;
-  border-radius: 50%;
+  border-radius: 0;
   background: var(--brand);
+  border: 1px solid var(--ink);
   cursor: pointer;
-  border: 0;
 }
 .slider-icon {
-  font-size: 12px;
-  color: var(--stone);
+  font-size: 13px;
+  color: var(--ink);
   flex-shrink: 0;
 }
 .slider-value {
   font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--stone);
+  font-size: 12px;
+  color: var(--ink);
   min-width: 36px;
   text-align: right;
+  letter-spacing: 0.02em;
 }
 
 /* Mobile: pair-rows collapse to single column, theme swatches reflow to
@@ -3062,29 +3134,29 @@ body.lib-select-mode .spine {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
-  border-radius: var(--radius-sm);
-  border: 0.5px solid var(--border);
+  padding: 6px 10px;
+  /* Brutalist — hard ink border, no rounded corners, hover inverts. */
+  border-radius: 0;
+  border: 1px solid var(--ink);
   background: transparent;
-  color: var(--stone);
+  color: var(--ink);
   font-family: var(--font-ui);
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+  transition: background 140ms ease, color 140ms ease;
 }
-.about-btn:hover { border-color: var(--brand-ink); color: var(--brand-ink); }
+.about-btn:hover { background: var(--ink); color: var(--paper); }
 .about-btn[disabled] { opacity: 0.55; cursor: default; }
-.about-btn[disabled]:hover { border-color: var(--border); color: var(--stone); }
+.about-btn[disabled]:hover { background: transparent; color: var(--ink); }
 .about-btn.is-primary {
   background: var(--brand);
   color: var(--brand-text);
-  border-color: var(--brand);
+  border-color: var(--ink);
   font-weight: 600;
 }
 .about-btn.is-primary:hover {
   background: var(--brand-deep);
-  border-color: var(--brand-deep);
   color: var(--brand-text);
 }
 .about-btn .ph { font-size: 13px; }
@@ -3388,10 +3460,18 @@ body.lib-select-mode .spine {
   <div class="settings settings-compact" onclick="event.stopPropagation()">
     <div class="settings-handle"></div>
 
-    <!-- Theme picker: color swatches with word labels underneath. The swatch
-         itself previews the theme's paper + brand, so users scan by
-         appearance rather than reading six labels. Active state = full
-         brand ring around the chip. -->
+    <!-- Scope banner: names what these controls modify (per-book) and
+         offers an escape hatch to the global Profile panel. Keeps the
+         user oriented when they're tuning typography for a single
+         book and don't want it to leak everywhere. -->
+    <div class="set-scope">
+      <span class="set-scope-label">Appearance <span class="set-scope-context">· for this book</span></span>
+      <button class="set-scope-global" type="button" onclick="openGlobalSettingsFromAppearance()">
+        <span>Global</span>
+        <i class="ph ph-arrow-right" aria-hidden="true"></i>
+      </button>
+    </div>
+
     <div class="set-section">
       <div class="set-caption">Theme</div>
       <button class="theme-current" type="button" aria-haspopup="menu" aria-label="Change theme" onclick="openThemeMenu(event)">
@@ -3401,10 +3481,6 @@ body.lib-select-mode .spine {
       </button>
     </div>
 
-    <!-- Paired rows: each row holds two related controls side by side. On
-         desktop they're two columns; on narrow viewports they stack. The
-         caption sits inline above its control so we drop the wide label
-         column entirely. -->
     <div class="set-pair">
       <div class="set-cell face-cell">
         <div class="set-caption">Typeface</div>
@@ -3421,6 +3497,7 @@ body.lib-select-mode .spine {
           <span class="slider-icon-text" aria-hidden="true" style="font-size:11px">A</span>
           <input type="range" min="14" max="28" value="18" id="sl-fontsize" oninput="setFontSize(this.value)">
           <span class="slider-icon-text" aria-hidden="true" style="font-size:16px">A</span>
+          <span class="slider-value" id="fs-display">18</span>
         </div>
       </div>
     </div>
@@ -3438,6 +3515,7 @@ body.lib-select-mode .spine {
         <div class="set-caption">Line height</div>
         <div class="slider-row">
           <input type="range" min="14" max="24" value="18" id="sl-lineheight" oninput="setLineHeight(this.value)">
+          <span class="slider-value" id="lh-display">1.8</span>
         </div>
       </div>
     </div>
@@ -3447,22 +3525,24 @@ body.lib-select-mode .spine {
       <div class="slider-row">
         <i class="ph ph-sun slider-icon" aria-hidden="true"></i>
         <input type="range" min="0" max="100" value="100" id="sl-brightness" oninput="setBrightness(this.value)">
+        <span class="slider-value" id="brightness-display">100</span>
       </div>
     </div>
 
-    <!-- Paragraph cluster: three small icon/word groups on one row, each
-         labeled with its own micro-caption. Replaces three full-width
-         pill rows (Paragraphs / Spacing / Alignment) that collectively
-         spent most of their pixels on whitespace. -->
+    <!-- Paragraph cluster: three control groups (Paragraphs / Spacing /
+         Align) on one row, each with icon + text labels so users can
+         scan by either signal. -->
     <div class="set-paragraph-cluster">
       <div class="set-pcell">
         <div class="set-caption">Paragraphs</div>
-        <div class="seg-row seg-row-icon">
-          <button class="seg-btn active" data-pstyle="block" onclick="setParagraphStyle('block')" aria-label="Block paragraphs">
+        <div class="seg-row">
+          <button class="seg-btn active" data-pstyle="block" onclick="setParagraphStyle('block')">
             <i class="ph ph-rows" aria-hidden="true"></i>
+            <span>Block</span>
           </button>
-          <button class="seg-btn" data-pstyle="indent" onclick="setParagraphStyle('indent')" aria-label="Indented paragraphs">
+          <button class="seg-btn" data-pstyle="indent" onclick="setParagraphStyle('indent')">
             <i class="ph ph-text-indent" aria-hidden="true"></i>
+            <span>Indent</span>
           </button>
         </div>
       </div>
@@ -3476,12 +3556,14 @@ body.lib-select-mode .spine {
       </div>
       <div class="set-pcell">
         <div class="set-caption">Align</div>
-        <div class="seg-row seg-row-icon">
-          <button class="seg-btn active" data-align="justify" onclick="setTextAlign('justify')" aria-label="Justified">
+        <div class="seg-row">
+          <button class="seg-btn active" data-align="justify" onclick="setTextAlign('justify')">
             <i class="ph ph-text-align-justify" aria-hidden="true"></i>
+            <span>Justify</span>
           </button>
-          <button class="seg-btn" data-align="left" onclick="setTextAlign('left')" aria-label="Left-aligned">
+          <button class="seg-btn" data-align="left" onclick="setTextAlign('left')">
             <i class="ph ph-text-align-left" aria-hidden="true"></i>
+            <span>Left</span>
           </button>
         </div>
       </div>
@@ -3563,7 +3645,7 @@ body.lib-select-mode .spine {
       <div class="settings-label">Display name</div>
       <div style="display:flex;gap:8px">
         <input type="text" id="profile-name" placeholder="Your name" style="
-          flex:1;padding:9px 12px;border-radius:var(--radius-sm);border:0.5px solid var(--border);
+          flex:1;padding:9px 12px;border-radius:0;border:1px solid var(--ink);
           background:transparent;font-family:var(--font-ui);font-size:13px;color:var(--ink);outline:none;
         " onchange="updateProfileName(this.value)">
       </div>
@@ -8500,6 +8582,17 @@ function toggleSettings() {
   $('ov-settings').classList.toggle('open');
 }
 
+// Bridge from the Appearance panel's "Global →" chip to the global
+// Profile panel. Closes Appearance so the two bottom-sheets don't
+// stack, then opens Profile — same scope-shift the user expects when
+// they want to change something at the library level instead of for
+// the current book.
+function openGlobalSettingsFromAppearance() {
+  const ov = $('ov-settings');
+  if (ov) ov.classList.remove('open');
+  toggleProfile();
+}
+
 // ===== PROFILE =====
 function toggleProfile() {
   const ov = $('ov-profile');
@@ -8861,6 +8954,8 @@ function setBrightness(value) {
   document.documentElement.style.setProperty('--brightness-dim', dim);
   const slider = $('sl-brightness');
   if (slider && slider.value != String(v)) slider.value = v;
+  const display = $('brightness-display');
+  if (display) display.textContent = v;
   localStorage.setItem('tomen_brightness', String(v));
 }
 
