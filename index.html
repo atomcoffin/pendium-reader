@@ -2354,6 +2354,90 @@ body.r-mode-editing .r-inner {
   color: var(--brand-text);
 }
 
+/* Bulk select action bar. Bottom-pinned, slides up when select mode is
+   active. Cancel on the left, count in the middle, Delete on the right.
+   Mirrors the visual weight of the reader toolbar so the user reads it
+   as "library chrome" rather than a modal interruption. */
+.lib-action-bar {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translate(-50%, 120%);
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-float);
+  z-index: 150;
+  transition: transform 0.25s var(--ease);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--ink);
+}
+body.lib-select-mode .lib-action-bar { transform: translate(-50%, 0); }
+.lib-action-btn {
+  border: none; background: transparent;
+  font-family: var(--font-ui); font-size: 13px; color: var(--ink);
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 8px;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: background 140ms ease, color 140ms ease;
+}
+.lib-action-btn:hover { background: var(--linen); }
+.lib-action-btn.danger { color: #C44; }
+.lib-action-btn.danger:hover { background: rgba(196, 68, 68, 0.08); color: #A33; }
+.lib-action-btn.danger:disabled,
+.lib-action-btn:disabled {
+  color: var(--fog);
+  cursor: not-allowed;
+}
+.lib-action-btn:disabled:hover { background: transparent; }
+.lib-action-count {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--stone);
+  min-width: 70px;
+  text-align: center;
+}
+
+/* Selected-state visual across all three library views. A subtle brand-
+   tinted background and a small check overlay in the corner. */
+body.lib-select-mode .tv-item-main,
+body.lib-select-mode .gc-cover,
+body.lib-select-mode .spine {
+  position: relative;
+}
+.tv-item-main.selected,
+.gc-cover.selected,
+.spine.selected {
+  outline: 2px solid var(--brand-ink);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+.tv-item-main.selected::after,
+.gc-cover.selected::after,
+.spine.selected::after {
+  content: '✓';
+  position: absolute;
+  top: 6px; right: 6px;
+  width: 22px; height: 22px;
+  border-radius: 11px;
+  background: var(--brand);
+  color: var(--brand-text);
+  font-size: 13px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  z-index: 3;
+}
+/* Spine view: the check sits at the TOP of the vertical spine since the
+   spine itself is narrow. */
+.spine.selected::after {
+  top: 4px; right: 50%; transform: translateX(50%);
+}
+
 /* Loading */
 .loading {
   position: fixed; inset: 0; background: var(--paper);
@@ -2618,6 +2702,17 @@ body.r-mode-editing .r-inner {
   </div>
   <div class="lib-body" id="lib-body"></div>
   <input type="file" id="file-input" accept=".epub,.txt,.html,.htm,.md,.markdown" multiple onchange="handleFiles(event)">
+  <!-- Bulk select action bar. Slides up from the bottom when the user
+       enters select mode from a book's ⋯ menu. While open, taps on
+       library books toggle their selection instead of opening them. -->
+  <div class="lib-action-bar" id="lib-action-bar" role="toolbar" aria-label="Bulk actions">
+    <button class="lib-action-btn" onclick="exitLibSelectMode()" aria-label="Cancel selection">Cancel</button>
+    <span class="lib-action-count" id="lib-action-count">0 selected</span>
+    <button class="lib-action-btn danger" id="lib-action-delete" onclick="confirmDeleteSelected()" aria-label="Delete selected books">
+      <i class="ph ph-trash" aria-hidden="true"></i>
+      <span>Delete</span>
+    </button>
+  </div>
 </div>
 
 <!-- ===== READER SCREEN ===== -->
@@ -3350,12 +3445,88 @@ function openBookMenu(ev, bookId) {
   if (!book) return;
   const menu = $('book-menu');
   menu.innerHTML = `
+    <button class="book-menu-item" role="menuitem" onclick="enterLibSelectMode('${bookId}')">
+      <i class="ph ph-list-checks"></i>Select books
+    </button>
     <button class="book-menu-item danger" role="menuitem" onclick="confirmDeleteBook('${bookId}')">
       <i class="ph ph-trash"></i>Delete book
     </button>`;
   // Show first so we can measure, then position.
   menu.classList.add('open');
   positionFloatingMenu(menu, ev.currentTarget);
+}
+
+// ===== BULK SELECT =====
+// Multi-select for the library. Entered from a book's ⋯ menu (the user
+// picks "Select books" with that book as the seed). While in select
+// mode, tapping a book toggles its selection instead of opening it.
+let _libSelectMode = false;
+const _libSelectedIds = new Set();
+
+function enterLibSelectMode(seedId) {
+  _libSelectMode = true;
+  _libSelectedIds.clear();
+  if (seedId) _libSelectedIds.add(seedId);
+  document.body.classList.add('lib-select-mode');
+  // Close any open per-book ⋯ menu that triggered this.
+  closeBookMenu();
+  _updateLibActionBar();
+  renderLibrary();
+}
+
+function exitLibSelectMode() {
+  _libSelectMode = false;
+  _libSelectedIds.clear();
+  document.body.classList.remove('lib-select-mode');
+  _updateLibActionBar();
+  renderLibrary();
+}
+
+function _toggleLibSelection(id) {
+  if (_libSelectedIds.has(id)) _libSelectedIds.delete(id);
+  else _libSelectedIds.add(id);
+  // If the user deselects the last book, exit select mode — keeps the
+  // floor from being a stuck mode with no obvious way out.
+  if (_libSelectedIds.size === 0) {
+    exitLibSelectMode();
+    return;
+  }
+  _updateLibActionBar();
+  renderLibrary();
+}
+
+function _updateLibActionBar() {
+  const countEl = $('lib-action-count');
+  const delBtn = $('lib-action-delete');
+  const n = _libSelectedIds.size;
+  if (countEl) countEl.textContent = `${n} selected`;
+  if (delBtn) delBtn.disabled = n === 0;
+}
+
+function confirmDeleteSelected() {
+  const ids = Array.from(_libSelectedIds);
+  if (ids.length === 0) return;
+  const message = ids.length === 1
+    ? 'Delete this book and all its marks?'
+    : `Delete ${ids.length} books and all their marks?`;
+  confirmDialog({
+    title: 'Delete',
+    message,
+    dangerLabel: 'Delete',
+    onConfirm: async () => {
+      let failed = 0;
+      for (const id of ids) {
+        try { await deleteBook(id); }
+        catch (err) { console.error('Bulk delete failed for', id, err); failed++; }
+      }
+      exitLibSelectMode();
+      if (failed > 0) {
+        showErrorToast(`Deleted ${ids.length - failed} of ${ids.length}; ${failed} failed.`);
+      } else {
+        showGestureToast(`Deleted ${ids.length} book${ids.length === 1 ? '' : 's'}`);
+      }
+    }
+  });
 }
 
 // Position a floating menu (right-aligned, below) relative to an anchor
@@ -3917,6 +4088,7 @@ function renderTextView(el, books) {
   el.innerHTML = '<div class="view-text">' + books.map(b => {
     const p = b.progress || 0;
     const isReading = p > 0 && p < 100;
+    const sel = _libSelectedIds.has(b.id) ? ' selected' : '';
     // Estimate remaining time based on HTML content size scaled ~0.75 to
     // approximate text-only length (tags, whitespace inflate raw length).
     // Fall back silently if contentSize is missing (legacy books).
@@ -3933,7 +4105,7 @@ function renderTextView(el, books) {
     }
     const progressMeta = isReading ? ' · <span style="font-family:var(--font-mono);font-size:11px">' + Math.round(p) + '%</span>' : '';
     return `<div class="tv-item">
-      <div class="tv-item-main" onclick="openBookById('${b.id}')">
+      <div class="tv-item-main${sel}" onclick="openBookById('${b.id}')">
         <div class="tv-title${isReading ? ' reading' : ''}">${esc(b.title)}</div>
         <div class="tv-author">${esc(b.author || 'Unknown')}${progressMeta}${timeMeta}</div>
         ${isReading ? '<div class="tv-progress"><div class="tv-progress-fill" style="width:' + p + '%"></div></div>' : ''}
@@ -3947,6 +4119,7 @@ function renderGridView(el, books) {
   el.innerHTML = '<div class="view-grid">' + books.map(b => {
     const p = b.progress || 0;
     const c = strColor(b.title);
+    const sel = _libSelectedIds.has(b.id) ? ' selected' : '';
     const cover = b.cover
       ? `<img src="${b.cover}" alt="">`
       : `<div class="gc-placeholder" style="background:linear-gradient(145deg,${c[0]},${c[1]})">
@@ -3955,7 +4128,7 @@ function renderGridView(el, books) {
          </div>`;
     return `<div class="gc">
       <button class="gc-menu-btn icon-btn" onclick="openBookMenu(event, '${b.id}')" aria-label="Book options" title="Options"><i class="ph ph-dots-three-outline"></i></button>
-      <div class="gc-cover" onclick="openBookById('${b.id}')">${cover}${p > 0 ? '<div class="gc-prog"><div class="gc-prog-fill" style="width:' + p + '%"></div></div>' : ''}</div>
+      <div class="gc-cover${sel}" onclick="openBookById('${b.id}')">${cover}${p > 0 ? '<div class="gc-prog"><div class="gc-prog-fill" style="width:' + p + '%"></div></div>' : ''}</div>
       <div class="gc-title" onclick="openBookById('${b.id}')">${esc(b.title)}</div>
       <div class="gc-author" onclick="openBookById('${b.id}')">${esc(b.author || 'Unknown')}</div>
     </div>`;
@@ -4041,7 +4214,8 @@ function renderSpineView(el, books) {
         `--spine-title-color:${s.titleColor}`,
         `font-family:${s.fontFamily}`
       ].join(';');
-      return `<div class="spine" id="spine-${s.index}"
+      const sel = _libSelectedIds.has(s.book.id) ? ' selected' : '';
+      return `<div class="spine${sel}" id="spine-${s.index}"
         data-progress="${Math.round(s.progress)}"
         style="${style}"
         onclick="openBookById('${s.book.id}')"
@@ -5000,6 +5174,13 @@ let currentSpread = 0;       // 0-indexed spread within current chapter
 let totalSpreads = 1;        // computed after layout
 
 async function openBookById(id) {
+  // In bulk-select mode, a tap toggles selection instead of opening the
+  // book. All the library renderers wire their clicks through here, so
+  // this single short-circuit handles every view.
+  if (_libSelectMode) {
+    _toggleLibSelection(id);
+    return;
+  }
   const meta = library.find(b => b.id === id);
   if (!meta) return;
   // Reset animation flags before opening — a previous book closed mid-fade
