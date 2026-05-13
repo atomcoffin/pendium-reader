@@ -1565,12 +1565,15 @@ body.r-ui-visible .r-footer-ref {
      family with the toolbar's brand-tinted wash and the seg-btn fills
      — Tomen's design language is brand-tinted areas, not stroked
      geometry. The bloom intensifies on .armed and again on .active
-     (hold in progress) via background overrides below. */
+     (hold in progress) via background overrides below. Idle alphas
+     are deliberately high enough to read on the lightest themes
+     (where brand chartreuse fights cream paper for contrast). */
   background: radial-gradient(
     circle at center,
-    color-mix(in srgb, var(--brand) 32%, transparent) 0%,
-    color-mix(in srgb, var(--brand) 14%, transparent) 45%,
-    transparent 75%
+    color-mix(in srgb, var(--brand) 55%, transparent) 0%,
+    color-mix(in srgb, var(--brand) 28%, transparent) 45%,
+    color-mix(in srgb, var(--brand) 8%, transparent) 75%,
+    transparent 100%
   );
   border-radius: 50%;
   transition: background 180ms ease;
@@ -1598,9 +1601,10 @@ body.r-ui-visible .r-footer-ref {
 .r-edge-ring.armed {
   background: radial-gradient(
     circle at center,
-    color-mix(in srgb, var(--brand) 60%, transparent) 0%,
-    color-mix(in srgb, var(--brand) 28%, transparent) 50%,
-    transparent 85%
+    color-mix(in srgb, var(--brand) 80%, transparent) 0%,
+    color-mix(in srgb, var(--brand) 45%, transparent) 50%,
+    color-mix(in srgb, var(--brand) 14%, transparent) 80%,
+    transparent 100%
   );
 }
 /* Hold is active (mousedown / touch release at armed). The iris fill
@@ -1609,9 +1613,10 @@ body.r-ui-visible .r-footer-ref {
 .r-edge-ring.active {
   background: radial-gradient(
     circle at center,
-    color-mix(in srgb, var(--brand) 80%, transparent) 0%,
-    color-mix(in srgb, var(--brand) 35%, transparent) 60%,
-    transparent 90%
+    color-mix(in srgb, var(--brand) 95%, transparent) 0%,
+    color-mix(in srgb, var(--brand) 55%, transparent) 60%,
+    color-mix(in srgb, var(--brand) 18%, transparent) 85%,
+    transparent 100%
   );
 }
 .r-edge-ring svg {
@@ -6812,23 +6817,20 @@ document.addEventListener('keydown', (e) => {
 const HOLD_MS = 400;
 // Max ring radius in CSS pixels — the visible half-disc reaches this far
 // into the page when the cursor is at (or very near) the screen edge.
-// Diameter at max is 2 × this. Tuned in concert with EDGE_RING_BASELINE_R
-// for a small idle "I'm here" hint that grows into a confident click
-// target as the cursor approaches.
-const EDGE_RING_MAX_R = 60;
-// Baseline radius — the small persistent indicator always visible at
-// each edge. With Y-tracking enabled, both rings ride the cursor's
-// vertical position even when the cursor is nowhere near an edge, so
-// the rings feel like companions you can approach rather than UI
-// elements that appear and disappear. Sized to be readable in
-// peripheral vision: small enough to feel like punctuation, big
-// enough that a glance at the edge confirms "there's something here."
-const EDGE_RING_BASELINE_R = 14;
-// Minimum rendered radius for a click to count as "armed." Sits above
-// the baseline so stray clicks on the small idle indicator don't
-// register — the user has to move the cursor close enough to grow the
-// ring to a deliberate size first.
-const EDGE_RING_MIN_R = 24;
+// Diameter at max is 2 × this. Sized big enough to land as a confident
+// target on every theme.
+const EDGE_RING_MAX_R = 100;
+// Baseline radius — the persistent bloom always visible at each edge.
+// Both rings ride the cursor's vertical position via the rAF tick, so
+// at any moment a glance toward either margin should land on a soft
+// chartreuse haze. Big enough to read clearly in peripheral vision on
+// every theme without competing with the text.
+const EDGE_RING_BASELINE_R = 32;
+// Minimum rendered radius for a click to count as "armed." Sits well
+// above baseline so stray clicks on the idle bloom don't register —
+// the user has to move the cursor close enough to grow the bloom into
+// a deliberate target first.
+const EDGE_RING_MIN_R = 50;
 // Activation distance — the X-distance from the screen edge at which
 // the ring starts growing from baseline toward max. Outside this, the
 // ring stays at baseline; inside, the ring grows along a power curve
