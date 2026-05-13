@@ -174,6 +174,89 @@ button:focus-visible {
   box-shadow: none;
 }
 
+/* CRT — amber phosphor on warm-black paper, scanlines, vignette, and a
+   soft text glow. Built to feel like a 1980s computer terminal while
+   still being readable as a book. Effects ride on top of the regular
+   chrome via fixed pseudo-elements (pointer-events: none) so they
+   blanket the whole UI without breaking interactions. */
+.crt {
+  --paper: #0A0805;
+  --linen: #050403;
+  --card: #100C07;
+  --paper-edge: #1A140C;
+  --ink: #FFB347;
+  --stone: #C88A35;
+  --fog: #785220;
+  --brand: #FFD080;
+  --brand-ink: #FFD080;
+  --brand-deep: #FFA040;
+  --brand-text: #0A0805;
+  --border: rgba(255, 179, 71, 0.18);
+  --shadow-cover: 0 4px 16px rgba(0, 0, 0, 0.55);
+  --shadow-float: 0 8px 32px rgba(255, 179, 71, 0.18);
+}
+/* Scanlines — the classic CRT signature. Subtle dark lines repeated
+   every 3px so the page reads through them. Fixed and viewport-wide
+   so the whole app feels like one screen. */
+body.crt::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9998;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.22) 0,
+    rgba(0, 0, 0, 0.22) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: multiply;
+}
+/* Vignette — darken the corners like an old curved screen would. The
+   center stays bright; edges fall off to deep black. */
+body.crt::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9997;
+  background:
+    radial-gradient(ellipse at center,
+      transparent 45%,
+      rgba(0, 0, 0, 0.55) 100%);
+}
+/* Phosphor glow on book text. Two-layer text-shadow: a sharp halo for
+   the ink-bleed look, plus a soft outer bloom for the "this is glowing"
+   feel. Tuned so it adds atmosphere without losing letter shape. */
+body.crt .r-inner {
+  text-shadow:
+    0 0 1px rgba(255, 179, 71, 0.45),
+    0 0 6px rgba(255, 179, 71, 0.18);
+}
+body.crt .r-inner h1,
+body.crt .r-inner h2,
+body.crt .r-inner h3 {
+  text-shadow:
+    0 0 1px rgba(255, 208, 128, 0.6),
+    0 0 8px rgba(255, 208, 128, 0.25),
+    0 0 18px rgba(255, 179, 71, 0.1);
+}
+/* Mild glow on the chrome too — toolbar titles, library spines, the
+   greeting. Less intense than the body so UI stays sharp. */
+body.crt .lib-brand,
+body.crt .tv-title,
+body.crt .r-title,
+body.crt .spine-title {
+  text-shadow:
+    0 0 1px rgba(255, 179, 71, 0.35),
+    0 0 4px rgba(255, 179, 71, 0.12);
+}
+/* The brightness-dim overlay clashes with the CRT vignette — disable
+   it under .crt so the user's brightness slider doesn't double-darken
+   the screen. */
+body.crt .brightness-dim { display: none; }
+
 /* Inkwell — deep teal-navy paper with brand chartreuse accent. Library /
    late-night mood — where Dark theme is pure cold, Inkwell leans slightly
    green-cold so it harmonizes with chartreuse rather than fighting it.
@@ -2972,6 +3055,7 @@ body.lib-select-mode .spine {
           <button class="seg-btn" data-theme="sepia" onclick="setTheme('sepia')">Sepia</button>
           <button class="seg-btn" data-theme="dark" onclick="setTheme('dark')">Dark</button>
           <button class="seg-btn" data-theme="inkwell" onclick="setTheme('inkwell')">Inkwell</button>
+          <button class="seg-btn" data-theme="crt" onclick="setTheme('crt')">CRT</button>
         </div>
       </div>
       <div class="settings-row">
@@ -3137,6 +3221,7 @@ body.lib-select-mode .spine {
         <button class="theme-btn" data-theme="sepia" onclick="setTheme('sepia')">Sepia</button>
         <button class="theme-btn" data-theme="dark" onclick="setTheme('dark')">Dark</button>
         <button class="theme-btn" data-theme="inkwell" onclick="setTheme('inkwell')">Inkwell</button>
+        <button class="theme-btn" data-theme="crt" onclick="setTheme('crt')">CRT</button>
       </div>
     </div>
     <div class="settings-section">
@@ -7858,12 +7943,13 @@ const _THEME_PAPER_COLORS = {
   'paper':   '#E8E1CE',
   'sepia':   '#F4ECD8',
   'dark':    '#1A1614',
-  'inkwell': '#152220'
+  'inkwell': '#152220',
+  'crt':     '#0A0805'
 };
 // List of all non-default theme class names. Used by setTheme to remove
 // the previous theme before applying a new one — keeping this as a single
 // source of truth so adding a future theme only requires one edit here.
-const _THEME_CLASSES = ['dark', 'sepia', 'inkwell', 'paper'];
+const _THEME_CLASSES = ['dark', 'sepia', 'inkwell', 'paper', 'crt'];
 function setTheme(theme) {
   // Remove old theme classes without wiping other body classes (r-ui-visible,
   // r-mode-editing, r-debug, etc.)
