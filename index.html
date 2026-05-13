@@ -1007,13 +1007,16 @@ html, body {
   position: absolute;
   top: 6px; right: 6px;
   width: 28px; height: 28px;
-  background: rgba(0, 0, 0, 0.55);
+  /* Slightly darker than before so the button stays legible without the
+     backdrop-filter blur. That blur was the single most expensive style
+     in the library view: with ~40 grid cards visible, every scroll
+     frame had to re-sample and re-blur the underlying cover pixels for
+     each button. Solid 70% black reads fine against any cover. */
+  background: rgba(0, 0, 0, 0.7);
   color: rgba(255, 255, 255, 0.92);
   border-radius: 50%;
   z-index: 2;
   opacity: 0.85;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
   transition: opacity 140ms ease, background 140ms ease;
 }
 .gc:hover .gc-menu-btn { opacity: 1; }
@@ -5066,7 +5069,7 @@ function renderGridView(el, books) {
     const c = strColor(b.title);
     const sel = _libSelectedIds.has(b.id) ? ' selected' : '';
     const cover = b.cover
-      ? `<img src="${b.cover}" alt="">`
+      ? `<img src="${b.cover}" alt="" loading="lazy" decoding="async">`
       : `<div class="gc-placeholder" style="background:linear-gradient(145deg,${c[0]},${c[1]})">
            <div class="gcp-title">${esc(b.title)}</div>
            <div class="gcp-author">${esc(b.author || '')}</div>
