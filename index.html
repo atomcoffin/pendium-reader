@@ -57,7 +57,6 @@
    every theme. */
 .icon-btn:focus-visible,
 .seg-btn:focus-visible,
-.theme-btn:focus-visible,
 .lib-search:focus-visible,
 button:focus-visible {
   outline: 2px solid var(--brand-ink);
@@ -1771,26 +1770,8 @@ body.r-mode-editing .r-inner {
   font-size: 10px; font-weight: 600; text-transform: uppercase;
   letter-spacing: 1.2px; color: var(--fog); margin-bottom: 10px;
 }
-.theme-row { display: flex; gap: 8px; }
-/* Grid variant used by the six-theme picker in the Profile overlay. Two
-   rows of three — light themes on top, dark on bottom. The flex pill
-   doesn't scale well past four items; a grid does. Re-uses .theme-btn
-   styles unchanged. */
-.theme-row-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-.theme-btn {
-  flex: 1; padding: 10px; border-radius: var(--radius-sm);
-  border: 1.5px solid var(--border); background: transparent;
-  font-family: var(--font-ui); font-size: 13px; font-weight: 500;
-  cursor: pointer; color: var(--ink);
-}
-.theme-btn.active { border-color: var(--brand-ink); color: var(--brand-ink); }
-
-/* Export button in profile overlay — same visual weight as theme buttons
-   but full-width with an icon. Ember on hover so it reads as an action. */
+/* Export button in profile overlay — icon + word chip. Sized to share a
+   row with a sibling export button via .export-row's flex layout. */
 .export-btn {
   display: flex;
   align-items: center;
@@ -2033,9 +2014,8 @@ body.r-mode-editing .r-inner {
   user-select: none;
 }
 
-/* Segmented control — the all-new replacement for the old .theme-row +
-   .theme-btn pattern. Pill container with children dividing the space.
-   Active state uses filled ember with paper text for strong legibility. */
+/* Segmented control — pill container with children dividing the space.
+   Active state uses filled brand with brand-text for strong legibility. */
 .seg-row {
   display: flex;
   background: color-mix(in srgb, var(--ink) 5%, transparent);
@@ -3395,29 +3375,44 @@ body.lib-select-mode .spine {
     </div>
     <div class="settings-section">
       <div class="settings-label">Theme</div>
-      <div class="theme-row">
-        <button class="theme-btn active" data-theme="" onclick="setTheme('')">Light</button>
-        <button class="theme-btn" data-theme="paper" onclick="setTheme('paper')">Paper</button>
-        <button class="theme-btn" data-theme="dark" onclick="setTheme('dark')">Dark</button>
-        <button class="theme-btn" data-theme="inkwell" onclick="setTheme('inkwell')">Inkwell</button>
-        <button class="theme-btn" data-theme="crt" onclick="setTheme('crt')">CRT</button>
+      <div class="theme-swatches">
+        <button class="theme-swatch active" data-theme="" onclick="setTheme('')" aria-label="Light theme">
+          <span class="swatch-chip" data-swatch="light"></span>
+          <span class="swatch-name">Light</span>
+        </button>
+        <button class="theme-swatch" data-theme="paper" onclick="setTheme('paper')" aria-label="Paper theme">
+          <span class="swatch-chip" data-swatch="paper"></span>
+          <span class="swatch-name">Paper</span>
+        </button>
+        <button class="theme-swatch" data-theme="dark" onclick="setTheme('dark')" aria-label="Dark theme">
+          <span class="swatch-chip" data-swatch="dark"></span>
+          <span class="swatch-name">Dark</span>
+        </button>
+        <button class="theme-swatch" data-theme="inkwell" onclick="setTheme('inkwell')" aria-label="Inkwell theme">
+          <span class="swatch-chip" data-swatch="inkwell"></span>
+          <span class="swatch-name">Inkwell</span>
+        </button>
+        <button class="theme-swatch" data-theme="crt" onclick="setTheme('crt')" aria-label="CRT theme">
+          <span class="swatch-chip" data-swatch="crt"></span>
+          <span class="swatch-name">CRT</span>
+        </button>
       </div>
     </div>
     <div class="settings-section">
       <div class="settings-label">Reading pace</div>
-      <div class="theme-row">
-        <button class="theme-btn" data-pace="immersed" onclick="setReadingPace('immersed')">Immersed</button>
-        <button class="theme-btn active" data-pace="steady" onclick="setReadingPace('steady')">Steady</button>
-        <button class="theme-btn" data-pace="brisk" onclick="setReadingPace('brisk')">Brisk</button>
+      <div class="seg-row">
+        <button class="seg-btn" data-pace="immersed" onclick="setReadingPace('immersed')">Immersed</button>
+        <button class="seg-btn active" data-pace="steady" onclick="setReadingPace('steady')">Steady</button>
+        <button class="seg-btn" data-pace="brisk" onclick="setReadingPace('brisk')">Brisk</button>
       </div>
       <div class="settings-hint">Used to estimate reading time remaining. Adjust if estimates feel off.</div>
     </div>
     <div class="settings-section">
       <div class="settings-label">Default typography</div>
-      <div class="theme-row">
-        <button class="theme-btn default-face-btn" data-face="serif" onclick="setGlobalReadingFace('serif')">Serif</button>
-        <button class="theme-btn default-face-btn" data-face="sans" onclick="setGlobalReadingFace('sans')">Sans</button>
-        <button class="theme-btn default-face-btn" data-face="mono" onclick="setGlobalReadingFace('mono')">Mono</button>
+      <div class="seg-row">
+        <button class="seg-btn default-face-btn" data-face="serif" onclick="setGlobalReadingFace('serif')">Serif</button>
+        <button class="seg-btn default-face-btn" data-face="sans" onclick="setGlobalReadingFace('sans')">Sans</button>
+        <button class="seg-btn default-face-btn" data-face="mono" onclick="setGlobalReadingFace('mono')">Mono</button>
       </div>
       <div class="settings-hint">The face used when a book has no typeface of its own. Change a book's face from its Appearance panel while reading.</div>
     </div>
@@ -7891,7 +7886,7 @@ function toggleProfile() {
     // Reflect saved pace on the button group. Defaults to Steady for new
     // users who haven't picked yet.
     const pace = localStorage.getItem('tomen_readingPace') || 'steady';
-    document.querySelectorAll('.theme-btn[data-pace]').forEach(b =>
+    document.querySelectorAll('.seg-btn[data-pace]').forEach(b =>
       b.classList.toggle('active', b.dataset.pace === pace)
     );
     // Refresh the About row so the version label and Up-to-date / Update
@@ -8121,11 +8116,8 @@ function setTheme(theme) {
   // r-mode-editing, r-debug, etc.)
   _THEME_CLASSES.forEach(c => document.body.classList.remove(c));
   if (theme) document.body.classList.add(theme);
-  // Scope to buttons that actually carry a data-theme attribute — otherwise
-  // we'd also toggle face/paragraph/align buttons which share .theme-btn.
-  // Appearance panel uses .theme-swatch chips; Profile overlay still uses
-  // the older .theme-btn / .seg-btn variants.
-  document.querySelectorAll('.theme-btn[data-theme], .seg-btn[data-theme], .theme-swatch[data-theme]').forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
+  // Both Appearance and Profile theme pickers use .theme-swatch chips.
+  document.querySelectorAll('.theme-swatch[data-theme]').forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
   localStorage.setItem('tomen_theme', theme);
   updateSystemBarColor(theme);
 }
@@ -8155,7 +8147,7 @@ const _READING_PACES = {
 function setReadingPace(pace) {
   const valid = _READING_PACES[pace] ? pace : 'steady';
   localStorage.setItem('tomen_readingPace', valid);
-  document.querySelectorAll('.theme-btn[data-pace]').forEach(b =>
+  document.querySelectorAll('.seg-btn[data-pace]').forEach(b =>
     b.classList.toggle('active', b.dataset.pace === valid)
   );
   // Refresh any currently-visible time estimates.
@@ -8220,9 +8212,9 @@ const _READING_FACES = {
 };
 
 // Low-level DOM swap. Safe to call with any face key — unknown values fall
-// back to serif. Updates both the .seg-btn[data-face] pickers (Appearance)
-// and .theme-btn[data-face] (global default picker), since either may be
-// present depending on where the change is coming from.
+// back to serif. The per-book Appearance picker uses .seg-btn[data-face];
+// the global default picker uses .seg-btn.default-face-btn[data-face] and
+// is synced via refreshGlobalFacePicker.
 function applyReadingFace(face) {
   const key = _READING_FACES[face] ? face : 'serif';
   const config = _READING_FACES[key];
@@ -8454,7 +8446,7 @@ function setParagraphStyle(v) {
     document.documentElement.style.setProperty('--p-margin', `${parseInt(sp, 10) / 10}em`);
     document.documentElement.style.setProperty('--p-indent-rest', '0');
   }
-  document.querySelectorAll('.theme-btn[data-pstyle], .seg-btn[data-pstyle]').forEach(b =>
+  document.querySelectorAll('.seg-btn[data-pstyle]').forEach(b =>
     b.classList.toggle('active', b.dataset.pstyle === style)
   );
   savePref('paragraphStyle', style);
@@ -8496,7 +8488,7 @@ function setParagraphSpacing(value) {
 function setTextAlign(v) {
   const align = (v === 'left') ? 'left' : 'justify';
   document.documentElement.style.setProperty('--text-align', align);
-  document.querySelectorAll('.theme-btn[data-align], .seg-btn[data-align]').forEach(b =>
+  document.querySelectorAll('.seg-btn[data-align]').forEach(b =>
     b.classList.toggle('active', b.dataset.align === align)
   );
   savePref('textAlign', align);
