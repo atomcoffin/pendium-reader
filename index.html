@@ -2040,11 +2040,18 @@ body.r-mode-editing .r-inner {
   gap: 8px;
 }
 .set-scope-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-family: var(--font-ui);
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1.4px;
+  color: var(--ink);
+}
+.set-scope-icon {
+  font-size: 14px;
   color: var(--ink);
 }
 .set-scope-label .set-scope-context {
@@ -2394,6 +2401,15 @@ body.r-mode-editing .r-inner {
 .seg-btn .ph {
   font-size: 14px;
   line-height: 1;
+}
+/* Icon-only buttons (Style, Align, Width, Spacing) — the symbol is
+   the entire content so it can read bigger. Padding stays compact so
+   row height matches text-bearing buttons. */
+.seg-btn.is-icon-only {
+  padding: 7px 12px;
+}
+.seg-btn.is-icon-only .ph {
+  font-size: 18px;
 }
 
 /* Grid variant for segmented rows that would otherwise overflow. Used by
@@ -3498,7 +3514,7 @@ body.lib-select-mode .spine {
         <button class="icon-btn" onclick="toggleSearch()" title="Search in book" aria-label="Search in book"><i class="ph ph-magnifying-glass"></i></button>
       </div>
       <div class="r-toolbar-center">
-        <button class="icon-btn" onclick="toggleSettings()" title="Appearance" aria-label="Appearance"><i class="ph ph-sliders"></i></button>
+        <button class="icon-btn" onclick="toggleSettings()" title="Appearance" aria-label="Appearance"><i class="ph ph-paint-brush"></i></button>
       </div>
       <div class="r-toolbar-right">
         <button class="icon-btn" onclick="readerPrev()" title="Previous page" aria-label="Previous page"><i class="ph ph-caret-left"></i></button>
@@ -3519,7 +3535,10 @@ body.lib-select-mode .spine {
          overrides + bucket prefs to defaults) and Global → (close
          Appearance, open the Profile/global settings panel). -->
     <div class="set-scope">
-      <span class="set-scope-label">Appearance <span class="set-scope-context">· for current book</span></span>
+      <span class="set-scope-label">
+        <i class="ph ph-paint-brush set-scope-icon" aria-hidden="true"></i>
+        Appearance <span class="set-scope-context">· for current book</span>
+      </span>
       <div class="set-scope-actions">
         <button class="set-scope-global" type="button" onclick="resetAppearanceToDefaults()" title="Reset to global defaults">
           <i class="ph ph-arrow-counter-clockwise" aria-hidden="true"></i>
@@ -3547,28 +3566,31 @@ body.lib-select-mode .spine {
       <div class="set-cell">
         <div class="set-caption">Brightness</div>
         <div class="slider-row">
-          <i class="ph ph-sun slider-icon" aria-hidden="true"></i>
+          <i class="ph ph-sun-dim slider-icon" aria-hidden="true" title="Dim"></i>
           <input type="range" min="0" max="100" value="100" id="sl-brightness" oninput="setBrightness(this.value)">
+          <i class="ph ph-sun slider-icon" aria-hidden="true" title="Full brightness"></i>
           <span class="slider-value" id="brightness-display">100</span>
         </div>
       </div>
     </div>
 
-    <!-- Row 2: Typeface group — face buttons + size + line height all
-         on one row, same height across the three controls. -->
+    <!-- Row 2: Typeface group — face buttons (rendered as "Aa" in each
+         actual face for instant visual preview) + size slider + line
+         height slider, all the same height. Slider values sit
+         immediately after their tracks rather than at the row's far
+         edge so the numbers read as part of the slider, not as a
+         disconnected label. -->
     <div class="set-section face-cell">
       <div class="set-caption">Typeface</div>
       <div class="typeface-row">
         <div class="seg-row">
-          <button class="seg-btn active" data-face="serif" onclick="setReadingFace('serif')">Serif</button>
-          <button class="seg-btn" data-face="sans" onclick="setReadingFace('sans')">Sans</button>
-          <button class="seg-btn" data-face="mono" onclick="setReadingFace('mono')">Mono</button>
+          <button class="seg-btn active" data-face="serif" onclick="setReadingFace('serif')" title="Serif" aria-label="Serif"><span style="font-family: var(--font-read-serif); font-size: 16px;">Aa</span></button>
+          <button class="seg-btn" data-face="sans" onclick="setReadingFace('sans')" title="Sans" aria-label="Sans"><span style="font-family: var(--font-read-sans); font-size: 16px;">Aa</span></button>
+          <button class="seg-btn" data-face="mono" onclick="setReadingFace('mono')" title="Mono" aria-label="Mono"><span style="font-family: var(--font-read-mono); font-size: 16px;">Aa</span></button>
         </div>
         <div class="slider-row">
           <span class="slider-label">Size</span>
-          <span class="slider-icon-text" aria-hidden="true" style="font-size:11px">A</span>
           <input type="range" min="14" max="28" value="18" id="sl-fontsize" oninput="setFontSize(this.value)">
-          <span class="slider-icon-text" aria-hidden="true" style="font-size:16px">A</span>
           <span class="slider-value" id="fs-display">18</span>
         </div>
         <div class="slider-row">
@@ -3580,53 +3602,41 @@ body.lib-select-mode .spine {
       <div class="face-lock-note" id="face-lock-note"></div>
     </div>
 
-    <!-- Row 3: Paragraph group — width, paragraph style, spacing, align
-         all in one row of four cells. Each has its own sub-caption +
-         segmented control. -->
-    <div class="set-section">
-      <div class="set-caption">Paragraph</div>
-      <div class="set-paragraph-cluster">
-        <div class="set-pcell">
-          <div class="set-caption">Width</div>
-          <div class="seg-row">
-            <button class="seg-btn" data-width="900" onclick="setReadingWidth(900)">Narrow</button>
-            <button class="seg-btn active" data-width="1200" onclick="setReadingWidth(1200)">Medium</button>
-            <button class="seg-btn" data-width="1500" onclick="setReadingWidth(1500)">Wide</button>
-          </div>
+    <!-- Paragraph group — width, style, spacing, align. Heading omitted
+         per design: the four sub-captions are clear enough on their
+         own. Symbols replace words for Width (compress/balanced/expand
+         arrows) and Spacing (vertical compress/equals/expand arrows);
+         Style and Align stay symbol-only with larger icons since the
+         icons themselves are universally recognized. -->
+    <div class="set-paragraph-cluster">
+      <div class="set-pcell">
+        <div class="set-caption">Width</div>
+        <div class="seg-row">
+          <button class="seg-btn is-icon-only" data-width="900" onclick="setReadingWidth(900)" title="Narrow" aria-label="Narrow"><i class="ph ph-arrows-in-line-horizontal" aria-hidden="true"></i></button>
+          <button class="seg-btn is-icon-only active" data-width="1200" onclick="setReadingWidth(1200)" title="Medium" aria-label="Medium"><i class="ph ph-arrows-horizontal" aria-hidden="true"></i></button>
+          <button class="seg-btn is-icon-only" data-width="1500" onclick="setReadingWidth(1500)" title="Wide" aria-label="Wide"><i class="ph ph-arrows-out-line-horizontal" aria-hidden="true"></i></button>
         </div>
-        <div class="set-pcell">
-          <div class="set-caption">Style</div>
-          <div class="seg-row">
-            <button class="seg-btn active" data-pstyle="block" onclick="setParagraphStyle('block')">
-              <i class="ph ph-rows" aria-hidden="true"></i>
-              <span>Block</span>
-            </button>
-            <button class="seg-btn" data-pstyle="indent" onclick="setParagraphStyle('indent')">
-              <i class="ph ph-text-indent" aria-hidden="true"></i>
-              <span>Indent</span>
-            </button>
-          </div>
+      </div>
+      <div class="set-pcell">
+        <div class="set-caption">Style</div>
+        <div class="seg-row">
+          <button class="seg-btn is-icon-only active" data-pstyle="block" onclick="setParagraphStyle('block')" title="Block paragraphs" aria-label="Block paragraphs"><i class="ph ph-rows" aria-hidden="true"></i></button>
+          <button class="seg-btn is-icon-only" data-pstyle="indent" onclick="setParagraphStyle('indent')" title="Indented paragraphs" aria-label="Indented paragraphs"><i class="ph ph-text-indent" aria-hidden="true"></i></button>
         </div>
-        <div class="set-pcell">
-          <div class="set-caption">Spacing</div>
-          <div class="seg-row">
-            <button class="seg-btn" data-pspacing="7" onclick="setParagraphSpacing(7)">Tight</button>
-            <button class="seg-btn active" data-pspacing="10" onclick="setParagraphSpacing(10)">Normal</button>
-            <button class="seg-btn" data-pspacing="14" onclick="setParagraphSpacing(14)">Loose</button>
-          </div>
+      </div>
+      <div class="set-pcell">
+        <div class="set-caption">Spacing</div>
+        <div class="seg-row">
+          <button class="seg-btn is-icon-only" data-pspacing="7" onclick="setParagraphSpacing(7)" title="Tight" aria-label="Tight"><i class="ph ph-arrows-in-line-vertical" aria-hidden="true"></i></button>
+          <button class="seg-btn is-icon-only active" data-pspacing="10" onclick="setParagraphSpacing(10)" title="Normal" aria-label="Normal"><i class="ph ph-equals" aria-hidden="true"></i></button>
+          <button class="seg-btn is-icon-only" data-pspacing="14" onclick="setParagraphSpacing(14)" title="Loose" aria-label="Loose"><i class="ph ph-arrows-out-line-vertical" aria-hidden="true"></i></button>
         </div>
-        <div class="set-pcell">
-          <div class="set-caption">Align</div>
-          <div class="seg-row">
-            <button class="seg-btn active" data-align="justify" onclick="setTextAlign('justify')">
-              <i class="ph ph-text-align-justify" aria-hidden="true"></i>
-              <span>Justify</span>
-            </button>
-            <button class="seg-btn" data-align="left" onclick="setTextAlign('left')">
-              <i class="ph ph-text-align-left" aria-hidden="true"></i>
-              <span>Left</span>
-            </button>
-          </div>
+      </div>
+      <div class="set-pcell">
+        <div class="set-caption">Align</div>
+        <div class="seg-row">
+          <button class="seg-btn is-icon-only active" data-align="justify" onclick="setTextAlign('justify')" title="Justified" aria-label="Justified"><i class="ph ph-text-align-justify" aria-hidden="true"></i></button>
+          <button class="seg-btn is-icon-only" data-align="left" onclick="setTextAlign('left')" title="Left-aligned" aria-label="Left-aligned"><i class="ph ph-text-align-left" aria-hidden="true"></i></button>
         </div>
       </div>
     </div>
