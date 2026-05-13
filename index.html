@@ -3307,7 +3307,11 @@ function bookMetaFromBook(book) {
     spineColor: book.spineColor || null,
     // Per-book typography override. null = use the global default. Valid
     // values match _READING_FACES keys: 'serif' | 'sans' | 'mono'.
-    fontFace: book.fontFace || null
+    fontFace: book.fontFace || null,
+    // Ambient reading-time stat (cumulative seconds). Accumulated by a
+    // visibility- and idle-aware tick while the reader is active. Read
+    // by the library views to show "X min read" alongside progress.
+    readingSeconds: book.readingSeconds || 0
   };
 }
 
@@ -3400,6 +3404,7 @@ async function saveLibrary() {
       library[idx].chapterIndex = currentBook.chapterIndex;
       library[idx].spreadIndex = currentBook.spreadIndex;
       library[idx].scrollPos = currentBook.scrollPos;
+      library[idx].readingSeconds = currentBook.readingSeconds || 0;
       await saveBookMeta(library[idx]);
     }
   }
@@ -4104,10 +4109,17 @@ function renderTextView(el, books) {
       }
     }
     const progressMeta = isReading ? ' · <span style="font-family:var(--font-mono);font-size:11px">' + Math.round(p) + '%</span>' : '';
+    // Ambient reading stat — only shown once there's at least a minute
+    // of reading time so a never-opened book doesn't get a "0 min"
+    // label that looks like clutter.
+    const readDuration = _formatReadingDuration(b.readingSeconds);
+    const readMeta = readDuration
+      ? ' · <span style="font-family:var(--font-mono);font-size:11px">' + readDuration + ' read</span>'
+      : '';
     return `<div class="tv-item">
       <div class="tv-item-main${sel}" onclick="openBookById('${b.id}')">
         <div class="tv-title${isReading ? ' reading' : ''}">${esc(b.title)}</div>
-        <div class="tv-author">${esc(b.author || 'Unknown')}${progressMeta}${timeMeta}</div>
+        <div class="tv-author">${esc(b.author || 'Unknown')}${progressMeta}${readMeta}${timeMeta}</div>
         ${isReading ? '<div class="tv-progress"><div class="tv-progress-fill" style="width:' + p + '%"></div></div>' : ''}
       </div>
       <button class="tv-menu-btn icon-btn" onclick="openBookMenu(event, '${b.id}')" aria-label="Book options" title="Options"><i class="ph ph-dots-three-outline"></i></button>
@@ -5234,6 +5246,8 @@ async function openBookById(id) {
     // Always start books in reading mode (editing mode is never persisted)
     readerMode = 'reading';
     document.body.classList.remove('r-mode-editing');
+    // Begin accumulating per-book reading time. Stopped in showLibrary.
+    _startReadingTick();
     // Initialize the edge-ring indicators to baseline size at mid-screen
     // height, so they're immediately visible as small hints at both edges
     // the moment the reader opens.
@@ -5251,6 +5265,7 @@ async function openBookById(id) {
 
 function showLibrary() {
   exitEditingMode();
+  _stopReadingTick();
   saveProgress();
   // Force the pending IDB write through before we free anything. flushSave
   // -Progress runs its synchronous prelude (which copies fields from
@@ -5623,6 +5638,7 @@ function saveProgress() {
     library[idx].chapterIndex = currentBook.chapterIndex;
     library[idx].spreadIndex = currentBook.spreadIndex;
     library[idx].progress = currentBook.progress;
+    library[idx].readingSeconds = currentBook.readingSeconds || 0;
   }
   _saveProgressPending = true;
   if (_saveProgressTm) return;
@@ -8475,6 +8491,56 @@ function _hideNotePopover() {
   if (pop) pop.classList.remove('open');
 }
 
+// ===== READING STATS =====
+// Ambient per-book reading-time accumulation. A 60-second tick adds 60s
+// to currentBook.readingSeconds while the reader is visible AND there's
+// been user activity in the last 3 minutes. The activity gate prevents
+// "I left the tab open overnight" from inflating the stat — a real
+// reading session has page turns, taps, and scrolls landing routinely.
+let _readingTickInterval = null;
+let _lastReaderActivity = 0;
+const _READING_IDLE_MS = 3 * 60 * 1000;
+const _READING_TICK_MS = 60 * 1000;
+
+function _markReaderActivity() {
+  _lastReaderActivity = Date.now();
+}
+
+function _startReadingTick() {
+  if (_readingTickInterval) return;
+  _markReaderActivity();
+  _readingTickInterval = setInterval(() => {
+    if (!currentBook) return;
+    if (document.hidden) return;
+    if (!$('screen-reader').classList.contains('active')) return;
+    const idleMs = Date.now() - _lastReaderActivity;
+    if (idleMs > _READING_IDLE_MS) return;
+    currentBook.readingSeconds = (currentBook.readingSeconds || 0) + _READING_TICK_MS / 1000;
+    const idx = library.findIndex(b => b.id === currentBook.id);
+    if (idx >= 0) library[idx].readingSeconds = currentBook.readingSeconds;
+    // Mark pending so the existing debounced saveProgress flush picks
+    // this up — avoids opening a write per minute.
+    _saveProgressPending = true;
+    if (!_saveProgressTm) _saveProgressTm = setTimeout(flushSaveProgress, 1500);
+  }, _READING_TICK_MS);
+}
+
+function _stopReadingTick() {
+  if (_readingTickInterval) {
+    clearInterval(_readingTickInterval);
+    _readingTickInterval = null;
+  }
+}
+
+function _formatReadingDuration(seconds) {
+  const mins = Math.floor((seconds || 0) / 60);
+  if (mins < 1) return '';
+  if (mins < 60) return mins + ' min';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
 // ===== IMAGE VIEWER =====
 // Tapping a figure in the reader opens it in a full-viewport overlay so
 // the reader can inspect detail without leaving the page. Pinch-to-zoom
@@ -8650,6 +8716,15 @@ function renderGreeting() {
   _setupFootnoteHandlers();
   // Image viewer click handlers.
   _setupImageViewerHandlers();
+  // Reading-stat activity tracking. One delegated listener at the reader
+  // root catches every pointer and key event, so the ambient timer
+  // knows whether the user is actually engaged.
+  const readerEl = $('screen-reader');
+  if (readerEl) {
+    readerEl.addEventListener('pointerdown', _markReaderActivity, true);
+    readerEl.addEventListener('keydown', _markReaderActivity, true);
+    readerEl.addEventListener('wheel', _markReaderActivity, { passive: true, capture: true });
+  }
 })();
 </script>
 
