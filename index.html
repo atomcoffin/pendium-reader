@@ -1557,20 +1557,9 @@ body.r-ui-visible .r-footer-ref {
   width: 0;  /* set inline by JS via rAF easing loop */
   height: 0;
   pointer-events: none;
-  /* Solid disc — flat fill, clean edge, no gradient. Matches Tomen's
-     elsewhere-everywhere design language of definite shapes (theme
-     swatches, the update dot, brand bullets in spines). Idle uses
-     --stone, a warm mid-gray, so the disc reads as a quiet chip in
-     the margin rather than a "page-turn here" billboard. Armed
-     shifts to mid-brand; active goes full brand. The hold animation
-     is this background interpolating from armed to active over
-     HOLD_MS — the color shift IS the commitment. */
-  background: color-mix(in srgb, var(--stone) 38%, transparent);
-  border-radius: 50%;
-  transition: background 180ms ease;
   z-index: 5;
   transform: translateY(-50%);
-  will-change: width, height, top, background;
+  will-change: width, height, top;
 }
 .r-edge-ring-prev {
   left: 0;
@@ -1583,18 +1572,44 @@ body.r-ui-visible .r-footer-ref {
   /* Same, mirrored: center sits ON the right edge, only left half visible. */
   transform: translate(50%, -50%);
 }
-/* Cursor is inside the visible half-disc (a click would register).
-   Hue shifts from idle --stone to mid-brand — the disc has "noticed"
-   you and is signaling that a click would land. */
-.r-edge-ring.armed {
-  background: color-mix(in srgb, var(--brand) 65%, transparent);
+.r-edge-ring svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  display: block;
 }
-/* Hold in progress. Full-saturation brand. The hold animation is the
-   background transitioning from .armed to .active — see startHold
-   for the timing override that stretches that transition to HOLD_MS
-   so the color build unfolds over the commit window. */
-.r-edge-ring.active {
-  background: var(--brand);
+/* Idle outline — a stroked half-arc that reads as a design mark in
+   the margin rather than a UI element. Stroke uses --stone (warm
+   mid-gray) instead of --ink so the line integrates with the page's
+   reading texture rather than competing with body text. The
+   non-scaling-stroke keeps the line a constant pixel width as the
+   SVG container scales up with cursor proximity — so the arc grows
+   in radius without ever turning into a fat band. Transitions to
+   full-strength --brand on .armed (cursor inside the visible half-
+   disc, a click would now register). */
+.r-edge-ring-track {
+  fill: none;
+  stroke: var(--stone);
+  stroke-opacity: 0.7;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  transition: stroke 180ms ease, stroke-opacity 180ms ease;
+}
+.r-edge-ring.armed .r-edge-ring-track {
+  stroke: var(--brand);
+  stroke-opacity: 1;
+}
+
+/* Interior fill disc. Idle is fully clipped (circle 0%) so the
+   outline alone is what reads. On hold start, startHold animates the
+   clip-path from 0% to 50% (the full visible half-disc area) over
+   HOLD_MS, painting --brand inward from the center — the "iris fill"
+   that signals the page-turn is committing. */
+.r-edge-ring-fill {
+  fill: var(--brand);
+  stroke: none;
+  clip-path: circle(0% at 50% 50%);
+  -webkit-clip-path: circle(0% at 50% 50%);
 }
 
 /* Debug mode — reveals interaction zones.
@@ -3317,14 +3332,32 @@ body.lib-select-mode .spine {
     </div>
     <!-- Book + chapter reminder at bottom. -->
     <div class="r-footer-ref" id="r-footer-ref" aria-hidden="true"></div>
-    <!-- Edge-anchored half-disc page-turn affordances. Each div sits
-         flush against its side of the screen (left edge for prev,
-         right edge for next), shows the on-screen half of a CSS-rendered
-         circle, and rides the cursor's vertical position via the rAF
-         tracking loop. Size scales with cursor proximity; background
-         color shifts on .armed and again on .active. -->
-    <div class="r-edge-ring r-edge-ring-prev" id="r-edge-ring-prev" aria-hidden="true"></div>
-    <div class="r-edge-ring r-edge-ring-next" id="r-edge-ring-next" aria-hidden="true"></div>
+    <!-- Edge-anchored half-circle page-turn affordances. Each ring is
+         a stroked SVG arc that sits flush against its side of the
+         screen (left for prev, right for next) and rides the cursor's
+         vertical position via the rAF tracking loop. Track stroke is
+         --stone at idle (a soft warm gray that blends with the page
+         like a margin mark), shifts to --brand on .armed (cursor inside
+         the visible half-disc), and the interior fill grows from clip
+         0% to clip 50% during a hold — a brand-colored iris painting
+         in from the center as the page turn commits. -->
+    <div class="r-edge-ring r-edge-ring-prev" id="r-edge-ring-prev" aria-hidden="true">
+      <svg viewBox="0 0 80 80" preserveAspectRatio="xMidYMid meet">
+        <!-- Visible half is the RIGHT semicircle of the SVG (the left
+             half is positioned off-screen by the parent's translate).
+             Arc runs 12 → 3 → 6 o'clock. -->
+        <path class="r-edge-ring-track" d="M 40 2 A 38 38 0 0 1 40 78"></path>
+        <circle class="r-edge-ring-fill" cx="40" cy="40" r="38"></circle>
+      </svg>
+    </div>
+    <div class="r-edge-ring r-edge-ring-next" id="r-edge-ring-next" aria-hidden="true">
+      <svg viewBox="0 0 80 80" preserveAspectRatio="xMidYMid meet">
+        <!-- Visible half is the LEFT semicircle (right edge of screen).
+             Arc runs 12 → 9 → 6 o'clock. Sweep-flag differs from prev. -->
+        <path class="r-edge-ring-track" d="M 40 2 A 38 38 0 0 0 40 78"></path>
+        <circle class="r-edge-ring-fill" cx="40" cy="40" r="38"></circle>
+      </svg>
+    </div>
   </div>
   <!-- Reading toolbar (bottom). Three groups: navigation within book
        (Contents + Marks) on the left, Appearance (visual/reading settings)
@@ -6739,17 +6772,15 @@ document.addEventListener('keydown', (e) => {
 const HOLD_MS = 400;
 // Max ring radius in CSS pixels — the visible half-disc reaches this far
 // into the page when the cursor is at (or very near) the screen edge.
-// Diameter at max is 2 × this. A solid disc reads as visually denser
-// than a gradient bloom of the same size, so these values are
-// significantly smaller than the bloom era required.
-const EDGE_RING_MAX_R = 75;
-// Baseline radius — the persistent solid disc always visible at each
-// edge. Both discs ride the cursor's vertical position via the rAF
-// tick, so the affordance is a small chip in your peripheral vision
-// at the cursor's eye level.
-const EDGE_RING_BASELINE_R = 24;
+const EDGE_RING_MAX_R = 95;
+// Baseline radius — the persistent outlined arc always visible at each
+// edge. Both arcs ride the cursor's vertical position via the rAF
+// tick, so the affordance is a small margin mark at your eye level.
+// Outlined shapes read lighter than solid ones, so this can be a hair
+// bigger than the solid era's 24 without feeling intrusive.
+const EDGE_RING_BASELINE_R = 28;
 // Minimum rendered radius for a click to count as "armed."
-const EDGE_RING_MIN_R = 50;
+const EDGE_RING_MIN_R = 55;
 // Activation distance — the X-distance from the screen edge at which
 // the ring starts growing from baseline toward max. Outside this, the
 // ring stays at baseline; inside, the ring grows along a power curve
@@ -6784,6 +6815,9 @@ let _ringRafId = null;
 
 function _ringForDir(dir) {
   return $(dir === 'prev' ? 'r-edge-ring-prev' : 'r-edge-ring-next');
+}
+function _fillForDir(dir) {
+  return _ringForDir(dir)?.querySelector('.r-edge-ring-fill');
 }
 // Compute the ring's *target* radius for a given cursor X position. The
 // rAF loop eases the rendered radius toward this. The ring stays at
@@ -6875,11 +6909,16 @@ function _initEdgeRings() {
     const ring = _ringForDir(dir);
     if (ring) {
       ring.classList.remove('active', 'armed', 'exiting');
-      ring.style.transition = '';
       const size = EDGE_RING_BASELINE_R * 2;
       ring.style.width = size + 'px';
       ring.style.height = size + 'px';
       ring.style.top = midY + 'px';
+    }
+    const fill = _fillForDir(dir);
+    if (fill) {
+      fill.style.transition = 'none';
+      fill.style.clipPath = 'circle(0% at 50% 50%)';
+      fill.style.webkitClipPath = 'circle(0% at 50% 50%)';
     }
   }
 }
@@ -6934,14 +6973,23 @@ function startHold(dir, x, y) {
   cancelHold();
   _holdDir = dir;
   const ring = _ringForDir(dir);
-  if (!ring) return;
-  // The hold animation is the bloom's background gradient interpolating
-  // from the .armed state to the .active state — a color shift from
-  // mid-brand to full-brand over HOLD_MS. Override the default 180ms
-  // CSS transition duration to match the hold duration so the color
-  // build feels paced with the commit window.
+  const fill = _fillForDir(dir);
+  if (!ring || !fill) return;
+  // Iris fill — snap the clip-path to circle(0%) (invisible) with no
+  // transition, force a reflow so the snap registers as a frame, then
+  // transition to circle(50%) (fully revealed) over HOLD_MS. The disc
+  // itself is always rendered at full size; the clip-path controls
+  // how much of it is visible, so what the user sees is a sharp
+  // brand-color half-disc expanding outward from the center inside
+  // the outlined ring.
+  fill.style.transition = 'none';
+  fill.style.clipPath = 'circle(0% at 50% 50%)';
+  fill.style.webkitClipPath = 'circle(0% at 50% 50%)';
+  void fill.getBoundingClientRect();
   const easing = `${HOLD_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`;
-  ring.style.transition = `background ${easing}`;
+  fill.style.transition = `clip-path ${easing}, -webkit-clip-path ${easing}`;
+  fill.style.clipPath = 'circle(50% at 50% 50%)';
+  fill.style.webkitClipPath = 'circle(50% at 50% 50%)';
   ring.classList.add('active');
   _holdTimer = setTimeout(() => {
     _holdTimer = null;
@@ -6958,12 +7006,25 @@ function cancelHold(completed) {
   _holdDir = null;
   if (!dir) return;
   const ring = _ringForDir(dir);
+  const fill = _fillForDir(dir);
   if (!ring) return;
-  // Restore the default transition timing so the fade-back to armed
-  // or idle uses the normal 180ms easing, not the long HOLD_MS we
-  // set when the hold started.
-  ring.style.transition = '';
   ring.classList.remove('active');
+  // Iris fill: snap clip back to 0% on completion (page turn fired —
+  // next hold starts from empty), or ease the clip back smoothly on
+  // cancel (user released before completion) so the iris closes
+  // rather than popping shut.
+  if (fill) {
+    if (completed) {
+      fill.style.transition = 'none';
+      fill.style.clipPath = 'circle(0% at 50% 50%)';
+      fill.style.webkitClipPath = 'circle(0% at 50% 50%)';
+    } else {
+      const easing = `200ms cubic-bezier(0.4, 0, 0.2, 1)`;
+      fill.style.transition = `clip-path ${easing}, -webkit-clip-path ${easing}`;
+      fill.style.clipPath = 'circle(0% at 50% 50%)';
+      fill.style.webkitClipPath = 'circle(0% at 50% 50%)';
+    }
+  }
   // Ring size + position keep tracking the cursor via the continuous
   // mousemove handler, so we don't need to manually retarget here.
   _syncArmedClasses(_lastCursorX, _lastCursorY);
