@@ -4156,6 +4156,9 @@ async function deleteBook(id) {
     localStorage.removeItem('tomen_lastRead');
   }
   library = library.filter(b => b.id !== id);
+  // Drop the spine layout cache entry for this book so it doesn't
+  // linger as orphan memory for the rest of the session.
+  _spineLayoutCache.delete(id);
 }
 
 // ===== BOOK MENU =====
@@ -4633,17 +4636,41 @@ function spineDimensions(book) {
 
 // Keep these as wrappers for backward compatibility
 
-// Get the current spine scale from CSS (responsive)
+// Get the current spine scale from CSS (responsive). The previous
+// version was called from renderSpineView and created/destroyed a
+// probe element on every render — fast individually, but renderLibrary
+// runs after most user interactions in the library view, so the cost
+// stacked. Now the scale is computed once on first need and refreshed
+// (debounced) on window resize, so renderSpineView reads it for free.
 let spineScale = 1;
-function updateSpineScale() {
+let _spineScaleInitialized = false;
+let _spineScaleResizeTm = null;
+function _refreshSpineScale() {
   const test = document.createElement('div');
   test.className = 'spine';
   test.style.cssText = 'position:absolute;visibility:hidden;';
   document.body.appendChild(test);
   const val = getComputedStyle(test).getPropertyValue('--spine-scale');
   document.body.removeChild(test);
-  spineScale = parseFloat(val) || 1;
+  const next = parseFloat(val) || 1;
+  if (next !== spineScale) {
+    spineScale = next;
+    // Cached layouts are keyed by widthPx which is derived from
+    // spineScale — a scale change invalidates every entry.
+    _spineLayoutCache.clear();
+  }
+  _spineScaleInitialized = true;
 }
+// Stand-in for the old function name so any straggler callsite keeps
+// working. Triggers a one-time compute on first invocation; subsequent
+// calls are no-ops because the resize listener keeps the value fresh.
+function updateSpineScale() {
+  if (!_spineScaleInitialized) _refreshSpineScale();
+}
+window.addEventListener('resize', () => {
+  clearTimeout(_spineScaleResizeTm);
+  _spineScaleResizeTm = setTimeout(_refreshSpineScale, 120);
+}, { passive: true });
 
 // ===== SPINE COMPOSITION =====
 // Parse title and author into layout-ready pieces.
@@ -4762,6 +4789,24 @@ function fitHorizontal(text, maxW, maxH, maxLines, sizeHi, sizeLo) {
     return { text, size, weight: 400, width: m.w, height: m.h, lines };
   }
   return null;
+}
+
+// Layout cache keyed by every input spineLayout depends on. The binary-
+// search title fit forces synchronous layout for every measurement
+// iteration (~14 per book), so re-running it on every renderLibrary call
+// — which fires for sort, filter, view-switch, theme change, tag click,
+// and more — was the dominant cost in the library view. Title + author
+// in the key means renames invalidate automatically; faceKey covers
+// global/per-book face changes; widthPx/heightPx cover viewport resize
+// and the per-book dimension formula.
+const _spineLayoutCache = new Map();
+function _getSpineLayout(book, widthPx, heightPx, fontFamily, faceKey) {
+  const key = `${faceKey}|${widthPx}|${heightPx}|${book.title || ''}|${book.author || ''}`;
+  const cached = _spineLayoutCache.get(book.id);
+  if (cached && cached.key === key) return cached.layout;
+  const layout = spineLayout(book, widthPx, heightPx, fontFamily);
+  _spineLayoutCache.set(book.id, { key, layout });
+  return layout;
 }
 
 // ===== SPINE LAYOUT =====
@@ -5133,7 +5178,7 @@ function renderSpineView(el, books) {
       if (!spineEl) return;
       const hPx = spineEl.clientHeight;
       if (hPx <= 0) return;
-      const layout = spineLayout(s.book, s.width, hPx, s.fontFamily);
+      const layout = _getSpineLayout(s.book, s.width, hPx, s.fontFamily, s.faceKey);
       const p = layout.primary;
       // Tighter tracking at larger sizes; looser at smaller so tall skinny
       // spines don't feel cramped.
@@ -6136,6 +6181,11 @@ async function openBookById(id) {
     document.body.classList.remove('r-mode-editing');
     // Begin accumulating per-book reading time. Stopped in showLibrary.
     _startReadingTick();
+    // Attach the hold-to-turn / hover-ring mousemove handlers. They stay
+    // attached only while the reader is active so the library page
+    // doesn't pay for the reader's gesture machinery on every cursor
+    // motion. No-op on touch-only devices.
+    _attachReaderHoldHandlers();
     // Initialize the edge-ring indicators to baseline size at mid-screen
     // height, so they're immediately visible as small hints at both edges
     // the moment the reader opens.
@@ -6154,6 +6204,9 @@ async function openBookById(id) {
 function showLibrary() {
   exitEditingMode();
   _stopReadingTick();
+  // Detach the reader's mousemove handlers so the library view doesn't
+  // pay for every cursor motion. Counterpart to the attach in openBookById.
+  _detachReaderHoldHandlers();
   saveProgress();
   // Force the pending IDB write through before we free anything. flushSave
   // -Progress runs its synchronous prelude (which copies fields from
@@ -7081,73 +7134,88 @@ function cancelHold(completed) {
 // as a hint, and also activate if we observe an actual `mousemove`
 // event whose `movementX/Y` is non-zero (which touch-synthesized mouse
 // events don't produce). Either signal is sufficient.
-(() => {
-  let activated = false;
-  const activate = () => {
-    if (activated) return;
-    activated = true;
+// Forward-declared so other code can call attach/detach before the
+// IIFE below decides whether the user has a real pointer device.
+// Default to no-ops; the IIFE overwrites them once a mouse is detected.
+let _attachReaderHoldHandlers = () => {};
+let _detachReaderHoldHandlers = () => {};
 
-    document.addEventListener('mousemove', (e) => {
-      if (readerInteractionBlocked()) { if (_hoverDir) hideHover(); return; }
-      // While a hold is in progress, freeze the ring — the fill animation
-      // is the focal point and a moving/scaling ring distracts from it
-      // (and creates visual artifacts during the dashoffset transition).
-      if (_holdTimer) return;
-      const zone = e.target.closest && e.target.closest('.r-click-zone');
-      if (zone) {
-        const dir = zone.dataset.dir;
-        // Always recompute ring size + position on each mousemove inside
-        // the zone — size scales with cursor proximity to the edge.
-        if (dir !== _hoverDir) showHover(dir, e.clientX, e.clientY);
-        else _updateEdgeRing(dir, e.clientX, e.clientY);
-        // Toggle .armed based on whether the cursor is actually inside
-        // the visible half-disc. Uses rendered radius (what the user
-        // sees), so armed state matches click eligibility exactly.
-        const ring = _ringForDir(dir);
-        if (ring) {
-          const inside = _cursorInsideRing(dir, e.clientX, e.clientY);
-          ring.classList.toggle('armed', inside);
-        }
-      } else if (_hoverDir) {
-        hideHover();
-      }
-    });
-    document.addEventListener('mousedown', (e) => {
-      if (readerInteractionBlocked()) return;
-      const zone = e.target.closest && e.target.closest('.r-click-zone');
-      if (!zone || e.button !== 0) return;
+(() => {
+  let attached = false;
+  const onMouseMove = (e) => {
+    if (readerInteractionBlocked()) { if (_hoverDir) hideHover(); return; }
+    // While a hold is in progress, freeze the ring — the fill animation
+    // is the focal point and a moving/scaling ring distracts from it
+    // (and creates visual artifacts during the dashoffset transition).
+    if (_holdTimer) return;
+    const zone = e.target.closest && e.target.closest('.r-click-zone');
+    if (zone) {
       const dir = zone.dataset.dir;
-      if (!dir) return;
-      // Only register the press if the cursor is actually inside the
-      // visible half-disc — being in the click zone is necessary but
-      // not sufficient. The ring grows with proximity, so the user
-      // has to deliberately approach the edge to trigger a turn. This
-      // is the whole point of the new design: click-zone breadth for
-      // detection, ring narrowness for intent.
-      if (!_cursorInsideRing(dir, e.clientX, e.clientY)) return;
-      startHold(dir, e.clientX, e.clientY);
-      e.preventDefault();
-    });
-    document.addEventListener('mouseup', () => cancelHold());
-    document.addEventListener('mouseleave', () => { hideHover(); cancelHold(); });
-    window.addEventListener('blur', () => { hideHover(); cancelHold(); });
+      if (dir !== _hoverDir) showHover(dir, e.clientX, e.clientY);
+      else _updateEdgeRing(dir, e.clientX, e.clientY);
+      const ring = _ringForDir(dir);
+      if (ring) {
+        const inside = _cursorInsideRing(dir, e.clientX, e.clientY);
+        ring.classList.toggle('armed', inside);
+      }
+    } else if (_hoverDir) {
+      hideHover();
+    }
+  };
+  const onMouseDown = (e) => {
+    if (readerInteractionBlocked()) return;
+    const zone = e.target.closest && e.target.closest('.r-click-zone');
+    if (!zone || e.button !== 0) return;
+    const dir = zone.dataset.dir;
+    if (!dir) return;
+    if (!_cursorInsideRing(dir, e.clientX, e.clientY)) return;
+    startHold(dir, e.clientX, e.clientY);
+    e.preventDefault();
+  };
+  const onMouseUp = () => cancelHold();
+  const onMouseLeave = () => { hideHover(); cancelHold(); };
+  const onBlur = () => { hideHover(); cancelHold(); };
+
+  const attach = () => {
+    if (attached) return;
+    attached = true;
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('mouseleave', onMouseLeave);
+    window.addEventListener('blur', onBlur);
+  };
+  const detach = () => {
+    if (!attached) return;
+    attached = false;
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mousedown', onMouseDown);
+    document.removeEventListener('mouseup', onMouseUp);
+    document.removeEventListener('mouseleave', onMouseLeave);
+    window.removeEventListener('blur', onBlur);
   };
 
-  // Fast path: if the browser says it has a fine pointer with hover,
-  // trust that and activate immediately.
+  // Wire the public handles once we know a real pointer device exists.
+  // Until then attach is a no-op — touch-only users never bind any of
+  // these listeners. On desktops where matchMedia knows about the
+  // pointer up-front, this resolves synchronously; on browsers that
+  // misreport, the mousemove probe below resolves it on first real
+  // pointer movement.
+  const enable = () => {
+    _attachReaderHoldHandlers = attach;
+    _detachReaderHoldHandlers = detach;
+    // If the reader is already on screen when mouse capability resolves
+    // (rare but possible on the probe path), attach now.
+    if ($('screen-reader')?.classList.contains('active')) attach();
+  };
   if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
-    activate();
+    enable();
     return;
   }
-
-  // Fallback: watch for a real mouse movement. Touch-synthesized mouse
-  // events have movementX/Y of 0 (they're point-in-time, not continuous),
-  // so a non-zero movement is a reliable signal that a real pointer is
-  // in use. Once we see one, attach the handlers permanently.
   const probe = (e) => {
     if ((e.movementX && e.movementX !== 0) || (e.movementY && e.movementY !== 0)) {
       window.removeEventListener('mousemove', probe);
-      activate();
+      enable();
     }
   };
   window.addEventListener('mousemove', probe, { passive: true });
@@ -7907,8 +7975,37 @@ function isEditing() { return readerMode === 'editing'; }
 // be suppressed. Used by the swipe/slider IIFE, the hold-ring IIFE, page-turn
 // functions, and keyboard navigation. A single source of truth keeps these
 // checks from drifting.
+// Track how many .overlay elements are currently in the .open state via
+// a MutationObserver, so readerInteractionBlocked() can answer in O(1)
+// without a document-wide querySelector on every mousemove. The observer
+// runs on each .overlay's class attribute and updates the counter as
+// .open is added/removed.
+let _overlayOpenCount = 0;
+function _setupOverlayObserver() {
+  const overlays = document.querySelectorAll('.overlay');
+  _overlayOpenCount = 0;
+  overlays.forEach(o => { if (o.classList.contains('open')) _overlayOpenCount++; });
+  const observer = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      if (m.attributeName !== 'class') continue;
+      const wasOpen = m.oldValue && m.oldValue.split(/\s+/).includes('open');
+      const isOpen = m.target.classList.contains('open');
+      if (wasOpen && !isOpen) _overlayOpenCount = Math.max(0, _overlayOpenCount - 1);
+      else if (!wasOpen && isOpen) _overlayOpenCount++;
+    }
+  });
+  overlays.forEach(o => {
+    observer.observe(o, { attributes: true, attributeOldValue: true, attributeFilter: ['class'] });
+  });
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _setupOverlayObserver);
+} else {
+  _setupOverlayObserver();
+}
+
 function readerInteractionBlocked() {
-  if (document.querySelector('.overlay.open')) return true;
+  if (_overlayOpenCount > 0) return true;
   if (readerMode === 'editing') return true;
   if (_fadeSwapBusy) return true;
   return false;
