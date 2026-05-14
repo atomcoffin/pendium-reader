@@ -1337,6 +1337,15 @@ body[data-lib-view="grid"] .lib-size { display: inline-flex; }
 }
 
 /* ===== READER ===== */
+/* Frame geometry shared by the reader chrome. --r-bar-h is the nominal
+   top/bottom bar height (hand-synced with the padding + icon-btn math in
+   .r-toolbar-top/-bottom and the mobile overrides). The side rails are half
+   that wide; --r-frame-radius rounds the four interior corners so the page
+   reads as a card tucked behind the frame. */
+#screen-reader {
+  --r-bar-h: 52px;
+  --r-frame-radius: 16px;
+}
 .r-progress {
   position: fixed;
   bottom: env(safe-area-inset-bottom, 0px);
@@ -1443,7 +1452,6 @@ body.crt .r-toolbar .icon-btn.active {
    the top/bottom bars; sit just under them (z-index 9 vs 10) so the bars win
    the corners. Visibility tracks body.r-ui-visible. */
 .r-toolbar-side {
-  --r-bar-h: 52px;
   position: absolute;
   top: 0; bottom: 0;
   width: calc(var(--r-bar-h) / 2);
@@ -1460,6 +1468,48 @@ body.crt .r-toolbar .icon-btn.active {
 body.r-ui-visible .r-toolbar-side {
   opacity: 1;
   transform: translateX(0);
+}
+
+/* Interior rounded corners of the frame. Each toolbar carries two
+   quarter-disc pseudo-elements that bulge into the page area at the inner
+   corners — frame-colored, so they bite a convex round corner out of the
+   book content and the page reads as a rounded card. background/backdrop
+   inherit the toolbar's brand wash so every theme is covered automatically.
+   Anchored off the toolbar's own edge (top/bottom: 100%) so they stay glued
+   to the bar regardless of safe-area padding, and inset horizontally by the
+   side-rail width so they meet the rails' inner edge. */
+.r-toolbar-top::before,
+.r-toolbar-top::after,
+.r-toolbar-bottom::before,
+.r-toolbar-bottom::after {
+  content: '';
+  position: absolute;
+  width: var(--r-frame-radius);
+  height: var(--r-frame-radius);
+  background: inherit;
+  backdrop-filter: inherit;
+  -webkit-backdrop-filter: inherit;
+  pointer-events: none;
+}
+.r-toolbar-top::before {
+  top: 100%;
+  left: calc(var(--r-bar-h) / 2);
+  border-bottom-right-radius: var(--r-frame-radius);
+}
+.r-toolbar-top::after {
+  top: 100%;
+  right: calc(var(--r-bar-h) / 2);
+  border-bottom-left-radius: var(--r-frame-radius);
+}
+.r-toolbar-bottom::before {
+  bottom: 100%;
+  left: calc(var(--r-bar-h) / 2);
+  border-top-right-radius: var(--r-frame-radius);
+}
+.r-toolbar-bottom::after {
+  bottom: 100%;
+  right: calc(var(--r-bar-h) / 2);
+  border-top-left-radius: var(--r-frame-radius);
 }
 
 /* Toolbar mode swap. Reading toolbars shown by default; editing toolbar
@@ -3473,7 +3523,7 @@ body.lib-select-mode .col-item {
       8px 0 calc(8px + env(safe-area-inset-bottom, 0px)) 0;
   }
   /* Bars are 8 + 34 + 8 = 50px tall here; side rails stay half that. */
-  .r-toolbar-side { --r-bar-h: 50px; }
+  #screen-reader { --r-bar-h: 50px; }
   .r-title { max-width: 120px; font-size: 13px; }
   .r-toolbar .icon-btn { width: 34px; height: 34px; }
   .r-toolbar .icon-btn .ph { font-size: 18px; }
@@ -3495,7 +3545,7 @@ body.lib-select-mode .col-item {
       6px 0 calc(6px + env(safe-area-inset-bottom, 0px)) 0;
   }
   /* Bars are 6 + 34 + 6 = 46px tall here; side rails stay half that. */
-  .r-toolbar-side { --r-bar-h: 46px; }
+  #screen-reader { --r-bar-h: 46px; }
   .r-title { max-width: 100px; }
 }
 
