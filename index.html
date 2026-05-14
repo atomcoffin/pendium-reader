@@ -10028,17 +10028,19 @@ function renderGreeting() {
 // behind a theme or a user preference later.
 
 const _AMBIENT = {
-  alpha: 0.95,          // peak ball alpha — refractive sphere reads strongest when opaque
-  ballRadius: 0.22,     // small glassy ball; the env stripes do the visual work through it
-  ior: 0.95,            // base refraction ratio (n1/n2). <1 spreads rays outward like real glass
-  dispersion: 0.030,    // per-channel IOR offset → chromatic aberration strength
-  fresnelPower: 3.0,    // edge fresnel falloff — higher = sharper rim reflection
-  fresnelScale: 0.85,   // overall reflection contribution at glancing angles
-  envStripeFreq: 7.5,   // primary stripe frequency in env-space
-  envSwirlAmp: 0.55,    // how much noise warps the stripe direction
-  envSpeed: 0.18,       // env-pattern drift speed (slow / "elegant")
-  surfaceWobble: 0.10,  // subtle slow normal perturbation → shimmering refraction
-  wobbleSpeed: 0.35,    // wobble cycle speed
+  alpha: 1.0,           // peak alpha for the full effect (env + ball)
+  ballRadius: 0.18,     // small refractive ball at the center of the env disc
+  envRadius: 0.55,      // large soft disc holding the striped environment
+  envEdgeSoftness: 0.32,// how much of the env disc rim fades to transparent
+  ior: 0.94,            // base refraction ratio (n1/n2)
+  dispersion: 0.028,    // per-channel IOR offset → chromatic aberration
+  fresnelPower: 3.0,
+  fresnelScale: 0.85,
+  envScale: 0.36,       // env-space coord scale (matches pen's `* 0.1` with our smaller disc)
+  envNoiseFreq: 2.0,    // frequency of the swirl-driving value noise
+  envSpeed: 0.20,       // slow drift speed
+  surfaceWobble: 0.08,
+  wobbleSpeed: 0.30,
   followLerp: 0.06,
   fadeIdleMs: 900,
   fadePerFrame: 0.978,
@@ -10094,12 +10096,14 @@ const _AMBIENT_FS = `
   uniform float u_activity;
   uniform vec3 u_color;
   uniform float u_ballRadius;
+  uniform float u_envRadius;
+  uniform float u_envEdgeSoftness;
   uniform float u_ior;
   uniform float u_dispersion;
   uniform float u_fresnelPower;
   uniform float u_fresnelScale;
-  uniform float u_envStripeFreq;
-  uniform float u_envSwirlAmp;
+  uniform float u_envScale;
+  uniform float u_envNoiseFreq;
   uniform float u_envSpeed;
   uniform float u_surfaceWobble;
   uniform float u_wobbleSpeed;
@@ -10138,28 +10142,34 @@ const _AMBIENT_FS = `
     return mat2(c, -s, s, c);
   }
 
-  // Procedural environment, sampled by ray direction. Mirrors the
-  // big-sphere shader in the source pen: noise-rotated stripes
-  // blending three colors (paper / accent / brand). Brand color is
-  // theme-driven so it works across all themes.
+  // Pen's exact stripe function. Returns a smoothstep'd band mask
+  // along uv.x — \`offset\` shifts both the stripe phase and the
+  // smoothstep softness, so calling it twice with different offsets
+  // gives the bold base stripes + thinner accent veins.
+  float lines(vec2 uv, float offset) {
+    return smoothstep(
+      0.0, 0.5 + offset * 0.5,
+      abs(0.5 * (sin(uv.x * 15.0) + offset * 2.0))
+    );
+  }
+
+  // Procedural environment sampled by a 3D direction-ish vector.
+  // For background pixels we pass screen-space (d.xy, 0); for
+  // refracted/reflected rays we pass the ray direction. Either way
+  // we end up with the pen's cream + accent + brand swirling stripes.
   vec3 envColor(vec3 dir) {
-    vec3 paper = vec3(0.97, 0.96, 0.93);
-    vec3 brand = u_color;
-    vec3 accent = mix(brand, paper, 0.45);
+    vec3 baseFirst  = vec3(0.97, 0.96, 0.93);          // paper/cream
+    vec3 baseSecond = u_color;                          // theme brand (was orange)
+    vec3 accent     = mix(baseSecond, baseFirst, 0.55); // soft tan/highlight
 
-    // Noise-driven swirl angle — env feels alive without obvious motion.
-    float n = vnoise(dir * 1.8 + vec3(u_time * u_envSpeed));
-    vec2 uv = rot2D(n * u_envSwirlAmp) * dir.xy * 1.4;
+    float n = vnoise(dir * u_envNoiseFreq + vec3(u_time * u_envSpeed));
+    vec2 uv = rot2D(n) * dir.xy * u_envScale;
 
-    // Two stripe scales, like the pen's basePattern / secondPattern.
-    float coarse = smoothstep(0.0, 0.75,
-      abs(0.5 * (sin(uv.x * u_envStripeFreq) + 1.0)));
-    float fine = smoothstep(0.0, 0.55,
-      abs(0.5 * (sin(uv.x * u_envStripeFreq * 3.0 + n * 1.2) + 0.4)));
+    float basePattern   = lines(uv, 0.5);
+    float secondPattern = lines(uv, 0.1);
 
-    vec3 c = mix(brand, paper, coarse);
-    c = mix(c, accent, fine * 0.4);
-    return c;
+    vec3 c = mix(baseSecond, baseFirst, basePattern);
+    return mix(c, accent, secondPattern);
   }
 
   void main() {
@@ -10170,53 +10180,63 @@ const _AMBIENT_FS = `
     vec2 d = fragUv - ballUv;
     d.x *= aspect;
 
-    float radius = u_ballRadius;
     float r = length(d);
-    if (r > radius) discard;
+    // Outside the env disc → fully transparent (page bg shows through).
+    if (r > u_envRadius) discard;
 
-    // Visible-hemisphere depth and base normal.
-    float z = sqrt(radius * radius - r * r) / radius;
-    vec3 N = normalize(vec3(d.x / radius, d.y / radius, z));
-
-    // Slow surface wobble — noise-perturb the normal so the refracted
-    // image shimmers like real glass with subtle deformations.
-    vec3 wobbleP = N * 2.5 + vec3(u_time * u_wobbleSpeed);
-    vec3 wobble = vec3(
-      vnoise(wobbleP),
-      vnoise(wobbleP + vec3(11.3, 0.0, 0.0)),
-      vnoise(wobbleP + vec3(0.0, 17.7, 0.0))
+    // Soft env disc edge → fade env to transparent at the rim so the
+    // big striped window blends into the page rather than hard-cropping.
+    float discFade = smoothstep(
+      u_envRadius,
+      u_envRadius * (1.0 - u_envEdgeSoftness),
+      r
     );
-    N = normalize(N + wobble * u_surfaceWobble);
 
-    // View ray from a virtual camera straight in front of the sphere.
-    // Slight off-axis offset keyed to ball position so the highlights
-    // shift as the cursor moves the ball around the screen.
-    vec3 camPos = vec3(0.0, 0.0, 2.0);
-    vec3 surfacePos = vec3(d.x, d.y, z * radius);
-    vec3 I = normalize(surfacePos - camPos);
+    vec3 col;
 
-    // Chromatic refraction: three rays at slightly different IORs.
-    vec3 refR = refract(I, N, u_ior + u_dispersion);
-    vec3 refG = refract(I, N, u_ior);
-    vec3 refB = refract(I, N, u_ior - u_dispersion);
-    vec3 reflR = reflect(I, N);
+    if (r > u_ballRadius) {
+      // Env-disc region (outside the ball): straight env sampling.
+      col = envColor(vec3(d, 0.0));
+    } else {
+      // Inside the refractive ball: depth, normal, view ray, refract.
+      float radius = u_ballRadius;
+      float z = sqrt(radius * radius - r * r) / radius;
+      vec3 N = normalize(vec3(d.x / radius, d.y / radius, z));
 
-    vec3 refracted;
-    refracted.r = envColor(refR).r;
-    refracted.g = envColor(refG).g;
-    refracted.b = envColor(refB).b;
-    vec3 reflected = envColor(reflR);
+      // Slow surface wobble so the refracted stripes shimmer subtly.
+      vec3 wobbleP = N * 2.5 + vec3(u_time * u_wobbleSpeed);
+      vec3 wobble = vec3(
+        vnoise(wobbleP),
+        vnoise(wobbleP + vec3(11.3, 0.0, 0.0)),
+        vnoise(wobbleP + vec3(0.0, 17.7, 0.0))
+      );
+      N = normalize(N + wobble * u_surfaceWobble);
 
-    // Fresnel — more reflection at glancing angles (silhouette rim),
-    // more refraction looking straight through the center.
-    float fresnel = pow(clamp(1.0 + dot(I, N), 0.0, 1.0), u_fresnelPower);
-    fresnel = clamp(fresnel * u_fresnelScale, 0.0, 1.0);
+      vec3 camPos = vec3(0.0, 0.0, 2.0);
+      vec3 surfacePos = vec3(d.x, d.y, z * radius);
+      vec3 I = normalize(surfacePos - camPos);
 
-    vec3 col = mix(refracted, reflected, fresnel);
+      // Three slightly different IORs → R/G/B refraction split.
+      vec3 refR = refract(I, N, u_ior + u_dispersion);
+      vec3 refG = refract(I, N, u_ior);
+      vec3 refB = refract(I, N, u_ior - u_dispersion);
+      vec3 reflR = reflect(I, N);
 
-    // Soft silhouette falloff so the ball blends to the page bg.
-    float edge = smoothstep(0.0, radius * 0.06, radius - r);
-    float alpha = edge * u_activity * u_alpha;
+      vec3 refracted;
+      refracted.r = envColor(refR).r;
+      refracted.g = envColor(refG).g;
+      refracted.b = envColor(refB).b;
+      vec3 reflected = envColor(reflR);
+
+      // Fresnel weight — more reflection at the rim, more refraction
+      // through the center.
+      float fresnel = pow(clamp(1.0 + dot(I, N), 0.0, 1.0), u_fresnelPower);
+      fresnel = clamp(fresnel * u_fresnelScale, 0.0, 1.0);
+
+      col = mix(refracted, reflected, fresnel);
+    }
+
+    float alpha = discFade * u_activity * u_alpha;
     gl_FragColor = vec4(col, alpha);
   }
 `;
@@ -10270,12 +10290,14 @@ function _initAmbientShader() {
     u_activity: gl.getUniformLocation(prog, 'u_activity'),
     u_color: gl.getUniformLocation(prog, 'u_color'),
     u_ballRadius: gl.getUniformLocation(prog, 'u_ballRadius'),
+    u_envRadius: gl.getUniformLocation(prog, 'u_envRadius'),
+    u_envEdgeSoftness: gl.getUniformLocation(prog, 'u_envEdgeSoftness'),
     u_ior: gl.getUniformLocation(prog, 'u_ior'),
     u_dispersion: gl.getUniformLocation(prog, 'u_dispersion'),
     u_fresnelPower: gl.getUniformLocation(prog, 'u_fresnelPower'),
     u_fresnelScale: gl.getUniformLocation(prog, 'u_fresnelScale'),
-    u_envStripeFreq: gl.getUniformLocation(prog, 'u_envStripeFreq'),
-    u_envSwirlAmp: gl.getUniformLocation(prog, 'u_envSwirlAmp'),
+    u_envScale: gl.getUniformLocation(prog, 'u_envScale'),
+    u_envNoiseFreq: gl.getUniformLocation(prog, 'u_envNoiseFreq'),
     u_envSpeed: gl.getUniformLocation(prog, 'u_envSpeed'),
     u_surfaceWobble: gl.getUniformLocation(prog, 'u_surfaceWobble'),
     u_wobbleSpeed: gl.getUniformLocation(prog, 'u_wobbleSpeed'),
@@ -10388,12 +10410,14 @@ function _renderAmbient(time, activity) {
   gl.uniform1f(_ambientUniforms.u_activity, activity);
   gl.uniform3f(_ambientUniforms.u_color, _ambientBrandRGB[0], _ambientBrandRGB[1], _ambientBrandRGB[2]);
   gl.uniform1f(_ambientUniforms.u_ballRadius, _AMBIENT.ballRadius);
+  gl.uniform1f(_ambientUniforms.u_envRadius, _AMBIENT.envRadius);
+  gl.uniform1f(_ambientUniforms.u_envEdgeSoftness, _AMBIENT.envEdgeSoftness);
   gl.uniform1f(_ambientUniforms.u_ior, _AMBIENT.ior);
   gl.uniform1f(_ambientUniforms.u_dispersion, _AMBIENT.dispersion);
   gl.uniform1f(_ambientUniforms.u_fresnelPower, _AMBIENT.fresnelPower);
   gl.uniform1f(_ambientUniforms.u_fresnelScale, _AMBIENT.fresnelScale);
-  gl.uniform1f(_ambientUniforms.u_envStripeFreq, _AMBIENT.envStripeFreq);
-  gl.uniform1f(_ambientUniforms.u_envSwirlAmp, _AMBIENT.envSwirlAmp);
+  gl.uniform1f(_ambientUniforms.u_envScale, _AMBIENT.envScale);
+  gl.uniform1f(_ambientUniforms.u_envNoiseFreq, _AMBIENT.envNoiseFreq);
   gl.uniform1f(_ambientUniforms.u_envSpeed, _AMBIENT.envSpeed);
   gl.uniform1f(_ambientUniforms.u_surfaceWobble, _AMBIENT.surfaceWobble);
   gl.uniform1f(_ambientUniforms.u_wobbleSpeed, _AMBIENT.wobbleSpeed);
