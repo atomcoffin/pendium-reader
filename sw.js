@@ -6,17 +6,17 @@
 // handler below deletes any cache whose key doesn't match this version.
 // Add new assets (fonts, icons) to ASSETS so they're cached on install.
 // =====================================================================
-const CACHE_VERSION = 'tomen-v1.53.0';
+const CACHE_VERSION = 'tomen-v1.54.0';
 
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  './fonts/Thow0.3-Regular.woff2',
-  './fonts/Thow0.3-Italic.woff2',
-  './fonts/Thow0.3-Medium.woff2',
-  './fonts/Thow0.3-SemiBold.woff2',
-  './fonts/ThowMono0.3-Regular.woff2',
+  './fonts/Thow0.4-Regular.woff2',
+  './fonts/Thow0.4-Italic.woff2',
+  './fonts/Thow0.4-Medium.woff2',
+  './fonts/Thow0.4-SemiBold.woff2',
+  './fonts/ThowMono0.4-Light.woff2',
   './fonts/Siche-Text-v.0.3-Regular.woff2',
   './fonts/Siche-Text-v.0.3-Regular-Italic.woff2',
   './fonts/Siche-Display-v.0.3-Regular.woff2',

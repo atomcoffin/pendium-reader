@@ -13,11 +13,11 @@
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.2/src/regular/style.css">
 <style>
-@font-face { font-family: 'Thow'; src: url('fonts/Thow0.3-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
-@font-face { font-family: 'Thow'; src: url('fonts/Thow0.3-Italic.woff2') format('woff2'); font-weight: 400; font-style: italic; font-display: swap; }
-@font-face { font-family: 'Thow'; src: url('fonts/Thow0.3-Medium.woff2') format('woff2'); font-weight: 500; font-style: normal; font-display: swap; }
-@font-face { font-family: 'Thow'; src: url('fonts/Thow0.3-SemiBold.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; }
-@font-face { font-family: 'Thow Mono'; src: url('fonts/ThowMono0.3-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Thow'; src: url('fonts/Thow0.4-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Thow'; src: url('fonts/Thow0.4-Italic.woff2') format('woff2'); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: 'Thow'; src: url('fonts/Thow0.4-Medium.woff2') format('woff2'); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Thow'; src: url('fonts/Thow0.4-SemiBold.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Thow Mono'; src: url('fonts/ThowMono0.4-Light.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
 @font-face { font-family: 'Siche Text'; src: url('fonts/Siche-Text-v.0.3-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
 @font-face { font-family: 'Siche Text'; src: url('fonts/Siche-Text-v.0.3-Regular-Italic.woff2') format('woff2'); font-weight: 400; font-style: italic; font-display: swap; }
 @font-face { font-family: 'Siche Display'; src: url('fonts/Siche-Display-v.0.3-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
@@ -415,11 +415,10 @@ body.brutalist .lib-brand,
 body.brutalist .r-title {
   font-family: var(--font-read-mono);
 }
-/* Hard black borders on the toolbar instead of brand-tinted ones —
-   matches the no-decoration philosophy. */
-body.brutalist .r-toolbar-top { border-bottom: 1px solid #000000; }
-body.brutalist .r-toolbar-bottom { border-top: 1px solid #000000; }
-body.brutalist .r-toolbar {
+/* Flat white toolbar + frame rails, no borders — matches the
+   no-decoration philosophy. */
+body.brutalist .r-toolbar,
+body.brutalist .r-toolbar-side {
   background: #FFFFFF;
 }
 
@@ -1376,32 +1375,22 @@ body.r-ui-visible .r-progress {
 }
 .r-toolbar-top {
   top: 0;
-  border-bottom: 1.5px solid var(--brand);
   padding: calc(8px + env(safe-area-inset-top, 0px)) 0 8px 0;
 }
 .r-toolbar-bottom {
   bottom: 0;
-  border-top: 1.5px solid var(--brand);
   padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px)) 0;
 }
 /* Dark-theme toolbar treatment — bg stays close to paper (a 50% brand
-   mix on near-black bases produces muddy olive), and the page-facing
-   edge gets a clean 2px brand stripe at full saturation to match the
-   light themes' intensity expressed differently for a dark substrate. */
+   mix on near-black bases produces muddy olive), so dark themes carry a
+   quieter brand wash than the light themes. */
 body.dark .r-toolbar,
 body.inkwell .r-toolbar,
-body.crt .r-toolbar {
+body.crt .r-toolbar,
+body.dark .r-toolbar-side,
+body.inkwell .r-toolbar-side,
+body.crt .r-toolbar-side {
   background: color-mix(in srgb, var(--paper) 88%, var(--brand) 12%);
-}
-body.dark .r-toolbar-top,
-body.inkwell .r-toolbar-top,
-body.crt .r-toolbar-top {
-  border-bottom: 2px solid var(--brand);
-}
-body.dark .r-toolbar-bottom,
-body.inkwell .r-toolbar-bottom,
-body.crt .r-toolbar-bottom {
-  border-top: 2px solid var(--brand);
 }
 /* Icon contrast inside the now-loud bar. Default icon color was --stone
    (warm grey) which gets lost against a brand-heavy bg — bump to --ink
@@ -1447,6 +1436,32 @@ body.crt .r-toolbar .icon-btn.active {
 .r-toolbar-top.hidden { transform: translateY(-8px); }
 .r-toolbar-bottom.hidden { transform: translateY(8px); }
 
+/* Side rails of the reader frame. Vertical bars pinned to the left/right
+   edges, half as wide as the top/bottom bars are tall, so the four pieces
+   read as a single frame around the page. Decorative only — pointer-events:
+   none so edge taps still reach the page-turn zones. Background + blur match
+   the top/bottom bars; sit just under them (z-index 9 vs 10) so the bars win
+   the corners. Visibility tracks body.r-ui-visible. */
+.r-toolbar-side {
+  --r-bar-h: 52px;
+  position: absolute;
+  top: 0; bottom: 0;
+  width: calc(var(--r-bar-h) / 2);
+  z-index: 9;
+  background: color-mix(in srgb, var(--paper) 50%, var(--brand) 50%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 180ms ease, transform 220ms var(--ease);
+}
+.r-toolbar-side-left { left: 0; transform: translateX(-8px); }
+.r-toolbar-side-right { right: 0; transform: translateX(8px); }
+body.r-ui-visible .r-toolbar-side {
+  opacity: 1;
+  transform: translateX(0);
+}
+
 /* Toolbar mode swap. Reading toolbars shown by default; editing toolbar
    hidden until readerMode === 'editing'. During editing mode, the bottom
    bar also hides so the focus is entirely on the editing actions. */
@@ -1459,11 +1474,7 @@ body.r-mode-editing .r-toolbar-bottom {
   transform: translateY(8px);
 }
 
-/* Editing toolbar accent — the accent color hints at "doing something" without
-   being loud. Save/bookmark icons use ember so they stand out. */
-.r-toolbar-editing {
-  border-bottom-color: color-mix(in srgb, var(--brand) 30%, var(--border));
-}
+/* Editing toolbar accent — Save/bookmark icons use ember so they stand out. */
 .r-edit-title {
   color: var(--ink); font-weight: 500;
 }
@@ -3461,6 +3472,8 @@ body.lib-select-mode .col-item {
     padding:
       8px 0 calc(8px + env(safe-area-inset-bottom, 0px)) 0;
   }
+  /* Bars are 8 + 34 + 8 = 50px tall here; side rails stay half that. */
+  .r-toolbar-side { --r-bar-h: 50px; }
   .r-title { max-width: 120px; font-size: 13px; }
   .r-toolbar .icon-btn { width: 34px; height: 34px; }
   .r-toolbar .icon-btn .ph { font-size: 18px; }
@@ -3481,6 +3494,8 @@ body.lib-select-mode .col-item {
     padding:
       6px 0 calc(6px + env(safe-area-inset-bottom, 0px)) 0;
   }
+  /* Bars are 6 + 34 + 6 = 46px tall here; side rails stay half that. */
+  .r-toolbar-side { --r-bar-h: 46px; }
   .r-title { max-width: 100px; }
 }
 
@@ -3700,6 +3715,11 @@ body.lib-select-mode .col-item {
       </div>
     </div>
   </div>
+  <!-- Side rails of the reader frame. Decorative vertical bars that join the
+       top and bottom toolbars into a continuous frame around the page.
+       Visibility is driven by body.r-ui-visible (see .r-toolbar-side CSS). -->
+  <div class="r-toolbar-side r-toolbar-side-left" aria-hidden="true"></div>
+  <div class="r-toolbar-side r-toolbar-side-right" aria-hidden="true"></div>
 </div>
 
 <!-- Settings overlay. Single-surface Appearance panel: theme swatches,
