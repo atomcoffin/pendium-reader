@@ -1308,12 +1308,12 @@ body[data-lib-view="grid"] .lib-size { display: inline-flex; }
   pointer-events: none;
 }
 .view-grid.is-opening .gc:not(.is-opening-target) {
-  animation: book-others-fade 850ms cubic-bezier(0.4, 0, 0.4, 1) both;
+  animation: book-others-fade 1150ms cubic-bezier(0.4, 0, 0.4, 1) both;
 }
 .gc.is-opening-target {
   position: relative;
   z-index: 5;
-  animation: book-target-pop 850ms cubic-bezier(0.4, 0, 0.4, 1) both;
+  animation: book-target-pop 1150ms cubic-bezier(0.4, 0, 0.4, 1) both;
 }
 @keyframes book-others-fade {
   0%   { opacity: 1; filter: blur(0); }
@@ -1325,7 +1325,7 @@ body[data-lib-view="grid"] .lib-size { display: inline-flex; }
   100% { transform: translateY(-6px) scale(1.03); }
 }
 #screen-reader.is-just-opened {
-  animation: reader-cross-fade 500ms ease both;
+  animation: reader-cross-fade 700ms ease both;
 }
 @keyframes reader-cross-fade {
   0%   { opacity: 0; }
@@ -5448,8 +5448,9 @@ function _setupSmoothWheelScroll() {
   const libBody = $('lib-body');
   if (!libBody) return;
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  // Per-frame easing — each frame closes 20% of the remaining distance.
-  const EASE = 0.2;
+  // Per-frame easing — each frame closes 10% of the remaining distance.
+  // Deliberately low so the glide feels long and unhurried rather than snappy.
+  const EASE = 0.1;
 
   // True only when we're confident the event came from a physical mouse
   // wheel. deltaMode 1 (line scrolling) is mouse-wheel-only; in Chromium
@@ -5530,8 +5531,10 @@ function _setupGridScrollTilt() {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
   const MAX_ANGLE = 14;        // deg — cap so cards lean, never face away
-  const VELOCITY_SCALE = 0.4;  // px/frame of scroll -> deg of tilt
-  const EASE = 0.16;           // how fast the tilt chases its target
+  const VELOCITY_SCALE = 0.65; // px/frame of scroll -> deg of tilt (bumped to
+                               // stay expressive now that scrolling is slower)
+  const EASE = 0.09;           // how lazily the tilt chases its target — low
+                               // so books lean in and unwind unhurriedly
 
   let grid = null;
   let lastScrollLeft = 0;
@@ -6622,7 +6625,7 @@ let totalSpreads = 1;        // computed after layout
 // cross-fades in. Falls through to a plain openBookById if we can't
 // find the card (defensive — keeps non-grid views and edge cases
 // working).
-const _OPEN_FADE_MS = 850;
+const _OPEN_FADE_MS = 1150;
 let _openInFlight = false;
 function summonAndOpen(ev, id) {
   if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
@@ -6658,7 +6661,7 @@ function summonAndOpen(ev, id) {
       card.classList.remove('is-opening-target');
       if (reader) reader.classList.remove('is-just-opened');
       _openInFlight = false;
-    }, 600);
+    }, 850);
   }, _OPEN_FADE_MS);
 }
 
