@@ -1167,6 +1167,15 @@ body[data-lib-view="grid"] .lib-size { display: inline-flex; }
      rest; the parent's perspective renders the turn with depth. */
   transform: rotateY(var(--gc-tilt, 0deg));
 }
+/* While the grid is actively tilting, promote each card to its own
+   compositor layer so the per-frame rotateY is a cheap re-composite
+   instead of repainting the page-edge gradients every frame. The hint is
+   added by _setupGridScrollTilt only while its rAF loop runs and dropped
+   the instant the tilt settles, so an idle library never holds a layer
+   per book. */
+.view-grid.is-tilting .gc {
+  will-change: transform;
+}
 .gc:hover .gc-cover { transform: translateY(-2px); }
 .gc-cover { cursor: pointer; }
 .gc-title, .gc-author { cursor: pointer; }
@@ -5549,6 +5558,8 @@ function _setupGridScrollTilt() {
   let lastScrollLeft = 0;
   let angle = 0;
   let rafId = null;
+  let lastTilt = '';           // last value written to --gc-tilt — lets us
+                               // skip redundant style invalidations frame to frame
 
   const tick = () => {
     rafId = null;
@@ -5559,12 +5570,14 @@ function _setupGridScrollTilt() {
     const targetAngle = Math.max(-MAX_ANGLE, Math.min(MAX_ANGLE, velocity * VELOCITY_SCALE));
     angle += (targetAngle - angle) * EASE;
     if (Math.abs(velocity) < 0.1 && Math.abs(angle) < 0.05) {
-      // Settled — flatten and let the loop stop.
-      grid.style.setProperty('--gc-tilt', '0deg');
+      // Settled — flatten, drop the compositing hint, and stop the loop.
+      if (lastTilt !== '0deg') { grid.style.setProperty('--gc-tilt', '0deg'); lastTilt = '0deg'; }
+      grid.classList.remove('is-tilting');
       angle = 0;
       return;
     }
-    grid.style.setProperty('--gc-tilt', angle.toFixed(2) + 'deg');
+    const next = angle.toFixed(2) + 'deg';
+    if (next !== lastTilt) { grid.style.setProperty('--gc-tilt', next); lastTilt = next; }
     rafId = requestAnimationFrame(tick);
   };
 
@@ -5574,7 +5587,10 @@ function _setupGridScrollTilt() {
   libBody.addEventListener('scroll', (e) => {
     const g = e.target;
     if (!g || !g.classList || !g.classList.contains('view-grid')) return;
-    if (g !== grid) { grid = g; lastScrollLeft = g.scrollLeft; }
+    if (g !== grid) { grid = g; lastScrollLeft = g.scrollLeft; lastTilt = ''; }
+    // Promote cards to their own compositor layers for the duration of the
+    // tilt — see the .view-grid.is-tilting rule. tick() drops it on settle.
+    grid.classList.add('is-tilting');
     if (!rafId) rafId = requestAnimationFrame(tick);
   }, true);
 }
