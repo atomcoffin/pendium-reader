@@ -5250,6 +5250,10 @@ function renderLibrary() {
   if (currentView === 'columns') renderColumnsView(body, sorted);
   else if (currentView === 'table') renderTableView(body, sorted);
   else renderGridView(body, sorted);
+  // Re-compute the dome tilt after the grid re-renders so the new
+  // cards land on the right slopes of the mound. Cheap rAF-coalesced
+  // call; no-op when grid view isn't active.
+  if (typeof _scheduleMoundUpdate === 'function') _scheduleMoundUpdate();
 }
 
 // Columns view — compact title-scan, multi-column layout. No covers,
@@ -9991,118 +9995,68 @@ function renderGreeting() {
   }
 }
 
-// ===== LIBRARY GRID 3D TILT =====
-// Each book card in grid view sits on a 3D plane and lazily turns to
-// face the cursor — moving the mouse around the library makes the whole
-// grid subtly track. Tilt magnitude scales softly with distance from
-// the cursor via tanh, so a card directly under the cursor stays nearly
-// flat while distant cards angle harder toward it.
+// ===== LIBRARY GRID MOUND TILT =====
+// Books are laid over an invisible dome whose apex sits at the
+// viewport's center. Each visible card's tilt is computed from its
+// own center's screen-space offset from that fixed apex — so the
+// cards near the middle sit flat at the crest of the mound, and the
+// further from center a card gets the more it tips outward along
+// the dome's slope. The effect is driven entirely by scroll position:
+// as the user scrolls, cards traverse the dome and roll over its
+// surface, briefly cresting flat as they pass through the center.
 //
-// Implementation:
-//   • One rAF loop while the .view-grid is on-screen.
-//   • Per visible card, compute target rotateX/rotateY from cursor
-//     position, then lerp current rotation toward target each frame
-//     for the "lazy" follow feel.
-//   • Rotation is written to two CSS custom properties (--tilt-x /
-//     --tilt-y) on each card; the .gc transform reads them. This
-//     avoids triggering layout / cascade rebuilds — paint-only.
-//   • Loop self-stops once nothing is moving and the cursor has been
-//     idle for a beat; mousemove re-arms it.
-const _TILT = {
-  mouseX: 0,
-  mouseY: 0,
-  raf: null,
-  lastMove: 0,
-  states: new WeakMap(),  // .gc element → { rx, ry } current rotation
-  // Must match the `perspective:` value on .view-grid in CSS. atan2 of
-  // the screen-space cursor offset against this perspective distance
-  // gives the angle needed for each card's front face to point straight
-  // at the cursor (we negate to lean AWAY).
-  perspective: 1400,
-  maxAngle: 25,            // cap on rotation magnitude — keeps far-away cards from twisting violently
-  lerp: 0.08,              // per-frame approach toward target rotation
-  idleSettleMs: 250,       // keep running this long after cursor stops so the final lerp completes
+// No cursor input. The tilt is a pure function of viewport geometry,
+// which means every scrollwheel notch repaints the whole grid in a
+// single rAF-coalesced pass.
+const _MOUND = {
+  rafId: null,
+  // Dome "radius" controls the curve's softness. atan(d/R) is the
+  // tilt angle; at d = R the tilt is 45°. Larger R = gentler curve
+  // over a longer stretch; smaller R = sharper local hump.
+  radius: 1100,
 };
 
-function _attachLibraryTilt() {
-  // One document-wide listener — every mousemove updates the target
-  // cursor position and re-arms the rAF loop. Touch isn't wired up
-  // because the effect only makes sense with a hovering cursor.
-  document.addEventListener('mousemove', (e) => {
-    _TILT.mouseX = e.clientX;
-    _TILT.mouseY = e.clientY;
-    _TILT.lastMove = performance.now();
-    if (_TILT.raf == null) _TILT.raf = requestAnimationFrame(_tiltTick);
-  }, { passive: true });
+function _attachLibraryMound() {
+  const libBody = document.getElementById('lib-body');
+  if (libBody) libBody.addEventListener('scroll', _scheduleMoundUpdate, { passive: true });
+  window.addEventListener('resize', _scheduleMoundUpdate);
+  // Initial paint after layout settles.
+  _scheduleMoundUpdate();
 }
 
-function _tiltTick() {
-  // Only animate when the library grid is actually on-screen. If the
-  // user navigates to the reader (or any non-library view), bail —
-  // the rAF rearms on the next mousemove.
-  const grid = document.querySelector('.view-grid');
-  if (!grid || grid.offsetParent === null) {
-    _TILT.raf = null;
-    return;
+function _scheduleMoundUpdate() {
+  if (_MOUND.rafId == null) {
+    _MOUND.rafId = requestAnimationFrame(_updateMoundTilt);
   }
-  const cards = grid.children;
+}
+
+function _updateMoundTilt() {
+  _MOUND.rafId = null;
+  const grid = document.querySelector('.view-grid');
+  if (!grid || grid.offsetParent === null) return;
+  const vw = window.innerWidth;
   const vh = window.innerHeight;
-  let anyMoving = false;
+  const apexX = vw / 2;
+  const apexY = vh / 2;
+  const R = _MOUND.radius;
+  const RAD2DEG = 180 / Math.PI;
+  const cards = grid.children;
   for (let i = 0; i < cards.length; i++) {
     const card = cards[i];
     if (!card.classList || !card.classList.contains('gc')) continue;
     const rect = card.getBoundingClientRect();
-    // Skip cards well outside the viewport — they'll catch up the
-    // moment they scroll into view (getBoundingClientRect is cheap
-    // but the per-card style write isn't free at scale).
-    if (rect.bottom < -300 || rect.top > vh + 300) continue;
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const dx = _TILT.mouseX - cx;
-    const dy = _TILT.mouseY - cy;
-    // The card the cursor is currently over stays flat — the hover
-    // lift on .gc-cover reads cleanest against a level card, and a
-    // book pointing at a cursor sitting on top of itself is awkward.
-    const hovered = (
-      _TILT.mouseX >= rect.left && _TILT.mouseX <= rect.right &&
-      _TILT.mouseY >= rect.top && _TILT.mouseY <= rect.bottom
-    );
-    let targetRy, targetRx;
-    if (hovered) {
-      targetRy = 0;
-      targetRx = 0;
-    } else {
-      // atan2 against the perspective distance gives the angle for
-      // the card's normal to point at the cursor; we negate both axes
-      // so cards lean AWAY — every book turns its back on the cursor.
-      // The clamp at ±maxAngle keeps far-away cards from blowing out
-      // past elegant tilts; nearby cards stay within the clamp and
-      // still track the cursor exactly.
-      const RAD2DEG = 180 / Math.PI;
-      const MAX = _TILT.maxAngle;
-      const ry = -RAD2DEG * Math.atan2(dx, _TILT.perspective);
-      const rx =  RAD2DEG * Math.atan2(dy, _TILT.perspective);
-      targetRy = Math.max(-MAX, Math.min(MAX, ry));
-      targetRx = Math.max(-MAX, Math.min(MAX, rx));
-    }
-    let s = _TILT.states.get(card);
-    if (!s) {
-      s = { rx: 0, ry: 0 };
-      _TILT.states.set(card, s);
-    }
-    const drx = targetRx - s.rx;
-    const dry = targetRy - s.ry;
-    s.rx += drx * _TILT.lerp;
-    s.ry += dry * _TILT.lerp;
-    if (Math.abs(drx) > 0.04 || Math.abs(dry) > 0.04) anyMoving = true;
-    card.style.setProperty('--tilt-x', s.rx.toFixed(2) + 'deg');
-    card.style.setProperty('--tilt-y', s.ry.toFixed(2) + 'deg');
-  }
-  const recentlyMoved = performance.now() - _TILT.lastMove < _TILT.idleSettleMs;
-  if (anyMoving || recentlyMoved) {
-    _TILT.raf = requestAnimationFrame(_tiltTick);
-  } else {
-    _TILT.raf = null;
+    // Skip cards well outside the viewport — they'll get their tilt
+    // the next time a scroll event fires once they're nearer.
+    if (rect.bottom < -200 || rect.top > vh + 200) continue;
+    const dx = (rect.left + rect.width / 2) - apexX;
+    const dy = (rect.top + rect.height / 2) - apexY;
+    // Dome's outward normal at offset (dx, dy): +rotateY when right
+    // of center (front face leans right, away from apex); -rotateX
+    // when below center (front face leans down, away from apex).
+    const ry = RAD2DEG * Math.atan(dx / R);
+    const rx = -RAD2DEG * Math.atan(dy / R);
+    card.style.setProperty('--tilt-x', rx.toFixed(2) + 'deg');
+    card.style.setProperty('--tilt-y', ry.toFixed(2) + 'deg');
   }
 }
 
@@ -10155,9 +10109,10 @@ function _tiltTick() {
   // sit on every card.
   _attachLibraryLongPress();
 
-  // Wire the library grid's 3D cursor-tracking tilt — every visible
-  // .gc card lazily turns to face the mouse via a single rAF loop.
-  _attachLibraryTilt();
+  // Wire the library grid's mound tilt — books roll over an invisible
+  // dome at the viewport center as the user scrolls. Pure scroll-driven,
+  // no cursor input.
+  _attachLibraryMound();
 
   // Once the library is visible, run the cover-storage migration in
   // the background — shrinks any raw v1 covers and moves them from
