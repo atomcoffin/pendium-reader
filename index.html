@@ -10012,6 +10012,258 @@ function renderGreeting() {
   }
 }
 
+// ===== AMBIENT BACKGROUND SHADER =====
+// A single full-viewport WebGL canvas behind the rest of the app, drawing
+// an organic noise-distorted blob that tracks the user's cursor / finger.
+// Opacity is gated on input activity: zero when nothing is happening, fades
+// in on movement, decays out after a brief idle. When activity is zero, the
+// rAF loop pauses so the GPU is fully at rest — the effect costs nothing
+// when no one is interacting.
+//
+// Color comes from --brand so it adapts to every theme automatically.
+// Re-reads on each pointer event so a mid-session theme switch is picked up
+// without explicit wiring.
+//
+// Prototype: tunable from a handful of constants at the top. Easy to gate
+// behind a theme or a user preference later.
+
+const _AMBIENT = {
+  alpha: 0.40,          // peak blob alpha
+  blobRadius: 0.40,     // blob size in normalized-y units
+  noiseScale: 3.0,      // higher = more detailed noise distortion
+  noiseStrength: 0.20,  // how much noise pushes the blob edges
+  timeScale: 0.20,      // animation rate
+  fadeIdleMs: 600,      // grace period before activity starts decaying
+  fadePerFrame: 0.96,   // multiplied each frame past the grace period
+};
+
+let _ambientCanvas = null;
+let _ambientGL = null;
+let _ambientProgram = null;
+let _ambientUniforms = {};
+let _ambientPositionLoc = -1;
+let _ambientRaf = null;
+let _ambientMouseX = 0;
+let _ambientMouseY = 0;
+let _ambientActivity = 0;
+let _ambientLastActivity = 0;
+let _ambientStartTime = 0;
+let _ambientBrandRGB = [0.78, 1.0, 0];
+let _ambientDpr = 1;
+
+const _AMBIENT_VS = `
+  attribute vec2 a_position;
+  void main() { gl_Position = vec4(a_position, 0.0, 1.0); }
+`;
+
+const _AMBIENT_FS = `
+  precision mediump float;
+  uniform vec2 u_resolution;
+  uniform vec2 u_mouse;
+  uniform float u_time;
+  uniform float u_activity;
+  uniform vec3 u_color;
+  uniform float u_blobRadius;
+  uniform float u_noiseScale;
+  uniform float u_noiseStrength;
+  uniform float u_alpha;
+
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+  float vnoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+      mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+      u.y);
+  }
+  float fbm(vec2 p) {
+    float v = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 4; i++) {
+      v += a * vnoise(p);
+      p *= 2.0;
+      a *= 0.5;
+    }
+    return v;
+  }
+
+  void main() {
+    vec2 fragUv = gl_FragCoord.xy / u_resolution;
+    vec2 mouseUv = u_mouse / u_resolution;
+    // WebGL puts the origin at the bottom-left; cursor coords come from
+    // the DOM (top-left origin) so flip Y to match.
+    mouseUv.y = 1.0 - mouseUv.y;
+    float aspect = u_resolution.x / u_resolution.y;
+    vec2 d = fragUv - mouseUv;
+    d.x *= aspect;
+    float n = (fbm(d * u_noiseScale + u_time) - 0.5) * 2.0 * u_noiseStrength;
+    float dist = length(d) - n;
+    float blob = smoothstep(u_blobRadius, 0.0, dist);
+    float alpha = blob * u_activity * u_alpha;
+    gl_FragColor = vec4(u_color, alpha);
+  }
+`;
+
+function _compileShader(gl, src, type) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+    console.warn('[tomen] ambient shader compile failed:', gl.getShaderInfoLog(sh));
+    gl.deleteShader(sh);
+    return null;
+  }
+  return sh;
+}
+
+function _initAmbientShader() {
+  if (_ambientCanvas) return;
+  const canvas = document.createElement('canvas');
+  canvas.id = 'ambient-canvas';
+  canvas.setAttribute('aria-hidden', 'true');
+  canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+  document.body.insertBefore(canvas, document.body.firstChild);
+  _ambientCanvas = canvas;
+
+  const gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: false, antialias: false });
+  if (!gl) {
+    console.warn('[tomen] WebGL not supported — ambient shader skipped');
+    return;
+  }
+  _ambientGL = gl;
+
+  const vs = _compileShader(gl, _AMBIENT_VS, gl.VERTEX_SHADER);
+  const fs = _compileShader(gl, _AMBIENT_FS, gl.FRAGMENT_SHADER);
+  if (!vs || !fs) return;
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    console.warn('[tomen] ambient shader link failed:', gl.getProgramInfoLog(prog));
+    return;
+  }
+  _ambientProgram = prog;
+
+  _ambientPositionLoc = gl.getAttribLocation(prog, 'a_position');
+  _ambientUniforms = {
+    u_resolution: gl.getUniformLocation(prog, 'u_resolution'),
+    u_mouse: gl.getUniformLocation(prog, 'u_mouse'),
+    u_time: gl.getUniformLocation(prog, 'u_time'),
+    u_activity: gl.getUniformLocation(prog, 'u_activity'),
+    u_color: gl.getUniformLocation(prog, 'u_color'),
+    u_blobRadius: gl.getUniformLocation(prog, 'u_blobRadius'),
+    u_noiseScale: gl.getUniformLocation(prog, 'u_noiseScale'),
+    u_noiseStrength: gl.getUniformLocation(prog, 'u_noiseStrength'),
+    u_alpha: gl.getUniformLocation(prog, 'u_alpha'),
+  };
+
+  // Full-viewport quad as two triangles.
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    -1, -1,  1, -1,  -1, 1,
+    -1,  1,  1, -1,   1, 1,
+  ]), gl.STATIC_DRAW);
+
+  _ambientStartTime = performance.now();
+  _resizeAmbientCanvas();
+  window.addEventListener('resize', _resizeAmbientCanvas);
+
+  const onPointer = (e) => {
+    if (e.touches && e.touches[0]) {
+      _ambientMouseX = e.touches[0].clientX;
+      _ambientMouseY = e.touches[0].clientY;
+    } else if (e.clientX !== undefined) {
+      _ambientMouseX = e.clientX;
+      _ambientMouseY = e.clientY;
+    } else {
+      return;
+    }
+    _ambientActivity = 1;
+    _ambientLastActivity = performance.now();
+    _refreshAmbientBrand();
+    if (_ambientRaf == null) _ambientRaf = requestAnimationFrame(_ambientTick);
+  };
+  document.addEventListener('mousemove', onPointer, { passive: true });
+  document.addEventListener('mousedown', onPointer, { passive: true });
+  document.addEventListener('touchstart', onPointer, { passive: true });
+  document.addEventListener('touchmove', onPointer, { passive: true });
+
+  _refreshAmbientBrand();
+}
+
+function _resizeAmbientCanvas() {
+  if (!_ambientCanvas) return;
+  _ambientDpr = Math.min(window.devicePixelRatio || 1, 2);
+  _ambientCanvas.width = window.innerWidth * _ambientDpr;
+  _ambientCanvas.height = window.innerHeight * _ambientDpr;
+}
+
+function _refreshAmbientBrand() {
+  const brand = getComputedStyle(document.documentElement).getPropertyValue('--brand').trim();
+  if (!brand) return;
+  if (brand.startsWith('#')) {
+    const hex = brand.slice(1);
+    if (hex.length === 6) {
+      _ambientBrandRGB = [
+        parseInt(hex.slice(0, 2), 16) / 255,
+        parseInt(hex.slice(2, 4), 16) / 255,
+        parseInt(hex.slice(4, 6), 16) / 255,
+      ];
+    }
+  }
+}
+
+function _ambientTick() {
+  if (!_ambientGL) { _ambientRaf = null; return; }
+  const now = performance.now();
+  const t = (now - _ambientStartTime) / 1000 * _AMBIENT.timeScale;
+  const idle = now - _ambientLastActivity;
+  if (idle > _AMBIENT.fadeIdleMs) {
+    _ambientActivity *= _AMBIENT.fadePerFrame;
+    if (_ambientActivity < 0.005) {
+      _ambientActivity = 0;
+      _renderAmbient(t, 0);
+      _ambientRaf = null;
+      return;
+    }
+  }
+  _renderAmbient(t, _ambientActivity);
+  _ambientRaf = requestAnimationFrame(_ambientTick);
+}
+
+function _renderAmbient(time, activity) {
+  const gl = _ambientGL;
+  if (!gl || !_ambientProgram) return;
+  gl.viewport(0, 0, _ambientCanvas.width, _ambientCanvas.height);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  if (activity <= 0) return;
+
+  gl.useProgram(_ambientProgram);
+  gl.enableVertexAttribArray(_ambientPositionLoc);
+  gl.vertexAttribPointer(_ambientPositionLoc, 2, gl.FLOAT, false, 0, 0);
+
+  gl.uniform2f(_ambientUniforms.u_resolution, _ambientCanvas.width, _ambientCanvas.height);
+  gl.uniform2f(_ambientUniforms.u_mouse, _ambientMouseX * _ambientDpr, _ambientMouseY * _ambientDpr);
+  gl.uniform1f(_ambientUniforms.u_time, time);
+  gl.uniform1f(_ambientUniforms.u_activity, activity);
+  gl.uniform3f(_ambientUniforms.u_color, _ambientBrandRGB[0], _ambientBrandRGB[1], _ambientBrandRGB[2]);
+  gl.uniform1f(_ambientUniforms.u_blobRadius, _AMBIENT.blobRadius);
+  gl.uniform1f(_ambientUniforms.u_noiseScale, _AMBIENT.noiseScale);
+  gl.uniform1f(_ambientUniforms.u_noiseStrength, _AMBIENT.noiseStrength);
+  gl.uniform1f(_ambientUniforms.u_alpha, _AMBIENT.alpha);
+
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
 // ===== INIT =====
 (async function init() {
   let t = localStorage.getItem('tomen_theme') || '';
@@ -10060,6 +10312,12 @@ function renderGreeting() {
   // Select / Delete). Replaces the floating ⋯ buttons that used to
   // sit on every card.
   _attachLibraryLongPress();
+
+  // Initialize the WebGL ambient shader — a soft brand-colored blob
+  // that tracks the cursor / finger, fading in on input and out on
+  // idle. Pure background presence layer, gated on actual activity so
+  // it costs nothing when no one is interacting.
+  _initAmbientShader();
 
   // Once the library is visible, run the cover-storage migration in
   // the background — shrinks any raw v1 covers and moves them from
