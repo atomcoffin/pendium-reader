@@ -1111,6 +1111,10 @@ body[data-lib-view="grid"] .lib-size { display: inline-flex; }
      pads the rows out, so this is the only spacing that determines
      the visual rhythm. */
   gap: 16px;
+  /* 3D depth so each card's per-frame rotateX/Y reads as actual tilt
+     toward the cursor rather than a flat skew. JS writes --tilt-x /
+     --tilt-y per card in a rAF loop; see _TILT in script section. */
+  perspective: 1400px;
 }
 /* content-visibility:auto defers rendering of offscreen cards entirely
    — the browser skips paint, layout, and image decode for any .gc that
@@ -1123,6 +1127,13 @@ body[data-lib-view="grid"] .lib-size { display: inline-flex; }
   position: relative;
   content-visibility: auto;
   contain-intrinsic-size: auto 220px;
+  /* Live tilt driven by JS — angles default to 0 so cards render
+     flat before the first mousemove. The rAF loop overwrites these
+     each frame. Composed with the inner :hover translateY so both
+     effects coexist. */
+  transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+  transform-style: preserve-3d;
+  will-change: transform;
 }
 .gc:hover .gc-cover { transform: translateY(-2px); }
 .gc-cover { cursor: pointer; }
@@ -1178,63 +1189,6 @@ body[data-lib-view="grid"] .lib-size { display: inline-flex; }
   height: 3px; background: rgba(0,0,0,0.1);
 }
 .gc-prog-fill { height: 100%; background: var(--brand); }
-
-/* Summoning animation — pneumatic / hydraulic feel. Slow weighted
-   rise to a held position, then a tiny final "lock-in" press. No
-   rotation, no squash-and-stretch, no bounce — the book never
-   distorts. Power comes from the deliberate timing (~1100ms just
-   to reach peak) and the cubic-bezier easings that read as resistance
-   being overcome. Subtle scale (max 1.135) keeps it restrained.
-   2000ms total. */
-@keyframes book-summon {
-  /* Initial state — and the timing function below controls 0–4%
-     (a slow, ease-in pressure build). */
-  0%   { transform: translateY(0) scale(1); animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1); }
-  /* Tiny pre-load compression — almost imperceptible, signals
-     intent. Timing function below controls 4–55% (the rise). */
-  4%   { transform: translateY(1px) scale(0.995); animation-timing-function: cubic-bezier(0.32, 0, 0.32, 1); }
-  /* Peak lifted position — slow ease in, slow ease out. Linear
-     between here and the held beat below. */
-  55%  { transform: translateY(-24px) scale(1.13); animation-timing-function: linear; }
-  /* Hold at peak — pressurization beat. Timing controls 78–86%
-     (the final lock-in press). */
-  78%  { transform: translateY(-24px) scale(1.13); animation-timing-function: cubic-bezier(0.4, 0, 0.4, 1); }
-  /* Lock-in — tiny final adjustment, reads as a mechanical click
-     into the resting "summoned" position. */
-  86%  { transform: translateY(-26px) scale(1.135); animation-timing-function: linear; }
-  /* Held position — the book has arrived. */
-  100% { transform: translateY(-26px) scale(1.135); }
-}
-@keyframes other-books-flee {
-  0%   { opacity: 1; filter: blur(0); }
-  /* Surrounding books recede during the rise — no scaling, no
-     recoil, just clean fade + blur. The summoned book takes focus
-     through restraint, not violence. */
-  45%  { opacity: 0.55; filter: blur(0.5px); }
-  72%  { opacity: 0.14; filter: blur(2.5px); }
-  100% { opacity: 0.14; filter: blur(2.5px); }
-}
-.view-grid.is-summoning .gc:not(.is-summoned) {
-  animation: other-books-flee 2000ms ease both;
-  pointer-events: none;
-}
-.gc.is-summoned {
-  position: relative;
-  z-index: 5;
-  /* No transform-origin tweak — pneumatic motion pivots from center
-     because the book is being lifted, not slammed. */
-  animation: book-summon 2000ms linear both;
-  content-visibility: visible;
-}
-.gc.is-summoned .gc-cover {
-  box-shadow:
-    var(--shadow-cover),
-    0 28px 56px color-mix(in srgb, var(--brand) 42%, transparent),
-    0 0 0 1.5px color-mix(in srgb, var(--brand) 32%, transparent);
-  /* Brand glow appears as the book reaches its peak — the "click"
-     of arrival, marked by the lighting coming on. */
-  transition: box-shadow 600ms ease 1100ms;
-}
 
 /* ===== READER ===== */
 .r-progress {
@@ -1465,26 +1419,6 @@ body.r-mode-editing .r-toolbar-bottom {
    that already appears on the progress bar and mark highlights. Hidden when
    reader UI is up since the toolbar already shows book title and the quick
    bars would sit on top anyway. */
-
-/* Centered guide ring — a faint outlined circle at viewport center,
-   80vh in diameter. Pure visual scaffold (pointer-events:none); the
-   user has plans for it, this is just the placeholder geometry. The
-   stroke uses --ink at low opacity so it inherits per-theme. Lives
-   above the page text but below toolbars and edge-ring page-turn
-   affordances. */
-.r-ring {
-  position: fixed;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  width: 80vh;
-  height: 80vh;
-  max-width: 90vw;
-  max-height: 90vw;
-  border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
-  pointer-events: none;
-  z-index: 4;
-}
 
 .r-footer-ref {
   position: absolute;
@@ -3566,10 +3500,6 @@ body.lib-select-mode .col-item {
         </div>
       </div>
     </div>
-    <!-- Centered guide ring. Faint outlined circle sized at 80vh,
-         positioned at viewport center. Non-interactive — purely a
-         visual scaffold for future use. -->
-    <div class="r-ring" id="r-ring" aria-hidden="true"></div>
     <!-- Book + chapter reminder at bottom. -->
     <div class="r-footer-ref" id="r-footer-ref" aria-hidden="true"></div>
     <!-- Edge-anchored half-circle page-turn affordances. Each ring is
@@ -6290,24 +6220,13 @@ function blobToDataURL(blob) {
 let currentSpread = 0;       // 0-indexed spread within current chapter
 let totalSpreads = 1;        // computed after layout
 
-// Grid-view click handler — "summons" the book before opening. The
-// clicked card lifts and gets a brand-colored glow while every other
-// card fades and blurs out; after the animation settles (~850ms total)
-// the actual openBookById fires and the reader screen takes over.
-// The deliberate slowness reads as "opening this book is a special
-// thing" rather than a mechanical app transition.
-//
-// Falls through to openBookById directly when:
-//   - long-press has just fired (the menu already handled this tap)
-//   - the library is in bulk-select mode (taps toggle selection)
-//   - we can't find the card or grid for some reason (defensive)
-//   - a summon is already in flight (don't double-fire)
-const _SUMMON_DURATION_MS = 2000;
-let _summonInFlight = false;
+// Grid-view click handler. Preserves the long-press / bulk-select
+// guards (so a long-press menu tap doesn't double-open the book, and
+// a tap in select mode toggles selection instead) and otherwise just
+// opens the book. The function name is retained because every grid
+// card's onclick attribute still calls it.
 function summonAndOpen(ev, id) {
-  if (ev) {
-    if (typeof ev.stopPropagation === 'function') ev.stopPropagation();
-  }
+  if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
   if (_longPressFired) {
     _longPressFired = false;
     return;
@@ -6316,27 +6235,7 @@ function summonAndOpen(ev, id) {
     _toggleLibSelection(id);
     return;
   }
-  if (_summonInFlight) return;
-  const grid = document.querySelector('.view-grid');
-  const card = grid && grid.querySelector(`.gc[data-book-id="${CSS.escape(id)}"]`);
-  if (!grid || !card) {
-    openBookById(id);
-    return;
-  }
-  _summonInFlight = true;
-  card.classList.add('is-summoned');
-  grid.classList.add('is-summoning');
-  setTimeout(() => {
-    // The reader transition is what the user sees from here forward;
-    // the cleanup below just defensively unsets the classes in case
-    // the user navigates back to the library quickly.
-    openBookById(id);
-    setTimeout(() => {
-      card.classList.remove('is-summoned');
-      grid.classList.remove('is-summoning');
-      _summonInFlight = false;
-    }, 400);
-  }, _SUMMON_DURATION_MS);
+  openBookById(id);
 }
 
 async function openBookById(id) {
@@ -10012,420 +9911,97 @@ function renderGreeting() {
   }
 }
 
-// ===== AMBIENT BACKGROUND SHADER =====
-// A single full-viewport WebGL canvas behind the rest of the app, drawing
-// an organic noise-distorted blob that tracks the user's cursor / finger.
-// Opacity is gated on input activity: zero when nothing is happening, fades
-// in on movement, decays out after a brief idle. When activity is zero, the
-// rAF loop pauses so the GPU is fully at rest — the effect costs nothing
-// when no one is interacting.
+// ===== LIBRARY GRID 3D TILT =====
+// Each book card in grid view sits on a 3D plane and lazily turns to
+// face the cursor — moving the mouse around the library makes the whole
+// grid subtly track. Tilt magnitude scales softly with distance from
+// the cursor via tanh, so a card directly under the cursor stays nearly
+// flat while distant cards angle harder toward it.
 //
-// Color comes from --brand so it adapts to every theme automatically.
-// Re-reads on each pointer event so a mid-session theme switch is picked up
-// without explicit wiring.
-//
-// Prototype: tunable from a handful of constants at the top. Easy to gate
-// behind a theme or a user preference later.
-
-const _AMBIENT = {
-  alpha: 1.0,           // peak alpha for the full effect (env + ball)
-  ballRadius: 0.18,     // small refractive ball at the center of the env disc
-  envRadius: 0.55,      // large soft disc holding the striped environment
-  envEdgeSoftness: 0.32,// how much of the env disc rim fades to transparent
-  ior: 0.94,            // base refraction ratio (n1/n2)
-  dispersion: 0.028,    // per-channel IOR offset → chromatic aberration
-  fresnelPower: 3.0,
-  fresnelScale: 0.85,
-  envScale: 0.36,       // env-space coord scale (matches pen's `* 0.1` with our smaller disc)
-  envNoiseFreq: 2.0,    // frequency of the swirl-driving value noise
-  envSpeed: 0.20,       // slow drift speed
-  surfaceWobble: 0.08,
-  wobbleSpeed: 0.30,
-  followLerp: 0.06,
-  fadeIdleMs: 900,
-  fadePerFrame: 0.978,
+// Implementation:
+//   • One rAF loop while the .view-grid is on-screen.
+//   • Per visible card, compute target rotateX/rotateY from cursor
+//     position, then lerp current rotation toward target each frame
+//     for the "lazy" follow feel.
+//   • Rotation is written to two CSS custom properties (--tilt-x /
+//     --tilt-y) on each card; the .gc transform reads them. This
+//     avoids triggering layout / cascade rebuilds — paint-only.
+//   • Loop self-stops once nothing is moving and the cursor has been
+//     idle for a beat; mousemove re-arms it.
+const _TILT = {
+  mouseX: 0,
+  mouseY: 0,
+  raf: null,
+  lastMove: 0,
+  states: new WeakMap(),  // .gc element → { rx, ry } current rotation
+  maxAngle: 16,            // degrees of tilt at saturation
+  scale: 700,              // distance (px) over which tilt approaches saturation
+  lerp: 0.07,              // per-frame approach toward target rotation
+  idleSettleMs: 250,       // keep running this long after cursor stops so the final lerp completes
 };
 
-let _ambientCanvas = null;
-let _ambientGL = null;
-let _ambientProgram = null;
-let _ambientUniforms = {};
-let _ambientPositionLoc = -1;
-let _ambientRaf = null;
-let _ambientMouseX = 0;
-let _ambientMouseY = 0;
-let _ambientBallX = 0;        // damped ball position (lerps toward mouse)
-let _ambientBallY = 0;
-let _ambientBallInitialized = false;
-let _ambientActivity = 0;
-let _ambientLastActivity = 0;
-let _ambientStartTime = 0;
-let _ambientBrandRGB = [0.78, 1.0, 0];
-let _ambientDpr = 1;
-
-const _AMBIENT_VS = `
-  attribute vec2 a_position;
-  void main() { gl_Position = vec4(a_position, 0.0, 1.0); }
-`;
-
-// Fragment shader: a small refractive glass sphere over a procedural
-// striped environment — the single-fragment-shader port of Daniel
-// Hult's webgl-refraction pen. The pen uses a big env-sphere wrapping
-// the camera + a cube-mapped refractive small sphere; we collapse both
-// into one pass by treating the environment as a function envColor(dir)
-// and sampling it from reflected/refracted ray directions. No cube
-// render target needed.
-//
-// Pipeline per pixel:
-//   1. If outside the ball circle → discard (page bg shows through).
-//   2. Inside: compute the sphere normal at this pixel, perturbed
-//      slightly by a slow wobble for shimmering refraction.
-//   3. Compute the view ray I from a virtual camera at +z.
-//   4. Reflect & refract I against N. Refract 3 times with slightly
-//      different IORs → chromatic aberration (R/G/B channels split).
-//   5. Sample envColor() once per ray direction, building the
-//      refracted color channel-by-channel + the reflected color.
-//   6. Fresnel weight: more reflection at glancing angles, more
-//      refraction looking straight through.
-//   7. Soft edge alpha falloff so the rim blends cleanly to the page.
-const _AMBIENT_FS = `
-  precision highp float;
-  uniform vec2 u_resolution;
-  uniform vec2 u_ballPos;
-  uniform float u_time;
-  uniform float u_activity;
-  uniform vec3 u_color;
-  uniform float u_ballRadius;
-  uniform float u_envRadius;
-  uniform float u_envEdgeSoftness;
-  uniform float u_ior;
-  uniform float u_dispersion;
-  uniform float u_fresnelPower;
-  uniform float u_fresnelScale;
-  uniform float u_envScale;
-  uniform float u_envNoiseFreq;
-  uniform float u_envSpeed;
-  uniform float u_surfaceWobble;
-  uniform float u_wobbleSpeed;
-  uniform float u_alpha;
-
-  // Cheap hash-based value noise — good enough for env warping,
-  // way lighter than simplex when we sample 4× per pixel.
-  float hash13(vec3 p) {
-    p = fract(p * vec3(0.1031, 0.1030, 0.0973));
-    p += dot(p, p.yzx + 19.19);
-    return fract((p.x + p.y) * p.z);
-  }
-  float vnoise(vec3 p) {
-    vec3 i = floor(p);
-    vec3 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    float n000 = hash13(i);
-    float n100 = hash13(i + vec3(1.0, 0.0, 0.0));
-    float n010 = hash13(i + vec3(0.0, 1.0, 0.0));
-    float n110 = hash13(i + vec3(1.0, 1.0, 0.0));
-    float n001 = hash13(i + vec3(0.0, 0.0, 1.0));
-    float n101 = hash13(i + vec3(1.0, 0.0, 1.0));
-    float n011 = hash13(i + vec3(0.0, 1.0, 1.0));
-    float n111 = hash13(i + vec3(1.0, 1.0, 1.0));
-    float nx00 = mix(n000, n100, f.x);
-    float nx10 = mix(n010, n110, f.x);
-    float nx01 = mix(n001, n101, f.x);
-    float nx11 = mix(n011, n111, f.x);
-    float nxy0 = mix(nx00, nx10, f.y);
-    float nxy1 = mix(nx01, nx11, f.y);
-    return mix(nxy0, nxy1, f.z) * 2.0 - 1.0;
-  }
-
-  mat2 rot2D(float a) {
-    float c = cos(a), s = sin(a);
-    return mat2(c, -s, s, c);
-  }
-
-  // Pen's exact stripe function. Returns a smoothstep'd band mask
-  // along uv.x — \`offset\` shifts both the stripe phase and the
-  // smoothstep softness, so calling it twice with different offsets
-  // gives the bold base stripes + thinner accent veins.
-  float lines(vec2 uv, float offset) {
-    return smoothstep(
-      0.0, 0.5 + offset * 0.5,
-      abs(0.5 * (sin(uv.x * 15.0) + offset * 2.0))
-    );
-  }
-
-  // Procedural environment sampled by a 3D direction-ish vector.
-  // For background pixels we pass screen-space (d.xy, 0); for
-  // refracted/reflected rays we pass the ray direction. Either way
-  // we end up with the pen's cream + accent + brand swirling stripes.
-  vec3 envColor(vec3 dir) {
-    vec3 baseFirst  = vec3(0.97, 0.96, 0.93);          // paper/cream
-    vec3 baseSecond = u_color;                          // theme brand (was orange)
-    vec3 accent     = mix(baseSecond, baseFirst, 0.55); // soft tan/highlight
-
-    float n = vnoise(dir * u_envNoiseFreq + vec3(u_time * u_envSpeed));
-    vec2 uv = rot2D(n) * dir.xy * u_envScale;
-
-    float basePattern   = lines(uv, 0.5);
-    float secondPattern = lines(uv, 0.1);
-
-    vec3 c = mix(baseSecond, baseFirst, basePattern);
-    return mix(c, accent, secondPattern);
-  }
-
-  void main() {
-    vec2 fragUv = gl_FragCoord.xy / u_resolution;
-    vec2 ballUv = u_ballPos / u_resolution;
-    ballUv.y = 1.0 - ballUv.y;
-    float aspect = u_resolution.x / u_resolution.y;
-    vec2 d = fragUv - ballUv;
-    d.x *= aspect;
-
-    float r = length(d);
-    // Outside the env disc → fully transparent (page bg shows through).
-    if (r > u_envRadius) discard;
-
-    // Soft env disc edge → fade env to transparent at the rim so the
-    // big striped window blends into the page rather than hard-cropping.
-    float discFade = smoothstep(
-      u_envRadius,
-      u_envRadius * (1.0 - u_envEdgeSoftness),
-      r
-    );
-
-    vec3 col;
-
-    if (r > u_ballRadius) {
-      // Env-disc region (outside the ball): straight env sampling.
-      col = envColor(vec3(d, 0.0));
-    } else {
-      // Inside the refractive ball: depth, normal, view ray, refract.
-      float radius = u_ballRadius;
-      float z = sqrt(radius * radius - r * r) / radius;
-      vec3 N = normalize(vec3(d.x / radius, d.y / radius, z));
-
-      // Slow surface wobble so the refracted stripes shimmer subtly.
-      vec3 wobbleP = N * 2.5 + vec3(u_time * u_wobbleSpeed);
-      vec3 wobble = vec3(
-        vnoise(wobbleP),
-        vnoise(wobbleP + vec3(11.3, 0.0, 0.0)),
-        vnoise(wobbleP + vec3(0.0, 17.7, 0.0))
-      );
-      N = normalize(N + wobble * u_surfaceWobble);
-
-      vec3 camPos = vec3(0.0, 0.0, 2.0);
-      vec3 surfacePos = vec3(d.x, d.y, z * radius);
-      vec3 I = normalize(surfacePos - camPos);
-
-      // Three slightly different IORs → R/G/B refraction split.
-      vec3 refR = refract(I, N, u_ior + u_dispersion);
-      vec3 refG = refract(I, N, u_ior);
-      vec3 refB = refract(I, N, u_ior - u_dispersion);
-      vec3 reflR = reflect(I, N);
-
-      vec3 refracted;
-      refracted.r = envColor(refR).r;
-      refracted.g = envColor(refG).g;
-      refracted.b = envColor(refB).b;
-      vec3 reflected = envColor(reflR);
-
-      // Fresnel weight — more reflection at the rim, more refraction
-      // through the center.
-      float fresnel = pow(clamp(1.0 + dot(I, N), 0.0, 1.0), u_fresnelPower);
-      fresnel = clamp(fresnel * u_fresnelScale, 0.0, 1.0);
-
-      col = mix(refracted, reflected, fresnel);
-    }
-
-    float alpha = discFade * u_activity * u_alpha;
-    gl_FragColor = vec4(col, alpha);
-  }
-`;
-
-function _compileShader(gl, src, type) {
-  const sh = gl.createShader(type);
-  gl.shaderSource(sh, src);
-  gl.compileShader(sh);
-  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
-    console.warn('[tomen] ambient shader compile failed:', gl.getShaderInfoLog(sh));
-    gl.deleteShader(sh);
-    return null;
-  }
-  return sh;
+function _attachLibraryTilt() {
+  // One document-wide listener — every mousemove updates the target
+  // cursor position and re-arms the rAF loop. Touch isn't wired up
+  // because the effect only makes sense with a hovering cursor.
+  document.addEventListener('mousemove', (e) => {
+    _TILT.mouseX = e.clientX;
+    _TILT.mouseY = e.clientY;
+    _TILT.lastMove = performance.now();
+    if (_TILT.raf == null) _TILT.raf = requestAnimationFrame(_tiltTick);
+  }, { passive: true });
 }
 
-function _initAmbientShader() {
-  if (_ambientCanvas) return;
-  const canvas = document.createElement('canvas');
-  canvas.id = 'ambient-canvas';
-  canvas.setAttribute('aria-hidden', 'true');
-  canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
-  document.body.insertBefore(canvas, document.body.firstChild);
-  _ambientCanvas = canvas;
-
-  const gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: false, antialias: false });
-  if (!gl) {
-    console.warn('[tomen] WebGL not supported — ambient shader skipped');
+function _tiltTick() {
+  // Only animate when the library grid is actually on-screen. If the
+  // user navigates to the reader (or any non-library view), bail —
+  // the rAF rearms on the next mousemove.
+  const grid = document.querySelector('.view-grid');
+  if (!grid || grid.offsetParent === null) {
+    _TILT.raf = null;
     return;
   }
-  _ambientGL = gl;
-
-  const vs = _compileShader(gl, _AMBIENT_VS, gl.VERTEX_SHADER);
-  const fs = _compileShader(gl, _AMBIENT_FS, gl.FRAGMENT_SHADER);
-  if (!vs || !fs) return;
-  const prog = gl.createProgram();
-  gl.attachShader(prog, vs);
-  gl.attachShader(prog, fs);
-  gl.linkProgram(prog);
-  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-    console.warn('[tomen] ambient shader link failed:', gl.getProgramInfoLog(prog));
-    return;
+  const cards = grid.children;
+  const vh = window.innerHeight;
+  let anyMoving = false;
+  for (let i = 0; i < cards.length; i++) {
+    const card = cards[i];
+    if (!card.classList || !card.classList.contains('gc')) continue;
+    const rect = card.getBoundingClientRect();
+    // Skip cards well outside the viewport — they'll catch up the
+    // moment they scroll into view (getBoundingClientRect is cheap
+    // but the per-card style write isn't free at scale).
+    if (rect.bottom < -300 || rect.top > vh + 300) continue;
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    // tanh saturates softly — a card near the cursor barely tilts;
+    // beyond _TILT.scale pixels the tilt asymptotes toward maxAngle.
+    const dx = Math.tanh((_TILT.mouseX - cx) / _TILT.scale);
+    const dy = Math.tanh((_TILT.mouseY - cy) / _TILT.scale);
+    // CSS rotateY positive rotates the right edge backward, so to
+    // face a cursor on the right we want rotateY negative; rotateX
+    // positive tilts the top backward, so cursor below ⇒ +rotateX.
+    const targetRy = -dx * _TILT.maxAngle;
+    const targetRx = dy * _TILT.maxAngle;
+    let s = _TILT.states.get(card);
+    if (!s) {
+      s = { rx: 0, ry: 0 };
+      _TILT.states.set(card, s);
+    }
+    const drx = targetRx - s.rx;
+    const dry = targetRy - s.ry;
+    s.rx += drx * _TILT.lerp;
+    s.ry += dry * _TILT.lerp;
+    if (Math.abs(drx) > 0.04 || Math.abs(dry) > 0.04) anyMoving = true;
+    card.style.setProperty('--tilt-x', s.rx.toFixed(2) + 'deg');
+    card.style.setProperty('--tilt-y', s.ry.toFixed(2) + 'deg');
   }
-  _ambientProgram = prog;
-
-  _ambientPositionLoc = gl.getAttribLocation(prog, 'a_position');
-  _ambientUniforms = {
-    u_resolution: gl.getUniformLocation(prog, 'u_resolution'),
-    u_ballPos: gl.getUniformLocation(prog, 'u_ballPos'),
-    u_time: gl.getUniformLocation(prog, 'u_time'),
-    u_activity: gl.getUniformLocation(prog, 'u_activity'),
-    u_color: gl.getUniformLocation(prog, 'u_color'),
-    u_ballRadius: gl.getUniformLocation(prog, 'u_ballRadius'),
-    u_envRadius: gl.getUniformLocation(prog, 'u_envRadius'),
-    u_envEdgeSoftness: gl.getUniformLocation(prog, 'u_envEdgeSoftness'),
-    u_ior: gl.getUniformLocation(prog, 'u_ior'),
-    u_dispersion: gl.getUniformLocation(prog, 'u_dispersion'),
-    u_fresnelPower: gl.getUniformLocation(prog, 'u_fresnelPower'),
-    u_fresnelScale: gl.getUniformLocation(prog, 'u_fresnelScale'),
-    u_envScale: gl.getUniformLocation(prog, 'u_envScale'),
-    u_envNoiseFreq: gl.getUniformLocation(prog, 'u_envNoiseFreq'),
-    u_envSpeed: gl.getUniformLocation(prog, 'u_envSpeed'),
-    u_surfaceWobble: gl.getUniformLocation(prog, 'u_surfaceWobble'),
-    u_wobbleSpeed: gl.getUniformLocation(prog, 'u_wobbleSpeed'),
-    u_alpha: gl.getUniformLocation(prog, 'u_alpha'),
-  };
-
-  // Full-viewport quad as two triangles.
-  const buf = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-    -1, -1,  1, -1,  -1, 1,
-    -1,  1,  1, -1,   1, 1,
-  ]), gl.STATIC_DRAW);
-
-  _ambientStartTime = performance.now();
-  _resizeAmbientCanvas();
-  window.addEventListener('resize', _resizeAmbientCanvas);
-
-  const onPointer = (e) => {
-    if (e.touches && e.touches[0]) {
-      _ambientMouseX = e.touches[0].clientX;
-      _ambientMouseY = e.touches[0].clientY;
-    } else if (e.clientX !== undefined) {
-      _ambientMouseX = e.clientX;
-      _ambientMouseY = e.clientY;
-    } else {
-      return;
-    }
-    // First time the cursor appears, snap the ball to it rather than
-    // having it drift in from the top-left corner of the viewport.
-    if (!_ambientBallInitialized) {
-      _ambientBallX = _ambientMouseX;
-      _ambientBallY = _ambientMouseY;
-      _ambientBallInitialized = true;
-    }
-    _ambientActivity = 1;
-    _ambientLastActivity = performance.now();
-    _refreshAmbientBrand();
-    if (_ambientRaf == null) _ambientRaf = requestAnimationFrame(_ambientTick);
-  };
-  document.addEventListener('mousemove', onPointer, { passive: true });
-  document.addEventListener('mousedown', onPointer, { passive: true });
-  document.addEventListener('touchstart', onPointer, { passive: true });
-  document.addEventListener('touchmove', onPointer, { passive: true });
-
-  _refreshAmbientBrand();
-}
-
-function _resizeAmbientCanvas() {
-  if (!_ambientCanvas) return;
-  _ambientDpr = Math.min(window.devicePixelRatio || 1, 2);
-  _ambientCanvas.width = window.innerWidth * _ambientDpr;
-  _ambientCanvas.height = window.innerHeight * _ambientDpr;
-}
-
-function _refreshAmbientBrand() {
-  const brand = getComputedStyle(document.documentElement).getPropertyValue('--brand').trim();
-  if (!brand) return;
-  if (brand.startsWith('#')) {
-    const hex = brand.slice(1);
-    if (hex.length === 6) {
-      _ambientBrandRGB = [
-        parseInt(hex.slice(0, 2), 16) / 255,
-        parseInt(hex.slice(2, 4), 16) / 255,
-        parseInt(hex.slice(4, 6), 16) / 255,
-      ];
-    }
+  const recentlyMoved = performance.now() - _TILT.lastMove < _TILT.idleSettleMs;
+  if (anyMoving || recentlyMoved) {
+    _TILT.raf = requestAnimationFrame(_tiltTick);
+  } else {
+    _TILT.raf = null;
   }
-}
-
-function _ambientTick() {
-  if (!_ambientGL) { _ambientRaf = null; return; }
-  const now = performance.now();
-  // Time in seconds since shader init — drives the pulse and surface noise.
-  const t = (now - _ambientStartTime) / 1000;
-  const idle = now - _ambientLastActivity;
-  if (idle > _AMBIENT.fadeIdleMs) {
-    _ambientActivity *= _AMBIENT.fadePerFrame;
-    if (_ambientActivity < 0.005) {
-      _ambientActivity = 0;
-      _renderAmbient(t, 0);
-      _ambientRaf = null;
-      return;
-    }
-  }
-  // Damped follow — the ball drifts toward the cursor each frame at
-  // followLerp pace, giving it inertia and a sense of being drawn
-  // toward the user's attention rather than pinned to it.
-  _ambientBallX += (_ambientMouseX - _ambientBallX) * _AMBIENT.followLerp;
-  _ambientBallY += (_ambientMouseY - _ambientBallY) * _AMBIENT.followLerp;
-  _renderAmbient(t, _ambientActivity);
-  _ambientRaf = requestAnimationFrame(_ambientTick);
-}
-
-function _renderAmbient(time, activity) {
-  const gl = _ambientGL;
-  if (!gl || !_ambientProgram) return;
-  gl.viewport(0, 0, _ambientCanvas.width, _ambientCanvas.height);
-  gl.clearColor(0, 0, 0, 0);
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  if (activity <= 0) return;
-
-  gl.useProgram(_ambientProgram);
-  gl.enableVertexAttribArray(_ambientPositionLoc);
-  gl.vertexAttribPointer(_ambientPositionLoc, 2, gl.FLOAT, false, 0, 0);
-
-  gl.uniform2f(_ambientUniforms.u_resolution, _ambientCanvas.width, _ambientCanvas.height);
-  gl.uniform2f(_ambientUniforms.u_ballPos, _ambientBallX * _ambientDpr, _ambientBallY * _ambientDpr);
-  gl.uniform1f(_ambientUniforms.u_time, time);
-  gl.uniform1f(_ambientUniforms.u_activity, activity);
-  gl.uniform3f(_ambientUniforms.u_color, _ambientBrandRGB[0], _ambientBrandRGB[1], _ambientBrandRGB[2]);
-  gl.uniform1f(_ambientUniforms.u_ballRadius, _AMBIENT.ballRadius);
-  gl.uniform1f(_ambientUniforms.u_envRadius, _AMBIENT.envRadius);
-  gl.uniform1f(_ambientUniforms.u_envEdgeSoftness, _AMBIENT.envEdgeSoftness);
-  gl.uniform1f(_ambientUniforms.u_ior, _AMBIENT.ior);
-  gl.uniform1f(_ambientUniforms.u_dispersion, _AMBIENT.dispersion);
-  gl.uniform1f(_ambientUniforms.u_fresnelPower, _AMBIENT.fresnelPower);
-  gl.uniform1f(_ambientUniforms.u_fresnelScale, _AMBIENT.fresnelScale);
-  gl.uniform1f(_ambientUniforms.u_envScale, _AMBIENT.envScale);
-  gl.uniform1f(_ambientUniforms.u_envNoiseFreq, _AMBIENT.envNoiseFreq);
-  gl.uniform1f(_ambientUniforms.u_envSpeed, _AMBIENT.envSpeed);
-  gl.uniform1f(_ambientUniforms.u_surfaceWobble, _AMBIENT.surfaceWobble);
-  gl.uniform1f(_ambientUniforms.u_wobbleSpeed, _AMBIENT.wobbleSpeed);
-  gl.uniform1f(_ambientUniforms.u_alpha, _AMBIENT.alpha);
-
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-  gl.drawArrays(gl.TRIANGLES, 0, 6);
 }
 
 // ===== INIT =====
@@ -10477,11 +10053,9 @@ function _renderAmbient(time, activity) {
   // sit on every card.
   _attachLibraryLongPress();
 
-  // Initialize the WebGL ambient shader — a soft brand-colored blob
-  // that tracks the cursor / finger, fading in on input and out on
-  // idle. Pure background presence layer, gated on actual activity so
-  // it costs nothing when no one is interacting.
-  _initAmbientShader();
+  // Wire the library grid's 3D cursor-tracking tilt — every visible
+  // .gc card lazily turns to face the mouse via a single rAF loop.
+  _attachLibraryTilt();
 
   // Once the library is visible, run the cover-storage migration in
   // the background — shrinks any raw v1 covers and moves them from
