@@ -1159,10 +1159,13 @@ body[data-lib-view="grid"] .lib-size { display: inline-flex; }
   width: var(--grid-card-min-width, 150px);
   height: var(--grid-card-height, 225px);
   flex: 0 0 auto;
-  /* 3D infrastructure preserved (perspective on parent, preserve-3d
-     on cover) so the edge slabs are ready if a future transform on
-     .gc rotates the card. Currently no rotation = flat covers. */
+  /* 3D scene: perspective on the parent grid + preserve-3d here lets the
+     .gc-cover edge slabs render with depth when the card tilts. */
   transform-style: preserve-3d;
+  /* Y-axis tilt driven by horizontal scroll velocity — _setupGridScrollTilt
+     publishes --gc-tilt on .view-grid and every card inherits it. 0deg at
+     rest; the parent's perspective renders the turn with depth. */
+  transform: rotateY(var(--gc-tilt, 0deg));
 }
 .gc:hover .gc-cover { transform: translateY(-2px); }
 .gc-cover { cursor: pointer; }
@@ -5511,6 +5514,57 @@ function _setupSmoothWheelScroll() {
     const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
     animate(libBody, 'y', delta, max);
   }, { passive: false });
+}
+
+// ===== GRID SCROLL TILT =====
+// Books in grid view turn slightly on their Y axis as the grid scrolls,
+// proportional to scroll speed — a flick sends them leaning into the
+// motion and they settle back flat when it stops. Driven off scrollLeft
+// (so it responds to wheel, trackpad, and touch alike) by a rAF loop that
+// runs only while there's motion or residual tilt left to unwind. The tilt
+// is published as --gc-tilt on the .view-grid; every .gc inherits it.
+// Skipped entirely under reduced-motion.
+function _setupGridScrollTilt() {
+  const libBody = $('lib-body');
+  if (!libBody) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  const MAX_ANGLE = 14;        // deg — cap so cards lean, never face away
+  const VELOCITY_SCALE = 0.4;  // px/frame of scroll -> deg of tilt
+  const EASE = 0.16;           // how fast the tilt chases its target
+
+  let grid = null;
+  let lastScrollLeft = 0;
+  let angle = 0;
+  let rafId = null;
+
+  const tick = () => {
+    rafId = null;
+    if (!grid || !grid.isConnected) { grid = null; angle = 0; return; }
+    const sl = grid.scrollLeft;
+    const velocity = sl - lastScrollLeft;
+    lastScrollLeft = sl;
+    const targetAngle = Math.max(-MAX_ANGLE, Math.min(MAX_ANGLE, velocity * VELOCITY_SCALE));
+    angle += (targetAngle - angle) * EASE;
+    if (Math.abs(velocity) < 0.1 && Math.abs(angle) < 0.05) {
+      // Settled — flatten and let the loop stop.
+      grid.style.setProperty('--gc-tilt', '0deg');
+      angle = 0;
+      return;
+    }
+    grid.style.setProperty('--gc-tilt', angle.toFixed(2) + 'deg');
+    rafId = requestAnimationFrame(tick);
+  };
+
+  // scroll events don't bubble, so catch them in the capture phase —
+  // .view-grid is recreated on every renderLibrary, so listening on the
+  // persistent lib-body avoids having to re-bind after each render.
+  libBody.addEventListener('scroll', (e) => {
+    const g = e.target;
+    if (!g || !g.classList || !g.classList.contains('view-grid')) return;
+    if (g !== grid) { grid = g; lastScrollLeft = g.scrollLeft; }
+    if (!rafId) rafId = requestAnimationFrame(tick);
+  }, true);
 }
 
 // Columns view — compact title-scan, multi-column layout. No covers,
@@ -10329,6 +10383,8 @@ function renderGreeting() {
   // both the vertical (columns/table) and horizontal (grid) axes. See
   // _setupSmoothWheelScroll for the trackpad/touch/reduced-motion notes.
   _setupSmoothWheelScroll();
+  // Grid-view books turn on their Y axis in response to scroll velocity.
+  _setupGridScrollTilt();
 
   // Recompute card width on viewport resize — `rows` is fixed but the
   // available height changes, so we re-derive the per-card size. Debounced
