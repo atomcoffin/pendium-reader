@@ -1122,16 +1122,17 @@ body[data-lib-view="grid"] .lib-size { display: inline-flex; }
   flex-wrap: wrap;
   align-content: flex-start;
   /* Pin the grid to .screen's full viewport. Padding (not left/right
-     offsets) carries the breathing room: 0 top so books bleed flush
-     under the transparent nav bar, 28px on the other three sides so
-     left has padding, bottom has padding, and the end of the
-     horizontal scroll shows 28px before the screen's right edge. */
+     offsets) carries the breathing room: the top padding is set by JS
+     to match the nav bar's actual rendered height (so books stop at
+     the header's bottom edge rather than bleeding underneath), and
+     28px on the other three sides for left, bottom, and trailing
+     right after the last column. */
   position: absolute;
   top: 0;
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 0 28px 28px 28px;
+  padding: var(--grid-padding-top, 76px) 28px 28px 28px;
   gap: 16px;
   overflow-x: auto;
   overflow-y: hidden;
@@ -5147,10 +5148,17 @@ function setView(v) {
 // to auto-sized values, leaving cards short of the viewport.
 function setLibrarySize(value) {
   const rows = Math.max(1, Math.min(6, parseInt(value, 10) || 3));
-  // Usable height = viewport minus the bottom padding on .view-grid
-  // (28px); top padding is 0 so nothing comes off the top. Keep this
-  // synced with the CSS `padding` value on .view-grid.
-  const usable = window.innerHeight - 28;
+  // Measure the nav bar's rendered height — flex-wrap on mobile makes
+  // the header taller (search drops to a second row), so a static
+  // value would mis-size on small viewports. Falls back to 76px if
+  // the header isn't laid out yet.
+  const header = document.querySelector('.lib-header');
+  const headerH = header ? header.offsetHeight : 76;
+  document.documentElement.style.setProperty('--grid-padding-top', headerH + 'px');
+  // Usable height = viewport minus top padding (header height) and
+  // bottom padding (28px). Keep this synced with .view-grid's CSS
+  // `padding` shorthand.
+  const usable = window.innerHeight - headerH - 28;
   const gap = 16; // matches .view-grid `gap`
   // Floor the row height so rows*cardHeight + (rows-1)*gap stays at or
   // below `usable` — subpixel overflow was the phantom-row culprit.
