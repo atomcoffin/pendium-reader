@@ -1302,6 +1302,41 @@ body[data-lib-view="grid"] .lib-size { display: inline-flex; }
 }
 .gc-prog-fill { height: 100%; background: var(--brand); }
 
+/* Book-open transition. On grid-card click the orchestrator (see
+   summonAndOpen) marks the grid with .is-opening and the clicked
+   card with .is-opening-target. The other cards animate to opacity 0
+   with a touch of blur for atmosphere; the target stays in place,
+   nudged up slightly for a soft pop. After the fade settles the
+   reader screen activates with .is-just-opened, which cross-fades
+   the reader pages in. */
+.view-grid.is-opening .gc {
+  pointer-events: none;
+}
+.view-grid.is-opening .gc:not(.is-opening-target) {
+  animation: book-others-fade 850ms cubic-bezier(0.4, 0, 0.4, 1) both;
+}
+.gc.is-opening-target {
+  position: relative;
+  z-index: 5;
+  animation: book-target-pop 850ms cubic-bezier(0.4, 0, 0.4, 1) both;
+}
+@keyframes book-others-fade {
+  0%   { opacity: 1; filter: blur(0); }
+  60%  { opacity: 0.25; filter: blur(2px); }
+  100% { opacity: 0; filter: blur(3px); }
+}
+@keyframes book-target-pop {
+  0%   { transform: translateY(0) scale(1); }
+  100% { transform: translateY(-6px) scale(1.03); }
+}
+#screen-reader.is-just-opened {
+  animation: reader-cross-fade 500ms ease both;
+}
+@keyframes reader-cross-fade {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
 /* ===== READER ===== */
 .r-progress {
   position: fixed;
@@ -6373,10 +6408,14 @@ let currentSpread = 0;       // 0-indexed spread within current chapter
 let totalSpreads = 1;        // computed after layout
 
 // Grid-view click handler. Preserves the long-press / bulk-select
-// guards (so a long-press menu tap doesn't double-open the book, and
-// a tap in select mode toggles selection instead) and otherwise just
-// opens the book. The function name is retained because every grid
-// card's onclick attribute still calls it.
+// guards, then sequences the book-open transition: every card except
+// the clicked one fades out with a soft blur, the clicked card pops
+// slightly to draw the eye, and once that settles the reader screen
+// cross-fades in. Falls through to a plain openBookById if we can't
+// find the card (defensive — keeps non-grid views and edge cases
+// working).
+const _OPEN_FADE_MS = 850;
+let _openInFlight = false;
 function summonAndOpen(ev, id) {
   if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
   if (_longPressFired) {
@@ -6387,7 +6426,32 @@ function summonAndOpen(ev, id) {
     _toggleLibSelection(id);
     return;
   }
-  openBookById(id);
+  if (_openInFlight) return;
+  const grid = document.querySelector('.view-grid');
+  const card = grid && grid.querySelector(`.gc[data-book-id="${CSS.escape(id)}"]`);
+  if (!grid || !card) {
+    openBookById(id);
+    return;
+  }
+  _openInFlight = true;
+  grid.classList.add('is-opening');
+  card.classList.add('is-opening-target');
+  setTimeout(() => {
+    // Tag the reader screen before it activates so its own fade-in
+    // animation runs the moment .active flips to display:flex.
+    const reader = document.getElementById('screen-reader');
+    if (reader) reader.classList.add('is-just-opened');
+    openBookById(id);
+    // Defensive cleanup once the reader has fully faded in; if the
+    // user navigates back fast these classes shouldn't linger on
+    // the grid cards.
+    setTimeout(() => {
+      grid.classList.remove('is-opening');
+      card.classList.remove('is-opening-target');
+      if (reader) reader.classList.remove('is-just-opened');
+      _openInFlight = false;
+    }, 600);
+  }, _OPEN_FADE_MS);
 }
 
 async function openBookById(id) {
