@@ -10028,13 +10028,15 @@ function renderGreeting() {
 // behind a theme or a user preference later.
 
 const _AMBIENT = {
-  alpha: 0.40,          // peak blob alpha
-  blobRadius: 0.40,     // blob size in normalized-y units
-  noiseScale: 3.0,      // higher = more detailed noise distortion
-  noiseStrength: 0.20,  // how much noise pushes the blob edges
-  timeScale: 0.20,      // animation rate
+  alpha: 0.55,          // peak ball alpha
+  ballRadius: 0.18,     // ball radius in normalized-y units
+  pulseSpeed: 1.4,      // breaths per ~4.5 seconds (sin frequency)
+  pulseAmount: 0.07,    // 7% radius oscillation — subtle breathing
+  noiseScale: 4.0,      // surface texture frequency
+  noiseStrength: 0.08,  // surface texture intensity
+  followLerp: 0.08,     // per-frame catch-up toward cursor (lower = laggier)
   fadeIdleMs: 600,      // grace period before activity starts decaying
-  fadePerFrame: 0.96,   // multiplied each frame past the grace period
+  fadePerFrame: 0.97,   // multiplied each frame past the grace period
 };
 
 let _ambientCanvas = null;
@@ -10045,6 +10047,9 @@ let _ambientPositionLoc = -1;
 let _ambientRaf = null;
 let _ambientMouseX = 0;
 let _ambientMouseY = 0;
+let _ambientBallX = 0;        // damped ball position (lerps toward mouse)
+let _ambientBallY = 0;
+let _ambientBallInitialized = false;
 let _ambientActivity = 0;
 let _ambientLastActivity = 0;
 let _ambientStartTime = 0;
@@ -10056,14 +10061,26 @@ const _AMBIENT_VS = `
   void main() { gl_Position = vec4(a_position, 0.0, 1.0); }
 `;
 
+// Fragment shader renders a soft 3D-shaded sphere centered on the
+// (damped) cursor position. The shading model is simple Phong:
+//   - sphere depth z = sqrt(r^2 - d^2) at the current pixel
+//   - normal = position-from-center vector
+//   - diffuse from a fixed light direction
+//   - specular highlight from view = +Z
+//   - subtle value-noise on the surface for an organic, non-plastic feel
+// The radius pulses via sin(u_time * pulseSpeed) so the ball "breathes."
+// Final alpha is smoothstep'd at the edge so the silhouette is soft
+// rather than a hard cutout.
 const _AMBIENT_FS = `
   precision mediump float;
   uniform vec2 u_resolution;
-  uniform vec2 u_mouse;
+  uniform vec2 u_ballPos;
   uniform float u_time;
   uniform float u_activity;
   uniform vec3 u_color;
-  uniform float u_blobRadius;
+  uniform float u_ballRadius;
+  uniform float u_pulseSpeed;
+  uniform float u_pulseAmount;
   uniform float u_noiseScale;
   uniform float u_noiseStrength;
   uniform float u_alpha;
@@ -10080,31 +10097,45 @@ const _AMBIENT_FS = `
       mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
       u.y);
   }
-  float fbm(vec2 p) {
-    float v = 0.0;
-    float a = 0.5;
-    for (int i = 0; i < 4; i++) {
-      v += a * vnoise(p);
-      p *= 2.0;
-      a *= 0.5;
-    }
-    return v;
-  }
 
   void main() {
     vec2 fragUv = gl_FragCoord.xy / u_resolution;
-    vec2 mouseUv = u_mouse / u_resolution;
-    // WebGL puts the origin at the bottom-left; cursor coords come from
-    // the DOM (top-left origin) so flip Y to match.
-    mouseUv.y = 1.0 - mouseUv.y;
+    vec2 ballUv = u_ballPos / u_resolution;
+    // WebGL origin is bottom-left; DOM coords are top-left.
+    ballUv.y = 1.0 - ballUv.y;
     float aspect = u_resolution.x / u_resolution.y;
-    vec2 d = fragUv - mouseUv;
+    vec2 d = fragUv - ballUv;
     d.x *= aspect;
-    float n = (fbm(d * u_noiseScale + u_time) - 0.5) * 2.0 * u_noiseStrength;
-    float dist = length(d) - n;
-    float blob = smoothstep(u_blobRadius, 0.0, dist);
-    float alpha = blob * u_activity * u_alpha;
-    gl_FragColor = vec4(u_color, alpha);
+
+    // Breathing pulse — slow sinusoidal radius oscillation.
+    float radius = u_ballRadius * (1.0 + sin(u_time * u_pulseSpeed) * u_pulseAmount);
+    float r = length(d);
+    if (r > radius) discard;
+
+    // Sphere depth at this pixel — Pythagoras on the visible hemisphere.
+    float z = sqrt(radius * radius - r * r) / radius;
+    vec3 n = normalize(vec3(d.x / radius, d.y / radius, z));
+
+    // Light direction (top-right, slightly toward camera).
+    vec3 lightDir = normalize(vec3(0.35, 0.55, 0.75));
+    float diffuse = max(0.0, dot(n, lightDir));
+
+    // Specular highlight — Phong with view direction = +Z.
+    vec3 reflectDir = reflect(-lightDir, n);
+    float spec = pow(max(0.0, dot(vec3(0.0, 0.0, 1.0), reflectDir)), 28.0) * 0.65;
+
+    // Subtle surface noise — keeps the sphere feeling organic rather
+    // than synthetic-plastic. Modulates the diffuse component slightly.
+    float surf = (vnoise(d * u_noiseScale + u_time * 0.4) - 0.5) * 2.0 * u_noiseStrength;
+
+    // Combine: ambient base + diffuse * brand + specular highlight.
+    vec3 col = u_color * (0.32 + 0.62 * diffuse + surf) + vec3(spec);
+
+    // Soft edge falloff so the silhouette doesn't read as a hard
+    // cutout against the page bg.
+    float edge = smoothstep(0.0, radius * 0.18, radius - r);
+    float alpha = edge * u_activity * u_alpha;
+    gl_FragColor = vec4(col, alpha);
   }
 `;
 
@@ -10152,11 +10183,13 @@ function _initAmbientShader() {
   _ambientPositionLoc = gl.getAttribLocation(prog, 'a_position');
   _ambientUniforms = {
     u_resolution: gl.getUniformLocation(prog, 'u_resolution'),
-    u_mouse: gl.getUniformLocation(prog, 'u_mouse'),
+    u_ballPos: gl.getUniformLocation(prog, 'u_ballPos'),
     u_time: gl.getUniformLocation(prog, 'u_time'),
     u_activity: gl.getUniformLocation(prog, 'u_activity'),
     u_color: gl.getUniformLocation(prog, 'u_color'),
-    u_blobRadius: gl.getUniformLocation(prog, 'u_blobRadius'),
+    u_ballRadius: gl.getUniformLocation(prog, 'u_ballRadius'),
+    u_pulseSpeed: gl.getUniformLocation(prog, 'u_pulseSpeed'),
+    u_pulseAmount: gl.getUniformLocation(prog, 'u_pulseAmount'),
     u_noiseScale: gl.getUniformLocation(prog, 'u_noiseScale'),
     u_noiseStrength: gl.getUniformLocation(prog, 'u_noiseStrength'),
     u_alpha: gl.getUniformLocation(prog, 'u_alpha'),
@@ -10183,6 +10216,13 @@ function _initAmbientShader() {
       _ambientMouseY = e.clientY;
     } else {
       return;
+    }
+    // First time the cursor appears, snap the ball to it rather than
+    // having it drift in from the top-left corner of the viewport.
+    if (!_ambientBallInitialized) {
+      _ambientBallX = _ambientMouseX;
+      _ambientBallY = _ambientMouseY;
+      _ambientBallInitialized = true;
     }
     _ambientActivity = 1;
     _ambientLastActivity = performance.now();
@@ -10222,7 +10262,8 @@ function _refreshAmbientBrand() {
 function _ambientTick() {
   if (!_ambientGL) { _ambientRaf = null; return; }
   const now = performance.now();
-  const t = (now - _ambientStartTime) / 1000 * _AMBIENT.timeScale;
+  // Time in seconds since shader init — drives the pulse and surface noise.
+  const t = (now - _ambientStartTime) / 1000;
   const idle = now - _ambientLastActivity;
   if (idle > _AMBIENT.fadeIdleMs) {
     _ambientActivity *= _AMBIENT.fadePerFrame;
@@ -10233,6 +10274,11 @@ function _ambientTick() {
       return;
     }
   }
+  // Damped follow — the ball drifts toward the cursor each frame at
+  // followLerp pace, giving it inertia and a sense of being drawn
+  // toward the user's attention rather than pinned to it.
+  _ambientBallX += (_ambientMouseX - _ambientBallX) * _AMBIENT.followLerp;
+  _ambientBallY += (_ambientMouseY - _ambientBallY) * _AMBIENT.followLerp;
   _renderAmbient(t, _ambientActivity);
   _ambientRaf = requestAnimationFrame(_ambientTick);
 }
@@ -10250,11 +10296,13 @@ function _renderAmbient(time, activity) {
   gl.vertexAttribPointer(_ambientPositionLoc, 2, gl.FLOAT, false, 0, 0);
 
   gl.uniform2f(_ambientUniforms.u_resolution, _ambientCanvas.width, _ambientCanvas.height);
-  gl.uniform2f(_ambientUniforms.u_mouse, _ambientMouseX * _ambientDpr, _ambientMouseY * _ambientDpr);
+  gl.uniform2f(_ambientUniforms.u_ballPos, _ambientBallX * _ambientDpr, _ambientBallY * _ambientDpr);
   gl.uniform1f(_ambientUniforms.u_time, time);
   gl.uniform1f(_ambientUniforms.u_activity, activity);
   gl.uniform3f(_ambientUniforms.u_color, _ambientBrandRGB[0], _ambientBrandRGB[1], _ambientBrandRGB[2]);
-  gl.uniform1f(_ambientUniforms.u_blobRadius, _AMBIENT.blobRadius);
+  gl.uniform1f(_ambientUniforms.u_ballRadius, _AMBIENT.ballRadius);
+  gl.uniform1f(_ambientUniforms.u_pulseSpeed, _AMBIENT.pulseSpeed);
+  gl.uniform1f(_ambientUniforms.u_pulseAmount, _AMBIENT.pulseAmount);
   gl.uniform1f(_ambientUniforms.u_noiseScale, _AMBIENT.noiseScale);
   gl.uniform1f(_ambientUniforms.u_noiseStrength, _AMBIENT.noiseStrength);
   gl.uniform1f(_ambientUniforms.u_alpha, _AMBIENT.alpha);
