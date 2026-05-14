@@ -1211,17 +1211,27 @@ body[data-lib-view="grid"] .lib-size { display: inline-flex; }
   pointer-events: none;
   backface-visibility: hidden;
 }
-/* Shared page-block gradient — soft cream → tan, no harsh stripes.
-   Reads as the side of a paper block in any lighting. */
+/* Exposed-pages look — a fine repeating line texture (each line is one
+   page edge) layered over the soft cream → tan base. The repeat runs along
+   --page-grad-dir, which is the book-depth axis for each slab, so the lines
+   sit perpendicular to the depth like a real stack of page edges. */
 .gc-edge-r,
 .gc-edge-b,
 .gc-edge-t {
-  background: linear-gradient(
-    var(--page-grad-dir, to right),
-    #f3ecd8 0%,
-    #e6d8b4 65%,
-    #cdb98e 100%
-  );
+  background:
+    repeating-linear-gradient(
+      var(--page-grad-dir, to right),
+      transparent 0,
+      transparent 1.4px,
+      rgba(94, 72, 38, 0.24) 1.4px,
+      rgba(94, 72, 38, 0.24) 2px
+    ),
+    linear-gradient(
+      var(--page-grad-dir, to right),
+      #f3ecd8 0%,
+      #e6d8b4 65%,
+      #cdb98e 100%
+    );
 }
 .gc-edge-r {                                  /* fore edge (right of pages) */
   top: 0; left: 100%;
@@ -1244,13 +1254,12 @@ body[data-lib-view="grid"] .lib-size { display: inline-flex; }
   transform: rotateX(90deg);
   transform-origin: center bottom;
 }
-.gc-edge-l {                                  /* spine — restrained dark with brand wash */
+.gc-edge-l {                                  /* spine — solid, tinted from the cover's dominant color */
   top: 0; right: 100%;
   width: var(--book-depth); height: 100%;
-  background: linear-gradient(to right,
-    #1a1714 0%,
-    color-mix(in srgb, var(--brand) 22%, #1a1714) 50%,
-    #1a1714 100%);
+  /* --gc-spine is set per-card in renderGridView from the book's stored
+     spineColor (the cover's dominant color); falls back to near-black. */
+  background: var(--gc-spine, #1a1714);
   transform: rotateY(-90deg);
   transform-origin: right center;
 }
@@ -5656,6 +5665,10 @@ function renderGridView(el, books) {
   el.innerHTML = '<div class="view-grid">' + books.map(b => {
     const p = b.progress || 0;
     const c = strColor(b.title);
+    // Spine color = the cover's stored dominant color (same extraction the
+    // old spine view used), falling back to the title-hash color for books
+    // imported before spineColor was captured.
+    const spineColor = (b.spineColor && b.spineColor[0]) || c[0];
     const sel = _libSelectedIds.has(b.id) ? ' selected' : '';
     // Three cases for the cover slot:
     //   1. b.cover is set in memory (fresh import this session, or
@@ -5686,7 +5699,7 @@ function renderGridView(el, books) {
     const titleAttr = `${esc(b.title)}${b.author ? ' — ' + esc(b.author) : ''}`;
     return `<div class="gc" data-book-id="${b.id}" title="${titleAttr}">
       <button class="gc-menu-hint" tabindex="-1" aria-hidden="true" onclick="openBookMenu(event, '${b.id}')"><i class="ph ph-dots-three"></i></button>
-      <div class="gc-cover${sel}" data-book-id="${b.id}" onclick="summonAndOpen(event, '${b.id}')">${coverHtml}<div class="gc-edge gc-edge-r"></div><div class="gc-edge gc-edge-b"></div><div class="gc-edge gc-edge-t"></div><div class="gc-edge gc-edge-l"></div>${p > 0 ? '<div class="gc-prog"><div class="gc-prog-fill" style="width:' + p + '%"></div></div>' : ''}</div>
+      <div class="gc-cover${sel}" data-book-id="${b.id}" style="--gc-spine:${spineColor}" onclick="summonAndOpen(event, '${b.id}')">${coverHtml}<div class="gc-edge gc-edge-r"></div><div class="gc-edge gc-edge-b"></div><div class="gc-edge gc-edge-t"></div><div class="gc-edge gc-edge-l"></div>${p > 0 ? '<div class="gc-prog"><div class="gc-prog-fill" style="width:' + p + '%"></div></div>' : ''}</div>
     </div>`;
   }).join('') + '</div>';
   _observeBookCovers(el, '.gc-cover[data-book-id]');
