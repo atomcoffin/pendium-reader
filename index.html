@@ -1148,7 +1148,7 @@ body[data-lib-view="grid"] .lib-size { display: inline-flex; }
 .gc-cover { cursor: pointer; }
 .gc-title, .gc-author { cursor: pointer; }
 .gc-cover {
-  --book-depth: 14px;          /* book thickness in screen-space pixels */
+  --book-depth: 9px;           /* slimmer book block reads more refined */
   width: 100%; aspect-ratio: 2 / 3;
   /* Less rounded than --radius-sm (8px). 2px keeps a hint of "book
      corner" feel without softening the cover edge into a chrome
@@ -1172,53 +1172,56 @@ body[data-lib-view="grid"] .lib-size { display: inline-flex; }
   /* The placeholder block sits on the front face; nothing else to do. */
 }
 /* Book "thickness" — four slabs extending behind the cover, each
-   rotated to form one edge of a 3D box of depth --book-depth. The
-   three page-block edges (right / top / bottom) use a striped cream
-   gradient to read as paper; the left edge is the spine, brand-tinted
-   so it matches the theme. Pages have a subtle vertical/horizontal
-   stripe to simulate the layered paper texture. */
+   rotated to form one edge of a 3D box of depth --book-depth. Three
+   page-block edges (right / top / bottom) share a soft cream gradient
+   that reads as paper without drawing attention; the spine is a dark
+   slab with a faint brand wash through its center, restrained so it
+   doesn't compete with the covers. */
 .gc-edge {
   position: absolute;
   pointer-events: none;
   backface-visibility: hidden;
 }
-.gc-edge-r {                                  /* fore edge (right side of pages) */
+/* Shared page-block gradient — soft cream → tan, no harsh stripes.
+   Reads as the side of a paper block in any lighting. */
+.gc-edge-r,
+.gc-edge-b,
+.gc-edge-t {
+  background: linear-gradient(
+    var(--page-grad-dir, to right),
+    #f3ecd8 0%,
+    #e6d8b4 65%,
+    #cdb98e 100%
+  );
+}
+.gc-edge-r {                                  /* fore edge (right of pages) */
   top: 0; left: 100%;
   width: var(--book-depth); height: 100%;
-  background:
-    repeating-linear-gradient(0deg,
-      rgba(0,0,0,0.07) 0, transparent 1.5px, transparent 3px),
-    linear-gradient(to right, #f4ecd6, #d6c5a0);
+  --page-grad-dir: to right;
   transform: rotateY(90deg);
   transform-origin: left center;
 }
 .gc-edge-b {                                  /* foot (bottom of pages) */
   left: 0; top: 100%;
   width: 100%; height: var(--book-depth);
-  background:
-    repeating-linear-gradient(90deg,
-      rgba(0,0,0,0.07) 0, transparent 1.5px, transparent 3px),
-    linear-gradient(to bottom, #f4ecd6, #d6c5a0);
+  --page-grad-dir: to bottom;
   transform: rotateX(-90deg);
   transform-origin: center top;
 }
 .gc-edge-t {                                  /* head (top of pages) */
   left: 0; bottom: 100%;
   width: 100%; height: var(--book-depth);
-  background:
-    repeating-linear-gradient(90deg,
-      rgba(0,0,0,0.07) 0, transparent 1.5px, transparent 3px),
-    linear-gradient(to top, #f4ecd6, #d6c5a0);
+  --page-grad-dir: to top;
   transform: rotateX(90deg);
   transform-origin: center bottom;
 }
-.gc-edge-l {                                  /* spine — brand-tinted */
+.gc-edge-l {                                  /* spine — restrained dark with brand wash */
   top: 0; right: 100%;
   width: var(--book-depth); height: 100%;
   background: linear-gradient(to right,
-    color-mix(in srgb, var(--brand) 55%, black) 0%,
-    var(--brand) 50%,
-    color-mix(in srgb, var(--brand) 65%, black) 100%);
+    #1a1714 0%,
+    color-mix(in srgb, var(--brand) 22%, #1a1714) 50%,
+    #1a1714 100%);
   transform: rotateY(-90deg);
   transform-origin: right center;
 }
@@ -10013,10 +10016,11 @@ const _TILT = {
   states: new WeakMap(),  // .gc element → { rx, ry } current rotation
   // Must match the `perspective:` value on .view-grid in CSS. atan2 of
   // the screen-space cursor offset against this perspective distance
-  // gives the literal angle needed for each card's front face to point
-  // straight at the cursor.
+  // gives the angle needed for each card's front face to point straight
+  // at the cursor (we negate to lean AWAY).
   perspective: 1400,
-  lerp: 0.10,              // per-frame approach toward target rotation
+  maxAngle: 25,            // cap on rotation magnitude — keeps far-away cards from twisting violently
+  lerp: 0.08,              // per-frame approach toward target rotation
   idleSettleMs: 250,       // keep running this long after cursor stops so the final lerp completes
 };
 
@@ -10068,15 +10072,18 @@ function _tiltTick() {
       targetRy = 0;
       targetRx = 0;
     } else {
-      // atan2 against the perspective distance gives the exact angle
-      // for the card's normal to point at the cursor; we negate both
-      // axes so cards lean AWAY instead — every book turns its back on
-      // the cursor. This also reveals the per-side edge slabs facing
-      // the cursor (spine when cursor is right, fore-edge when left,
-      // head when below, foot when above).
+      // atan2 against the perspective distance gives the angle for
+      // the card's normal to point at the cursor; we negate both axes
+      // so cards lean AWAY — every book turns its back on the cursor.
+      // The clamp at ±maxAngle keeps far-away cards from blowing out
+      // past elegant tilts; nearby cards stay within the clamp and
+      // still track the cursor exactly.
       const RAD2DEG = 180 / Math.PI;
-      targetRy = -RAD2DEG * Math.atan2(dx, _TILT.perspective);
-      targetRx =  RAD2DEG * Math.atan2(dy, _TILT.perspective);
+      const MAX = _TILT.maxAngle;
+      const ry = -RAD2DEG * Math.atan2(dx, _TILT.perspective);
+      const rx =  RAD2DEG * Math.atan2(dy, _TILT.perspective);
+      targetRy = Math.max(-MAX, Math.min(MAX, ry));
+      targetRx = Math.max(-MAX, Math.min(MAX, rx));
     }
     let s = _TILT.states.get(card);
     if (!s) {
