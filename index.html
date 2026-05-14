@@ -3463,7 +3463,7 @@ body.lib-select-mode .col-item {
            reads as a property of the view choice it modifies. -->
       <div class="lib-size" aria-label="Grid card size">
         <i class="ph ph-square" aria-hidden="true"></i>
-        <input type="range" min="100" max="260" step="10" value="150" id="sl-libsize" oninput="setLibrarySize(this.value)" title="Card size">
+        <input type="range" min="1" max="6" step="1" value="3" id="sl-libsize" oninput="setLibrarySize(this.value)" title="Visible rows">
         <i class="ph ph-square is-large" aria-hidden="true"></i>
       </div>
       <!-- View switcher: Grid (default) → Columns → Table. Grid leads
@@ -5096,12 +5096,30 @@ function setView(v) {
 // the user moves the slider. Persisted across sessions and shared
 // across device buckets — a setting like this is preference, not
 // device-bucketed reading config.
+// Slider value is the desired number of vertical rows of books (1-6).
+// We size the cards so exactly that many fit in the lib-body's content
+// height: card height = (usable_height - row_gaps) / rows, card width =
+// card height × 2/3 (the cover aspect). Result is written into the
+// --grid-card-min-width custom property that .gc reads. Resize listener
+// elsewhere re-runs this whenever the viewport changes.
 function setLibrarySize(value) {
-  const v = Math.max(100, Math.min(280, parseInt(value, 10) || 150));
-  document.documentElement.style.setProperty('--grid-card-min-width', v + 'px');
+  const rows = Math.max(1, Math.min(6, parseInt(value, 10) || 3));
+  const libBody = $('lib-body');
+  if (libBody) {
+    const styles = getComputedStyle(libBody);
+    const padTop = parseFloat(styles.paddingTop) || 0;
+    const padBottom = parseFloat(styles.paddingBottom) || 0;
+    const usable = libBody.clientHeight - padTop - padBottom;
+    const gap = 16; // matches .view-grid `gap`
+    if (usable > 0) {
+      const cardHeight = (usable - (rows - 1) * gap) / rows;
+      const cardWidth = Math.max(60, Math.floor(cardHeight * (2 / 3)));
+      document.documentElement.style.setProperty('--grid-card-min-width', cardWidth + 'px');
+    }
+  }
   const slider = $('sl-libsize');
-  if (slider && slider.value != String(v)) slider.value = v;
-  localStorage.setItem('tomen_libGridSize', String(v));
+  if (slider && slider.value != String(rows)) slider.value = rows;
+  localStorage.setItem('tomen_libGridSize', String(rows));
 }
 
 function setSort(s) {
@@ -10033,10 +10051,37 @@ function renderGreeting() {
   // Restore sort
   $('sort-select').value = currentSort;
 
-  // Restore card size for the grid view — saved across sessions so
-  // the user's library always opens at their preferred density.
+  // Restore row count for the grid view. Old values were pixel widths
+  // (100-280); now the slider's domain is rows (1-6), so anything
+  // outside [1, 6] is a legacy value and falls back to the default 3.
   const savedLibSize = parseInt(localStorage.getItem('tomen_libGridSize'), 10);
-  if (!isNaN(savedLibSize)) setLibrarySize(savedLibSize);
+  const initialRows = (savedLibSize >= 1 && savedLibSize <= 6) ? savedLibSize : 3;
+  setLibrarySize(initialRows);
+
+  // Vertical scroll wheel → horizontal grid scroll. Trackpad two-finger
+  // horizontal swipes (which carry deltaX) pass through naturally.
+  const libBody = $('lib-body');
+  if (libBody) {
+    libBody.addEventListener('wheel', (e) => {
+      const grid = libBody.querySelector('.view-grid');
+      if (!grid || !grid.contains(e.target)) return;
+      if (e.deltaY === 0 || e.deltaX !== 0) return;
+      e.preventDefault();
+      grid.scrollLeft += e.deltaY;
+    }, { passive: false });
+  }
+
+  // Recompute card width on viewport resize — `rows` is fixed but the
+  // available height changes, so we re-derive the per-card size. Debounced
+  // to avoid running the math on every resize tick.
+  let _libSizeResizeTimer = null;
+  window.addEventListener('resize', () => {
+    if (_libSizeResizeTimer) clearTimeout(_libSizeResizeTimer);
+    _libSizeResizeTimer = setTimeout(() => {
+      const slider = $('sl-libsize');
+      if (slider) setLibrarySize(slider.value);
+    }, 150);
+  });
 
   setView(currentView);
 
