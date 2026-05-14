@@ -511,14 +511,24 @@ html, body {
 }
 
 /* ===== SCREENS ===== */
-.screen { height: 100%; display: none; flex-direction: column; overflow: hidden; }
+.screen { height: 100%; display: none; flex-direction: column; overflow: hidden; position: relative; }
 .screen.active { display: flex; }
 
 /* ===== LIBRARY ===== */
+/* Header overlays the library body — content scrolls under it rather
+   than pushing it down. Transparent so the page bg shows behind the
+   toolbar; the lib-body's padding-top reserves space for the initial
+   scroll position. */
 .lib-header {
-  padding: 16px 24px; flex-shrink: 0;
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  z-index: 10;
+  padding: 16px 24px;
   display: flex; align-items: center; gap: 12px;
+  background: transparent;
+  pointer-events: none;
 }
+.lib-header > * { pointer-events: auto; }
 
 .lib-brand {
   font-family: var(--font-read); font-size: 20px; font-weight: 400;
@@ -918,7 +928,9 @@ body[data-lib-view="grid"] .lib-size { display: inline-flex; }
 }
 
 /* Library body */
-.lib-body { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 12px 28px 28px; min-height: 0; }
+/* Top padding reserves room for the absolutely-positioned lib-header
+   so the first row of books isn't hidden under it on initial render. */
+.lib-body { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 76px 28px 28px; min-height: 0; }
 .lib-body::-webkit-scrollbar { width: 4px; }
 .lib-body::-webkit-scrollbar-thumb { background: var(--fog); border-radius: 2px; opacity: 0.3; }
 
@@ -1139,13 +1151,79 @@ body[data-lib-view="grid"] .lib-size { display: inline-flex; }
 .gc-cover { cursor: pointer; }
 .gc-title, .gc-author { cursor: pointer; }
 .gc-cover {
+  --book-depth: 14px;          /* book thickness in screen-space pixels */
   width: 100%; aspect-ratio: 2 / 3;
   /* Less rounded than --radius-sm (8px). 2px keeps a hint of "book
      corner" feel without softening the cover edge into a chrome
      pill. */
   border-radius: 2px;
-  overflow: hidden; box-shadow: var(--shadow-cover); position: relative;
+  /* overflow:visible (was hidden) so the 3D edge slabs can stick out
+     of the cover bounds. Corner clipping is moved to the inner img. */
+  overflow: visible;
+  box-shadow: var(--shadow-cover);
+  position: relative;
   background: var(--card);
+  /* Each cover is its own 3D scene so the edge slabs render correctly
+     in depth when the parent .gc tilts. */
+  transform-style: preserve-3d;
+}
+.gc-cover > img {
+  border-radius: 2px;
+}
+.gc-cover .gc-placeholder {
+  border-radius: 2px;
+  /* The placeholder block sits on the front face; nothing else to do. */
+}
+/* Book "thickness" — four slabs extending behind the cover, each
+   rotated to form one edge of a 3D box of depth --book-depth. The
+   three page-block edges (right / top / bottom) use a striped cream
+   gradient to read as paper; the left edge is the spine, brand-tinted
+   so it matches the theme. Pages have a subtle vertical/horizontal
+   stripe to simulate the layered paper texture. */
+.gc-edge {
+  position: absolute;
+  pointer-events: none;
+  backface-visibility: hidden;
+}
+.gc-edge-r {                                  /* fore edge (right side of pages) */
+  top: 0; left: 100%;
+  width: var(--book-depth); height: 100%;
+  background:
+    repeating-linear-gradient(0deg,
+      rgba(0,0,0,0.07) 0, transparent 1.5px, transparent 3px),
+    linear-gradient(to right, #f4ecd6, #d6c5a0);
+  transform: rotateY(90deg);
+  transform-origin: left center;
+}
+.gc-edge-b {                                  /* foot (bottom of pages) */
+  left: 0; top: 100%;
+  width: 100%; height: var(--book-depth);
+  background:
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,0.07) 0, transparent 1.5px, transparent 3px),
+    linear-gradient(to bottom, #f4ecd6, #d6c5a0);
+  transform: rotateX(-90deg);
+  transform-origin: center top;
+}
+.gc-edge-t {                                  /* head (top of pages) */
+  left: 0; bottom: 100%;
+  width: 100%; height: var(--book-depth);
+  background:
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,0.07) 0, transparent 1.5px, transparent 3px),
+    linear-gradient(to top, #f4ecd6, #d6c5a0);
+  transform: rotateX(90deg);
+  transform-origin: center bottom;
+}
+.gc-edge-l {                                  /* spine — brand-tinted */
+  top: 0; right: 100%;
+  width: var(--book-depth); height: 100%;
+  background: linear-gradient(to right,
+    color-mix(in srgb, var(--brand) 55%, black) 0%,
+    var(--brand) 50%,
+    color-mix(in srgb, var(--brand) 65%, black) 100%);
+  transform: rotateY(-90deg);
+  transform-origin: right center;
 }
 /* Hover-only menu hint on grid cards — small ⋯ chip in the top-right
    corner that appears when the cursor is over the card. Solid-dark
@@ -3262,7 +3340,9 @@ body.lib-select-mode .col-item {
     margin-right: 0;
     margin-top: 4px;
   }
-  .lib-body { padding: 0 12px 12px; }
+  /* On phones the header wraps to two rows (search drops below the
+     brand+toolbar), so the body needs extra top padding to stay clear. */
+  .lib-body { padding: 100px 12px 12px; }
   /* Smaller default minimum on phone, but still honoring the user's
      slider override if they've set one. clamp() floors at 110px so a
      desktop-bucket value pushed to 100 doesn't crush phone cards. */
@@ -5288,7 +5368,7 @@ function renderGridView(el, books) {
     const titleAttr = `${esc(b.title)}${b.author ? ' — ' + esc(b.author) : ''}`;
     return `<div class="gc" data-book-id="${b.id}" title="${titleAttr}">
       <button class="gc-menu-hint" tabindex="-1" aria-hidden="true" onclick="openBookMenu(event, '${b.id}')"><i class="ph ph-dots-three"></i></button>
-      <div class="gc-cover${sel}" data-book-id="${b.id}" onclick="summonAndOpen(event, '${b.id}')">${coverHtml}${p > 0 ? '<div class="gc-prog"><div class="gc-prog-fill" style="width:' + p + '%"></div></div>' : ''}</div>
+      <div class="gc-cover${sel}" data-book-id="${b.id}" onclick="summonAndOpen(event, '${b.id}')">${coverHtml}<div class="gc-edge gc-edge-r"></div><div class="gc-edge gc-edge-b"></div><div class="gc-edge gc-edge-t"></div><div class="gc-edge gc-edge-l"></div>${p > 0 ? '<div class="gc-prog"><div class="gc-prog-fill" style="width:' + p + '%"></div></div>' : ''}</div>
     </div>`;
   }).join('') + '</div>';
   _observeBookCovers(el, '.gc-cover[data-book-id]');
@@ -9934,9 +10014,12 @@ const _TILT = {
   raf: null,
   lastMove: 0,
   states: new WeakMap(),  // .gc element → { rx, ry } current rotation
-  maxAngle: 16,            // degrees of tilt at saturation
-  scale: 700,              // distance (px) over which tilt approaches saturation
-  lerp: 0.07,              // per-frame approach toward target rotation
+  // Must match the `perspective:` value on .view-grid in CSS. atan2 of
+  // the screen-space cursor offset against this perspective distance
+  // gives the literal angle needed for each card's front face to point
+  // straight at the cursor.
+  perspective: 1400,
+  lerp: 0.10,              // per-frame approach toward target rotation
   idleSettleMs: 250,       // keep running this long after cursor stops so the final lerp completes
 };
 
@@ -9974,15 +10057,29 @@ function _tiltTick() {
     if (rect.bottom < -300 || rect.top > vh + 300) continue;
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
-    // tanh saturates softly — a card near the cursor barely tilts;
-    // beyond _TILT.scale pixels the tilt asymptotes toward maxAngle.
-    const dx = Math.tanh((_TILT.mouseX - cx) / _TILT.scale);
-    const dy = Math.tanh((_TILT.mouseY - cy) / _TILT.scale);
-    // CSS rotateY positive rotates the right edge backward, so to
-    // face a cursor on the right we want rotateY negative; rotateX
-    // positive tilts the top backward, so cursor below ⇒ +rotateX.
-    const targetRy = -dx * _TILT.maxAngle;
-    const targetRx = dy * _TILT.maxAngle;
+    const dx = _TILT.mouseX - cx;
+    const dy = _TILT.mouseY - cy;
+    // The card the cursor is currently over stays flat — the hover
+    // lift on .gc-cover reads cleanest against a level card, and a
+    // book pointing at a cursor sitting on top of itself is awkward.
+    const hovered = (
+      _TILT.mouseX >= rect.left && _TILT.mouseX <= rect.right &&
+      _TILT.mouseY >= rect.top && _TILT.mouseY <= rect.bottom
+    );
+    let targetRy, targetRx;
+    if (hovered) {
+      targetRy = 0;
+      targetRx = 0;
+    } else {
+      // atan2 of the screen-space offset against the perspective
+      // distance gives the exact angle for the card's front face to
+      // point straight at the cursor. rotateY positive turns the front
+      // face toward +X (so dx > 0 ⇒ +rotateY); rotateX positive turns
+      // the front face toward -Y (up in screen), so dy > 0 ⇒ -rotateX.
+      const RAD2DEG = 180 / Math.PI;
+      targetRy = RAD2DEG * Math.atan2(dx, _TILT.perspective);
+      targetRx = -RAD2DEG * Math.atan2(dy, _TILT.perspective);
+    }
     let s = _TILT.states.get(card);
     if (!s) {
       s = { rx: 0, ry: 0 };
