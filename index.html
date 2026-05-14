@@ -1125,10 +1125,23 @@ body[data-lib-view="grid"] .lib-size { display: inline-flex; }
   gap: 16px;
   overflow-x: auto;
   overflow-y: hidden;
+  /* Scrollbar hidden across engines; scrolling itself still works
+     via wheel handler (in init) and trackpad/touch swipe. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   /* Perspective kept so the 3D edge slabs on each .gc-cover render
      with depth if/when any rotation is reintroduced. No-op visually
      while .gc has no rotateX/Y. */
   perspective: 1400px;
+}
+.view-grid::-webkit-scrollbar { display: none; }
+/* In grid view the lib-body drops its top/bottom padding so the
+   columns of books extend edge-to-edge vertically — books behind
+   the transparent overlay header are intentional bleed. Horizontal
+   padding stays so the first/last column isn't flush to the edge. */
+body[data-lib-view="grid"] .lib-body {
+  padding-top: 0;
+  padding-bottom: 0;
 }
 /* Note: content-visibility:auto used to live here for offscreen-card
    render deferral, but its paint containment clipped the 3D edge
@@ -5089,6 +5102,11 @@ function setView(v) {
   // slider, which is only useful when the grid is on screen.
   document.body.setAttribute('data-lib-view', v);
   renderLibrary();
+  // Grid view zeroes the lib-body's top/bottom padding for full-bleed
+  // — the usable height the size math reads from clientHeight changes,
+  // so re-derive the per-card width with the new content area.
+  const slider = $('sl-libsize');
+  if (slider) setLibrarySize(slider.value);
 }
 
 // Live card-size adjustment in grid view. Writes to a CSS custom
