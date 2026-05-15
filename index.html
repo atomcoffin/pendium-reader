@@ -521,7 +521,7 @@ html, body {
   position: absolute;
   top: 0; left: 0; right: 0;
   z-index: 10;
-  padding: 16px var(--lib-edge-pad);
+  padding: 18px var(--lib-edge-pad);
   display: flex; align-items: center; gap: 12px;
   background: transparent;
   pointer-events: none;
@@ -539,7 +539,7 @@ html, body {
 .lib-brand, .lib-search, .view-switch-wrap, .lib-toolbar > * { pointer-events: auto; }
 
 .lib-brand {
-  font-family: var(--font-read); font-size: 20px; font-weight: 400;
+  font-family: var(--font-read); font-size: 21px; font-weight: 400;
   letter-spacing: -0.3px; color: var(--ink); line-height: 1;
   white-space: nowrap;
   min-width: 0; overflow: hidden; text-overflow: ellipsis;
@@ -561,23 +561,23 @@ html, body {
   display: flex; align-items: center;
 }
 .lib-search-icon {
-  position: absolute; left: 8px; top: 50%;
+  position: absolute; left: 10px; top: 50%;
   transform: translateY(-50%);
-  font-size: 14px;
+  font-size: 15px;
   color: var(--fog);
   pointer-events: none;
   transition: color 140ms ease;
 }
 .lib-search-input {
   width: 100%;
-  /* Right padding clears both the clear-X (at right: 28px) and the
+  /* Right padding clears both the clear-X (at right: 32px) and the
      trailing "add books" + button (at right: 4px). */
-  padding: 7px 52px 7px 28px;
+  padding: 8px 60px 8px 30px;
   border: none;
   border-bottom: 0.5px solid var(--border);
   background: transparent;
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ink);
   outline: none;
   transition: border-color 140ms ease;
@@ -587,13 +587,13 @@ html, body {
 .lib-search-input:focus { border-bottom-color: var(--brand-ink); }
 .lib-search:focus-within .lib-search-icon { color: var(--brand-ink); }
 .lib-search-clear {
-  position: absolute; right: 28px; top: 50%;
+  position: absolute; right: 34px; top: 50%;
   transform: translateY(-50%);
-  width: 20px; height: 20px;
+  width: 22px; height: 22px;
   border: none; background: transparent;
   color: var(--fog);
   cursor: pointer;
-  font-size: 13px; line-height: 1;
+  font-size: 14px; line-height: 1;
   display: none;
   align-items: center; justify-content: center;
   border-radius: 3px;
@@ -618,18 +618,18 @@ html, body {
    mirror the active tag chip so "on brand" surfaces stay consistent
    across every theme. */
 .lib-search-add {
-  width: 22px; height: 22px;
+  width: 26px; height: 26px;
   display: flex; align-items: center; justify-content: center;
   border: none;
   background: var(--brand);
   color: var(--brand-text);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 5px;
   line-height: 1;
   transition: background 140ms ease;
 }
 .lib-search-add:hover { background: var(--brand-deep); }
-.lib-search-add .ph { font-size: 15px; line-height: 1; }
+.lib-search-add .ph { font-size: 17px; line-height: 1; }
 
 /* Right third of the header — sort + profile, pushed to the far edge.
    flex:1 1 0 mirrors .lib-header-left so the two thirds stay equal. */
@@ -637,6 +637,11 @@ html, body {
   flex: 1 1 0; min-width: 0;
   display: flex; align-items: center; justify-content: flex-end; gap: 6px;
 }
+/* Library-nav profile button is bumped a touch to match the bigger view
+   buttons. Scoped to .lib-toolbar so the reader's icon-btn rules don't
+   pick this up. */
+.lib-toolbar .icon-btn { width: 40px; height: 40px; }
+.lib-toolbar .icon-btn .ph { font-size: 22px; }
 
 /* Import dropdown */
 .import-wrap { position: relative; }
@@ -924,20 +929,19 @@ html, body {
    and flex:0 0 auto so it keeps its natural width as the centered third
    of the header. */
 .view-switch-wrap { position: relative; display: flex; flex: 0 0 auto; }
-.view-switch { display: flex; gap: 2px; background: var(--linen); border-radius: 7px; padding: 3px; }
-/* Wider icon + text buttons — labeled grid / text / detail. */
+.view-switch { display: flex; gap: 3px; background: var(--linen); border-radius: 8px; padding: 4px; }
+/* Icon-only view buttons, sized for tappability and to match the bumped
+   nav scale. */
 .view-switch-btn {
-  display: flex; align-items: center; gap: 6px;
-  padding: 6px 14px;
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px;
   border: none; background: transparent;
-  border-radius: 4px;
-  font-family: var(--font-ui); font-size: 12px; line-height: 1;
+  border-radius: 5px;
   color: var(--stone);
   cursor: pointer;
-  white-space: nowrap;
   transition: color 140ms ease, background 140ms ease;
 }
-.view-switch-btn .ph { font-size: 15px; line-height: 1; }
+.view-switch-btn .ph { font-size: 20px; line-height: 1; }
 .view-switch-btn:hover { color: var(--ink); }
 .view-switch-btn.active { background: var(--card); color: var(--ink); }
 
@@ -3670,11 +3674,8 @@ body.lib-select-mode .col-item {
 }
 @media (min-width: 481px) and (max-width: 768px) {
   :root { --lib-edge-pad: 20px; }
-  .lib-header { padding: 14px var(--lib-edge-pad); }
-  .lib-search { flex-basis: 160px; }
-  /* Tighter view-switch buttons so the centered third leaves room for the
-     brand + search and sort + profile groups on smaller screens. */
-  .view-switch-btn { padding: 6px 9px; }
+  .lib-header { padding: 16px var(--lib-edge-pad); }
+  .lib-search { flex-basis: 180px; }
 }
 
 /* Mobile reader — single-page mode hides the right slot so the left slot
@@ -3731,9 +3732,9 @@ body.lib-select-mode .col-item {
 
 /* Sort select */
 .sort-select {
-  padding: 8px 12px; border-radius: var(--radius-sm);
+  padding: 9px 12px; border-radius: var(--radius-sm);
   border: 0.5px solid var(--border); background: transparent;
-  font-family: var(--font-ui); font-size: 12px; color: var(--stone);
+  font-family: var(--font-ui); font-size: 13px; color: var(--stone);
   cursor: pointer; appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238A7E76' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
@@ -3794,13 +3795,13 @@ body.lib-select-mode .col-item {
     <div class="view-switch-wrap">
       <div class="view-switch" id="view-switch" role="radiogroup" aria-label="Library view">
         <button class="view-switch-btn active" data-view="grid" onclick="onGridViewClick()" title="Grid — browse covers" aria-label="Grid view" role="radio" aria-checked="true">
-          <i class="ph ph-squares-four"></i><span>grid</span>
+          <i class="ph ph-squares-four"></i>
         </button>
         <button class="view-switch-btn" data-view="columns" onclick="setView('columns')" title="Text — scan titles fast" aria-label="Text view" role="radio" aria-checked="false">
-          <i class="ph ph-text-columns"></i><span>text</span>
+          <i class="ph ph-text-columns"></i>
         </button>
         <button class="view-switch-btn" data-view="table" onclick="setView('table')" title="Detail — full info" aria-label="Detail view" role="radio" aria-checked="false">
-          <i class="ph ph-rows"></i><span>detail</span>
+          <i class="ph ph-rows"></i>
         </button>
       </div>
       <!-- Grid card-size slider — a floating popup, opened by clicking the
