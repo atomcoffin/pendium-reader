@@ -5790,6 +5790,17 @@ function getSortedLibrary() {
     const ids = (g && Array.isArray(g.bookIds)) ? new Set(g.bookIds) : new Set();
     pool = pool.filter(b => ids.has(b.id));
   }
+  // Hide books that live inside a group from the default "general" view —
+  // each book should appear in one place at rest. Skipped the moment the
+  // user is actually looking for something (search query, tag filter, or
+  // group filter active), so grouped books resurface during a hunt.
+  if (!q && !_activeTagFilter && !_activeGroupId) {
+    const grouped = new Set();
+    for (const g of groups) {
+      if (Array.isArray(g.bookIds)) for (const id of g.bookIds) grouped.add(id);
+    }
+    if (grouped.size > 0) pool = pool.filter(b => !grouped.has(b.id));
+  }
   const sorted = q ? pool : pool;  // pool is already a fresh array in both branches
   switch (currentSort) {
     case 'title':
