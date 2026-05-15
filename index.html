@@ -526,12 +526,23 @@ html, body {
   background: transparent;
   pointer-events: none;
 }
-.lib-header > * { pointer-events: auto; }
+/* Three flex thirds: the left (brand + search) and right (sort + profile)
+   groups both flex:1 from a 0 basis — equal width — so the auto-width
+   view switcher between them lands dead-center in the bar. */
+.lib-header-left {
+  flex: 1 1 0; min-width: 0;
+  display: flex; align-items: center; gap: 14px;
+}
+/* The header itself is click-through (it overlays the scrolling library);
+   only the actual controls inside the groups take pointer events back. */
+.lib-header-left, .lib-toolbar { pointer-events: none; }
+.lib-brand, .lib-search, .view-switch-wrap, .lib-toolbar > * { pointer-events: auto; }
 
 .lib-brand {
   font-family: var(--font-read); font-size: 20px; font-weight: 400;
   letter-spacing: -0.3px; color: var(--ink); line-height: 1;
   white-space: nowrap;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis;
 }
 .lib-brand .greeting-name {
   color: var(--brand-ink); cursor: pointer;
@@ -547,8 +558,6 @@ html, body {
   position: relative;
   flex: 0 1 240px;
   min-width: 0;
-  margin-left: 20px;
-  margin-right: auto;
   display: flex; align-items: center;
 }
 .lib-search-icon {
@@ -622,7 +631,12 @@ html, body {
 .lib-search-add:hover { background: var(--brand-deep); }
 .lib-search-add .ph { font-size: 15px; line-height: 1; }
 
-.lib-toolbar { display: flex; align-items: center; gap: 6px; }
+/* Right third of the header — sort + profile, pushed to the far edge.
+   flex:1 1 0 mirrors .lib-header-left so the two thirds stay equal. */
+.lib-toolbar {
+  flex: 1 1 0; min-width: 0;
+  display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+}
 
 /* Import dropdown */
 .import-wrap { position: relative; }
@@ -906,11 +920,26 @@ html, body {
 .icon-btn.active { color: var(--brand-ink); }
 
 /* View switcher */
-/* Wrapper is the positioning context for the floating .lib-size popup. */
-.view-switch-wrap { position: relative; display: flex; }
-.view-switch { display: flex; gap: 2px; background: var(--linen); border-radius: 6px; padding: 2px; }
-.view-switch .icon-btn { width: 32px; height: 32px; border-radius: 4px; }
-.view-switch .icon-btn.active { background: var(--card); }
+/* Wrapper is the positioning context for the floating .lib-size popup,
+   and flex:0 0 auto so it keeps its natural width as the centered third
+   of the header. */
+.view-switch-wrap { position: relative; display: flex; flex: 0 0 auto; }
+.view-switch { display: flex; gap: 2px; background: var(--linen); border-radius: 7px; padding: 3px; }
+/* Wider icon + text buttons — labeled grid / text / detail. */
+.view-switch-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 14px;
+  border: none; background: transparent;
+  border-radius: 4px;
+  font-family: var(--font-ui); font-size: 12px; line-height: 1;
+  color: var(--stone);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 140ms ease, background 140ms ease;
+}
+.view-switch-btn .ph { font-size: 15px; line-height: 1; }
+.view-switch-btn:hover { color: var(--ink); }
+.view-switch-btn.active { background: var(--card); color: var(--ink); }
 
 /* Library card-size slider — a floating popup that hangs off the view
    switcher. Opened by clicking the grid view icon (onGridViewClick);
@@ -3582,16 +3611,23 @@ body.lib-select-mode .col-item {
   /* Tighter edge padding on phones — nav, tag strip and all three views
      follow this through --lib-edge-pad. */
   :root { --lib-edge-pad: 12px; }
-  /* On phones, let the search drop to its own row under the header so the
-     toolbar icons don't compress into unusable tap targets. Flex-wrap on
-     lib-header with full-width search + order:10 moves it below. */
+  /* Header reflows to three rows on phones: brand + sort/profile, then a
+     full-width search, then the full-width centered view switcher. The
+     left group dissolves (display: contents) so brand and search can be
+     ordered independently as direct flex children of .lib-header. */
   .lib-header { padding: 12px var(--lib-edge-pad); gap: 8px; flex-wrap: wrap; }
-  .lib-brand { font-size: 16px; }
+  .lib-header-left { display: contents; }
+  .lib-brand { font-size: 16px; order: 1; flex: 1 1 auto; }
+  .lib-toolbar { order: 2; flex: 0 0 auto; }
   .lib-search {
-    order: 10;
+    order: 3;
     flex: 1 1 100%;
-    margin-left: 0;
-    margin-right: 0;
+    margin-top: 4px;
+  }
+  .view-switch-wrap {
+    order: 4;
+    flex: 1 1 100%;
+    justify-content: center;
     margin-top: 4px;
   }
   /* Tighter row gap on phones — setLibrarySize reads this value live so
@@ -3604,13 +3640,15 @@ body.lib-select-mode .col-item {
   .icon-btn { width: 32px; height: 32px; }
   .icon-btn svg { width: 18px; height: 18px; }
   .icon-btn .ph { font-size: 18px; }
-  .view-switch .icon-btn { width: 28px; height: 28px; }
   .sort-select { padding: 6px 24px 6px 8px; font-size: 11px; }
 }
 @media (min-width: 481px) and (max-width: 768px) {
   :root { --lib-edge-pad: 20px; }
   .lib-header { padding: 14px var(--lib-edge-pad); }
-  .lib-search { flex-basis: 180px; margin-left: 12px; }
+  .lib-search { flex-basis: 160px; }
+  /* Tighter view-switch buttons so the centered third leaves room for the
+     brand + search and sort + profile groups on smaller screens. */
+  .view-switch-btn { padding: 6px 9px; }
 }
 
 /* Mobile reader — single-page mode hides the right slot so the left slot
@@ -3688,63 +3726,68 @@ body.lib-select-mode .col-item {
 <!-- ===== LIBRARY SCREEN ===== -->
 <div class="screen active" id="screen-lib">
   <div class="lib-header">
-    <span class="lib-brand" id="lib-greeting"></span>
-    <div class="lib-search" id="lib-search">
-      <i class="ph ph-magnifying-glass lib-search-icon" aria-hidden="true"></i>
-      <input type="text" id="lib-search-input" class="lib-search-input"
-        placeholder="Search library"
-        aria-label="Search library"
-        oninput="setLibrarySearch(this.value)"
-        onkeydown="if (event.key === 'Escape') { this.value = ''; setLibrarySearch(''); this.blur(); }">
-      <button class="lib-search-clear" id="lib-search-clear"
-        onclick="clearLibrarySearch()"
-        aria-label="Clear search"
-        tabindex="-1">
-        <i class="ph ph-x"></i>
-      </button>
-      <!-- "Add books" — a plus at the trailing end of the search bar.
-           Opens the import menu (Add books / Add folder). -->
-      <div class="import-wrap">
-        <button class="lib-search-add" onclick="toggleImportMenu()" title="Add books" aria-label="Add books">
-          <i class="ph ph-plus"></i>
+    <!-- Left group: brand + search. Paired with the right group (sort +
+         profile) as equal-width flex thirds so the view switcher between
+         them sits dead-center in the bar. -->
+    <div class="lib-header-left">
+      <span class="lib-brand" id="lib-greeting"></span>
+      <div class="lib-search" id="lib-search">
+        <i class="ph ph-magnifying-glass lib-search-icon" aria-hidden="true"></i>
+        <input type="text" id="lib-search-input" class="lib-search-input"
+          placeholder="Search library"
+          aria-label="Search library"
+          oninput="setLibrarySearch(this.value)"
+          onkeydown="if (event.key === 'Escape') { this.value = ''; setLibrarySearch(''); this.blur(); }">
+        <button class="lib-search-clear" id="lib-search-clear"
+          onclick="clearLibrarySearch()"
+          aria-label="Clear search"
+          tabindex="-1">
+          <i class="ph ph-x"></i>
         </button>
-        <div class="import-menu" id="import-menu">
-          <button class="import-option" onclick="document.getElementById('file-input').click(); closeImportMenu()">
-            <i class="ph ph-file-text"></i>
-            Add books
+        <!-- "Add books" — a plus at the trailing end of the search bar.
+             Opens the import menu (Add books / Add folder). -->
+        <div class="import-wrap">
+          <button class="lib-search-add" onclick="toggleImportMenu()" title="Add books" aria-label="Add books">
+            <i class="ph ph-plus"></i>
           </button>
-          <button class="import-option" onclick="handleFolderPick(); closeImportMenu()">
-            <i class="ph ph-folder-simple"></i>
-            Add folder
-          </button>
+          <div class="import-menu" id="import-menu">
+            <button class="import-option" onclick="document.getElementById('file-input').click(); closeImportMenu()">
+              <i class="ph ph-file-text"></i>
+              Add books
+            </button>
+            <button class="import-option" onclick="handleFolderPick(); closeImportMenu()">
+              <i class="ph ph-folder-simple"></i>
+              Add folder
+            </button>
+          </div>
         </div>
       </div>
     </div>
-    <div class="lib-toolbar">
-      <!-- View switcher: Grid (default) → Columns → Table. Grid leads
-           because it's the most-used and the new-user default. The grid
-           card-size slider hangs off this wrapper as a floating popup. -->
-      <div class="view-switch-wrap">
-        <div class="view-switch" id="view-switch" role="radiogroup" aria-label="Library view">
-          <button class="icon-btn active" data-view="grid" onclick="onGridViewClick()" title="Grid — browse covers" aria-label="Grid view" role="radio" aria-checked="true">
-            <i class="ph ph-squares-four"></i>
-          </button>
-          <button class="icon-btn" data-view="columns" onclick="setView('columns')" title="Columns — scan titles fast" aria-label="Columns view" role="radio" aria-checked="false">
-            <i class="ph ph-text-columns"></i>
-          </button>
-          <button class="icon-btn" data-view="table" onclick="setView('table')" title="Table — full details" aria-label="Table view" role="radio" aria-checked="false">
-            <i class="ph ph-rows"></i>
-          </button>
-        </div>
-        <!-- Grid card-size slider — a floating popup, opened by clicking the
-             grid view icon (see onGridViewClick). Floating rather than inline
-             so it doesn't eat toolbar space, especially on mobile. -->
-        <div class="lib-size" id="lib-size" aria-label="Grid card size">
-          <i class="ph ph-square" aria-hidden="true"></i>
-          <input type="range" min="1" max="6" step="1" value="3" id="sl-libsize" oninput="setLibrarySize(this.value)" title="Visible rows">
-          <i class="ph ph-square is-large" aria-hidden="true"></i>
-        </div>
+    <!-- View switcher: Grid → Text → Detail. Its own centered group; the
+         grid card-size slider hangs off this wrapper as a floating popup. -->
+    <div class="view-switch-wrap">
+      <div class="view-switch" id="view-switch" role="radiogroup" aria-label="Library view">
+        <button class="view-switch-btn active" data-view="grid" onclick="onGridViewClick()" title="Grid — browse covers" aria-label="Grid view" role="radio" aria-checked="true">
+          <i class="ph ph-squares-four"></i><span>grid</span>
+        </button>
+        <button class="view-switch-btn" data-view="columns" onclick="setView('columns')" title="Text — scan titles fast" aria-label="Text view" role="radio" aria-checked="false">
+          <i class="ph ph-text-columns"></i><span>text</span>
+        </button>
+        <button class="view-switch-btn" data-view="table" onclick="setView('table')" title="Detail — full info" aria-label="Detail view" role="radio" aria-checked="false">
+          <i class="ph ph-rows"></i><span>detail</span>
+        </button>
       </div>
+      <!-- Grid card-size slider — a floating popup, opened by clicking the
+           grid view icon (see onGridViewClick). Floating rather than inline
+           so it doesn't eat toolbar space, especially on mobile. -->
+      <div class="lib-size" id="lib-size" aria-label="Grid card size">
+        <i class="ph ph-square" aria-hidden="true"></i>
+        <input type="range" min="1" max="6" step="1" value="3" id="sl-libsize" oninput="setLibrarySize(this.value)" title="Visible rows">
+        <i class="ph ph-square is-large" aria-hidden="true"></i>
+      </div>
+    </div>
+    <!-- Right group: sort + profile. -->
+    <div class="lib-toolbar">
       <select class="sort-select" id="sort-select" onchange="setSort(this.value)">
         <option value="title">A — Z</option>
         <option value="title-desc">Z — A</option>
@@ -5331,7 +5374,7 @@ async function getSpineColor(book) {
 function setView(v) {
   currentView = v;
   localStorage.setItem('tomen_view', v);
-  document.querySelectorAll('#view-switch .icon-btn').forEach(b => {
+  document.querySelectorAll('#view-switch button').forEach(b => {
     const on = b.dataset.view === v;
     b.classList.toggle('active', on);
     // Keep aria-checked in sync with .active so the radiogroup state is
