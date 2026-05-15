@@ -1396,6 +1396,14 @@ html, body {
 .gc-menu-hint:hover { opacity: 1; }
 .gc-menu-hint .ph { font-size: 16px; }
 .gc-cover img { width: 100%; height: 100%; object-fit: cover; }
+/* Belt-and-suspenders with the dragstart preventDefault — disable the
+   browser's native image drag on every cover image so it can't hijack
+   our pointer-driven drag-to-group gesture. */
+.gc-cover img, .tr-cover img {
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
 .gc-placeholder {
   width: 100%; height: 100%;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -5289,6 +5297,15 @@ function _attachLibraryLongPress() {
   body.dataset.longPressAttached = '1';
   body.addEventListener('pointerdown', _onLibPointerDown);
   body.addEventListener('contextmenu', _onLibContextMenu);
+  // Suppress the browser's native image drag (the default "drag a cover
+  // off to the address bar" behavior). Without this it fires on mousedown
+  // and hijacks the gesture before our pointer-driven drag-to-group can
+  // see it.
+  body.addEventListener('dragstart', (e) => {
+    if (e.target && e.target.closest && e.target.closest('.gc, .tr-item, .col-item')) {
+      e.preventDefault();
+    }
+  });
   // pointermove / pointerup / pointercancel live on document, not lib-body.
   // The long-press menu opens at body level (outside lib-body), so if
   // those listeners were on lib-body the user's finger could move OVER
