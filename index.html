@@ -1296,11 +1296,12 @@ html, body {
      in depth when the parent .gc tilts. */
   transform-style: preserve-3d;
   /* Cursor-follow rotate — _setupHoverRotate sets --gc-hover-x/y on the
-     parent .gc while it's hovered and clears them on leave; the
-     transition eases the cover both as the cursor moves around and back
-     to flat when the cursor exits. */
+     parent .gc while it's hovered and clears them on leave. The long
+     duration + easeOutQuint-style curve gives the cover a lazy trailing
+     follow as the cursor moves, and a slow settle back to flat on exit —
+     matching the chill tempo of the rest of the library motion. */
   transform: rotateY(var(--gc-hover-y, 0deg)) rotateX(var(--gc-hover-x, 0deg));
-  transition: transform 140ms ease-out;
+  transition: transform 450ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .gc-cover > img {
   border-radius: 2px;
