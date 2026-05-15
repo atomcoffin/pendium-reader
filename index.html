@@ -3347,7 +3347,10 @@ body.r-mode-editing .r-inner {
   position: fixed;
   bottom: calc(env(safe-area-inset-bottom, 0px));
   left: 50%;
-  transform: translate(-50%, 120%);
+  /* 100% + margin-bottom clears the element fully off-screen — the old
+     120% left ~7px of the bar peeking above the viewport bottom on top
+     of the grid scrollbar. */
+  transform: translate(-50%, calc(100% + 24px));
   display: flex; align-items: center; gap: 14px;
   padding: 10px 14px;
   margin-bottom: 16px;
