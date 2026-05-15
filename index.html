@@ -1384,24 +1384,6 @@ html, body {
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.28));
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - 4px), 50% 100%, 0 calc(100% - 4px));
 }
-/* Progress % printed down the ribbon. renderGridView only emits this once
-   the ribbon is tall enough to fit the label (see showPct); vertical-rl
-   turns it to read top-to-bottom along the ribbon, and the ribbon's
-   clip-path clips it as a safety if the fit estimate is slightly off. */
-.gc-prog-pct {
-  position: absolute;
-  top: 4px;
-  left: 50%;
-  transform: translateX(-50%);
-  writing-mode: vertical-rl;
-  font-family: var(--font-ui);
-  font-size: 8px;
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: 0.3px;
-  color: var(--brand-text);
-  pointer-events: none;
-}
 
 /* Book-open transition. On grid-card click the orchestrator (see
    summonAndOpen) marks the grid with .is-opening and the clicked
@@ -5880,14 +5862,8 @@ function renderTableView(el, books) {
 }
 
 function renderGridView(el, books) {
-  // Card height drives whether a book's progress ribbon is tall enough to
-  // print its % label — read once here rather than per card.
-  const cardH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--grid-card-height')) || 225;
   el.innerHTML = '<div class="view-grid">' + books.map(b => {
     const p = b.progress || 0;
-    // Show the % text only once the ribbon (p% of the card height) has
-    // room for the rotated label without clipping.
-    const showPct = (p / 100) * cardH >= 30;
     const c = strColor(b.title);
     // Spine color = the cover's stored dominant color (same extraction the
     // old spine view used), falling back to the title-hash color for books
@@ -5923,7 +5899,7 @@ function renderGridView(el, books) {
     const titleAttr = `${esc(b.title)}${b.author ? ' — ' + esc(b.author) : ''}`;
     return `<div class="gc" data-book-id="${b.id}" title="${titleAttr}">
       <button class="gc-menu-hint" tabindex="-1" aria-hidden="true" onclick="openBookMenu(event, '${b.id}')"><i class="ph ph-dots-three"></i></button>
-      <div class="gc-cover${sel}" data-book-id="${b.id}" style="--gc-spine:${spineColor}" onclick="summonAndOpen(event, '${b.id}')">${coverHtml}<div class="gc-edge gc-edge-r"></div><div class="gc-edge gc-edge-b"></div><div class="gc-edge gc-edge-t"></div><div class="gc-edge gc-edge-l"></div>${p > 0 ? `<div class="gc-prog" style="height:${p}%">${showPct ? `<span class="gc-prog-pct">${Math.round(p)}%</span>` : ''}</div>` : ''}</div>
+      <div class="gc-cover${sel}" data-book-id="${b.id}" style="--gc-spine:${spineColor}" onclick="summonAndOpen(event, '${b.id}')">${coverHtml}<div class="gc-edge gc-edge-r"></div><div class="gc-edge gc-edge-b"></div><div class="gc-edge gc-edge-t"></div><div class="gc-edge gc-edge-l"></div>${p > 0 ? `<div class="gc-prog" style="height:${p}%"></div>` : ''}</div>
     </div>`;
   }).join('') + '</div>';
   _observeBookCovers(el, '.gc-cover[data-book-id]');
