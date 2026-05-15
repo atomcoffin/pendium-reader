@@ -5824,11 +5824,14 @@ function setLibrarySize(value) {
     gap = 16;
   }
   // Floor the row height so rows*cardHeight + (rows-1)*gap stays at or
-  // below `usable` — subpixel overflow was the phantom-row culprit. Width
-  // is derived straight from height at the fixed 2:3 cover aspect; neither
-  // dimension is clamped independently (that would skew the ratio), so the
-  // card stays 2:3 at every viewport size.
-  const cardHeight = Math.max(40, Math.floor((usable - (rows - 1) * gap) / rows));
+  // below `usable` — subpixel overflow is the phantom-row culprit. The
+  // extra `-3` reserves a 3px safety buffer so that even when the floor
+  // would produce zero slack (e.g. rows=3 in a viewport where usable-gap
+  // is exactly divisible by 3), browser subpixel rounding can't push the
+  // total over the column height and wrap the last card. Width follows
+  // from height at the fixed 2:3 cover aspect; neither dimension is
+  // clamped independently.
+  const cardHeight = Math.max(40, Math.floor((usable - (rows - 1) * gap - 3) / rows));
   const cardWidth = Math.round(cardHeight * 2 / 3);
   document.documentElement.style.setProperty('--grid-card-min-width', cardWidth + 'px');
   document.documentElement.style.setProperty('--grid-card-height', cardHeight + 'px');
