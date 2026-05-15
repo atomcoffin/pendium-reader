@@ -5064,6 +5064,14 @@ let _dragDropTarget = null;
 
 function _armDragSource(card, bookId, startX, startY, pointerId) {
   _dragSource = { card, bookId, startX, startY, pointerId };
+  // Capture the pointer to lib-body NOW (before the threshold check, not
+  // when drag mode actually enters). On touch, the long-press menu opens
+  // at the press point — without capture, the user's finger ends up over
+  // the menu (which lives at body level, outside lib-body), so subsequent
+  // pointermove events don't reach the lib-body handler and the drag
+  // threshold is never crossed. With capture, all pointer events for
+  // this pointerId route to lib-body until release.
+  try { $('lib-body').setPointerCapture(pointerId); } catch (_) {}
 }
 
 function _enterDragMode(clientX, clientY) {
@@ -5089,9 +5097,7 @@ function _enterDragMode(clientX, clientY) {
   _dragGhost = ghost;
   _dragSource.card.classList.add('gc-drag-source');
   document.body.classList.add('lib-dragging');
-  // Pointer capture keeps events flowing to lib-body even if the cursor
-  // leaves the grid bounds mid-drag.
-  try { $('lib-body').setPointerCapture(_dragSource.pointerId); } catch (_) {}
+  // (Pointer capture was already taken when the source was armed.)
 }
 
 function _updateDrag(e) {
