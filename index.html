@@ -1061,15 +1061,39 @@ html, body {
   grid-template-columns: repeat(var(--lib-cols, 3), minmax(0, 1fr));
   gap: 6px 32px;
   padding: 8px 0;
+  /* Drives the .col-item::before two-digit running index — gives the eye
+     a steady left-edge anchor, Zune-style. Counter resets per render so
+     filtering/sorting keeps the numbering in sync with what's on screen. */
+  counter-reset: bookindex;
 }
 .col-item {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  align-items: baseline;
+  column-gap: 14px;
   padding: 14px 0;
   border-bottom: 0.5px solid var(--border);
   cursor: pointer;
+  counter-increment: bookindex;
   -webkit-user-select: none;
   user-select: none;
 }
+/* Quiet, mono-ish index number on the left of each row. UI face, tight
+   size, faded color — meant to anchor the eye without competing with the
+   title. Brightens slightly on hover so the whole row feels alive. */
+.col-item::before {
+  content: counter(bookindex, decimal-leading-zero);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--fog);
+  letter-spacing: 0.8px;
+  align-self: start;
+  padding-top: 14px;
+  transition: color 140ms ease;
+}
 .col-item:hover .col-title { color: var(--brand-ink); }
+.col-item:hover::before { color: var(--stone); }
 /* Zune-ish title typography: confident, generous, in the reading face.
    Single-line truncation — long titles ellipsize at the column edge
    rather than wrapping; user controls column count via the stepper so
@@ -1082,20 +1106,16 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Author is intentionally pushed back — small, faded, loose-tracked.
+   Reads as a credit beneath the title rather than competing with it. */
 .col-author {
-  font-size: 13px; color: var(--stone); margin-top: 8px;
+  font-family: var(--font-ui);
+  font-size: 11px; color: var(--fog); margin-top: 10px;
+  letter-spacing: 0.3px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-/* Hairline progress underline — rendered only when progress > 0 (see
-   renderColumnsView). 1px brand stroke at the very bottom of the row. */
-.col-progress {
-  height: 1px; background: transparent;
-  margin-top: 10px;
-}
-.col-progress-fill {
-  height: 100%; background: var(--brand);
-}
 .col-item.selected .col-title { color: var(--brand-ink); }
+.col-item.selected::before { color: var(--brand-ink); }
 
 /* === TABLE VIEW ===
    Rich-data layout, one row per book. Small cover thumb, title +
@@ -6595,18 +6615,16 @@ function _setupGridScrollTilt() {
 // progress underline under each title shows reading state at a
 // glance without taking visual weight.
 function renderColumnsView(el, books) {
+  // Progress is intentionally not surfaced in text view — table view is
+  // where reading state lives. Text view stays purely about scanning
+  // titles, so each row is just [index] [title / author].
   el.innerHTML = '<div class="view-columns">' + books.map(b => {
-    const p = b.progress || 0;
     const sel = _libSelectedIds.has(b.id) ? ' selected' : '';
-    // Unread books get no progress slot at all — the row keeps the
-     // bottom border for separation and stays as minimal as possible.
-    const progressFill = p > 0
-      ? `<div class="col-progress"><div class="col-progress-fill" style="width:${p}%"></div></div>`
-      : '';
     return `<div class="col-item${sel}" data-book-id="${b.id}" onclick="openBookById('${b.id}')" title="Right-click or long-press for options">
-      <div class="col-title">${esc(b.title)}</div>
-      <div class="col-author">${esc(b.author || 'Unknown')}</div>
-      ${progressFill}
+      <div class="col-text">
+        <div class="col-title">${esc(b.title)}</div>
+        <div class="col-author">${esc(b.author || 'Unknown')}</div>
+      </div>
     </div>`;
   }).join('') + '</div>';
 }
