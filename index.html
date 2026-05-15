@@ -1443,20 +1443,6 @@ html, body {
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - 2px), 50% 100%, 0 calc(100% - 2px));
 }
 
-/* "+ New group" tile — a flatter, dashed-border variant that sits at the
-   end of the grid as a clear create affordance. */
-.gc-group-create > .gc-cover {
-  display: flex; align-items: center; justify-content: center;
-  background: transparent;
-  border: 1.5px dashed color-mix(in srgb, var(--ink) 25%, transparent);
-  color: var(--stone);
-  box-shadow: none;
-}
-.gc-group-create > .gc-cover .ph { font-size: 36px; line-height: 1; }
-.gc-group-create:hover > .gc-cover {
-  border-color: var(--brand-ink);
-  color: var(--brand-ink);
-}
 
 /* Reading-progress bookmark ribbon. A brand strip pinned to the top of
    the cover, inset from the left (spine) edge; its height is the reading
@@ -3859,6 +3845,10 @@ body.lib-select-mode .col-item {
               <i class="ph ph-folder-simple"></i>
               Add folder
             </button>
+            <button class="import-option" onclick="closeImportMenu(); onCreateGroupClick()">
+              <i class="ph ph-folder-plus"></i>
+              New group
+            </button>
           </div>
         </div>
       </div>
@@ -6182,15 +6172,9 @@ function _renderGroupTile(g) {
     <div class="gc-group-mosaic">${cells.join('')}</div>
   </div>`;
 }
-// Render the trailing "+ New group" affordance. Sits at the end of the
-// grid so the user always has a clear way to start a new collection.
-function _renderCreateGroupTile() {
-  return `<div class="gc gc-group gc-group-create" role="button" aria-label="New group" title="New group" tabindex="0" onclick="onCreateGroupClick()">
-    <div class="gc-cover"><i class="ph ph-plus" aria-hidden="true"></i></div>
-  </div>`;
-}
 // Prompt-driven create flow. Replace prompt() with a nicer modal later;
-// for v1 this is enough to get groups off the ground.
+// for v1 this is enough to get groups off the ground. Invoked from the
+// import menu's "New group" item.
 async function onCreateGroupClick() {
   const name = window.prompt('New group name:');
   if (name === null) return;
@@ -6201,12 +6185,11 @@ async function onCreateGroupClick() {
 }
 
 function renderGridView(el, books) {
-  // Group tiles and the "+ New group" create tile only render when the
-  // library isn't already filtered to a group's members — inside a
-  // group, the view is just that group's books.
+  // Group tiles only render when the library isn't already filtered to a
+  // group's members — inside a group, the view is just that group's
+  // books. (Creation lives in the search-bar import menu now.)
   const showGroups = !_activeGroupId;
   const groupTiles = showGroups ? groups.map(_renderGroupTile).join('') : '';
-  const createTile = showGroups ? _renderCreateGroupTile() : '';
   el.innerHTML = '<div class="view-grid">' + groupTiles + books.map(b => {
     const p = b.progress || 0;
     const c = strColor(b.title);
@@ -6246,7 +6229,7 @@ function renderGridView(el, books) {
       <button class="gc-menu-hint" tabindex="-1" aria-hidden="true" onclick="openBookMenu(event, '${b.id}')"><i class="ph ph-dots-three"></i></button>
       <div class="gc-cover${sel}" data-book-id="${b.id}" style="--gc-spine:${spineColor}" onclick="summonAndOpen(event, '${b.id}')">${coverHtml}<div class="gc-edge gc-edge-r"></div><div class="gc-edge gc-edge-b"></div><div class="gc-edge gc-edge-t"></div><div class="gc-edge gc-edge-l"></div>${p > 0 ? `<div class="gc-prog" style="height:${p}%"></div>` : ''}</div>
     </div>`;
-  }).join('') + createTile + '</div>';
+  }).join('') + '</div>';
   _observeBookCovers(el, '.gc-cover[data-book-id]');
 }
 
