@@ -1160,23 +1160,28 @@ html, body {
   display: flex;
   flex-direction: column;
 }
+/* Single-row layout: cover, identity, tags, format, progress, time,
+   status. All trailing columns are auto-width so empty ones (no tags,
+   no time-left, etc.) collapse cleanly. The "right edge" status block
+   uses margin-left:auto so it always pins to the row's right side. */
 .tr-item {
-  display: grid;
-  grid-template-columns: 56px 1fr auto;
-  gap: 16px;
+  display: flex;
   align-items: center;
-  padding: 14px 0;
+  gap: 16px;
+  padding: 12px 0;
   border-bottom: 0.5px solid var(--border);
   cursor: pointer;
   -webkit-user-select: none;
   user-select: none;
   content-visibility: auto;
-  contain-intrinsic-size: auto 90px;
+  contain-intrinsic-size: auto 72px;
 }
 .tr-item:last-child { border-bottom: none; }
 .tr-item:hover .tr-title { color: var(--brand-ink); }
+
 .tr-cover {
-  width: 56px;
+  width: 44px;
+  flex: 0 0 44px;
   aspect-ratio: 2 / 3;
   background: var(--card);
   position: relative;
@@ -1186,56 +1191,29 @@ html, body {
 }
 .tr-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .tr-placeholder { width: 100%; height: 100%; }
-.tr-main { min-width: 0; }
+
+.tr-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .tr-title {
-  font-family: var(--font-read); font-size: 18px; font-weight: 500;
+  font-family: var(--font-read); font-size: 17px; font-weight: 500;
   line-height: 1.2; color: var(--ink);
   letter-spacing: -0.2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .tr-author {
-  font-size: 12px; color: var(--fog); margin-top: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-family: var(--font-ui);
+  font-size: 11px; color: var(--fog); margin-top: 2px;
+  letter-spacing: 0.3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.tr-meta {
-  margin-top: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 16px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--stone);
-}
-.tr-meta-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.tr-meta-item .ph { font-size: 12px; color: var(--fog); }
-.tr-meta-item.is-done { color: var(--brand-ink); }
-.tr-meta-item.is-done .ph { color: var(--brand-ink); }
-.tr-meta-item.is-unread { color: var(--fog); }
-.tr-progress-bar {
-  display: inline-block;
-  width: 80px;
-  height: 3px;
-  background: color-mix(in srgb, var(--ink) 12%, transparent);
-  position: relative;
-  flex-shrink: 0;
-}
-.tr-progress-bar-fill {
-  position: absolute;
-  left: 0; top: 0; height: 100%;
-  background: var(--brand);
-}
+
 .tr-tags {
+  flex: 0 0 auto;
   display: inline-flex;
   gap: 6px;
-  flex-wrap: wrap;
+  max-width: 200px;
 }
 .tr-tag {
   font-family: var(--font-ui);
@@ -1243,22 +1221,111 @@ html, body {
   text-transform: uppercase;
   letter-spacing: 0.6px;
   color: var(--stone);
-  padding: 2px 6px;
+  padding: 3px 8px;
   border: 0.5px solid var(--border);
+  border-radius: 999px;
+  white-space: nowrap;
 }
-.tr-menu-hint {
-  width: 28px; height: 28px;
-  border: 0;
-  background: transparent;
+
+.tr-format {
+  flex: 0 0 auto;
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  color: var(--stone);
+  padding: 4px 8px;
+  border: 0.5px solid var(--border);
+  border-radius: 3px;
+  text-transform: uppercase;
+  min-width: 44px;
+  text-align: center;
+}
+
+/* Progress: bar + percent label side by side. The unread variant
+   collapses the bar and prints "Unread" in tiny uppercase. The done
+   variant tints the percent in the active brand ink. */
+.tr-progress {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: 160px;
+}
+.tr-progress-bar {
+  flex: 1 1 auto;
+  height: 2px;
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+  position: relative;
+}
+.tr-progress-bar-fill {
+  position: absolute; left: 0; top: 0; height: 100%;
+  background: var(--brand);
+}
+.tr-progress-pct {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--stone);
+  min-width: 36px;
+  text-align: right;
+}
+.tr-progress.is-done .tr-progress-pct { color: var(--brand-ink); }
+.tr-progress.is-unread { width: auto; }
+.tr-progress.is-unread .tr-progress-bar { display: none; }
+.tr-progress.is-unread .tr-progress-pct {
   color: var(--fog);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 140ms ease, color 140ms ease;
-  display: inline-flex; align-items: center; justify-content: center;
+  text-align: left;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  min-width: 0;
 }
-.tr-item:hover .tr-menu-hint { opacity: 0.7; }
-.tr-menu-hint:hover { color: var(--ink); opacity: 1; }
-.tr-menu-hint .ph { font-size: 18px; }
+
+.tr-time {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--stone);
+  min-width: 90px;
+  text-align: right;
+}
+
+/* Right edge: status dot + relative-time chip. margin-left:auto pins
+   the block to the row's right side even when middle columns collapse
+   to zero width (no tags, no time, etc.). */
+.tr-status {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 70px;
+  justify-content: flex-end;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--stone);
+}
+.tr-status-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex: 0 0 8px;
+}
+.tr-status.is-reading .tr-status-dot { background: var(--brand); }
+.tr-status.is-reading { color: var(--ink); }
+/* Stale: half-filled circle — visual nod to "started but paused".
+   linear-gradient clipped to a circle via border-radius:50%. */
+.tr-status.is-stale .tr-status-dot {
+  background: linear-gradient(90deg, var(--stone) 50%, transparent 50%);
+  border: 1px solid var(--stone);
+}
+.tr-status.is-finished .tr-status-dot { background: var(--fog); }
+.tr-status.is-unread .tr-status-dot {
+  background: transparent;
+  border: 1px solid var(--fog);
+}
+.tr-status.is-unread { color: var(--fog); }
 
 /* === GRID VIEW === */
 /* Horizontal-scrolling grid: cards lay out top-to-bottom in each
@@ -3851,6 +3918,9 @@ body.lib-select-mode .col-item {
      .gc, so the aspect ratio holds at every viewport. */
   .view-grid { --grid-gap: 16px; }
   .tr-title { font-size: 16px; }
+  /* Narrow phones: collapse table to identity + status only. The middle
+     columns are progressively dropped at larger breakpoints below. */
+  .tr-time, .tr-tags, .tr-format, .tr-progress { display: none; }
   /* Scale Zune title down on phones — desktop 36px is too aggressive
      at narrow widths, but we still want it noticeably bigger than the
      old 15px so the menu feel survives. */
@@ -3868,6 +3938,17 @@ body.lib-select-mode .col-item {
   :root { --lib-edge-pad: 20px; }
   .lib-header { padding: 16px var(--lib-edge-pad); }
   .lib-search { flex-basis: 180px; }
+  /* Table view: drop tags + reading-time at tablet widths to keep the
+     row from wrapping. Progress + format + status stay. */
+  .tr-tags, .tr-time { display: none; }
+  .tr-progress { width: 120px; }
+}
+/* Mid-width desktop: keep everything, but tighten the time column so
+   the row fits on smaller laptops without wrapping. */
+@media (min-width: 769px) and (max-width: 1100px) {
+  .tr-tags { display: none; }
+  .tr-time { min-width: 70px; }
+  .tr-progress { width: 130px; }
 }
 
 /* Mobile reader — single-page mode hides the right slot so the left slot
@@ -4793,6 +4874,14 @@ function bookMetaFromBook(book) {
     // visibility- and idle-aware tick while the reader is active. Read
     // by the library views to show "X min read" alongside progress.
     readingSeconds: book.readingSeconds || 0,
+    // Source format: 'epub' | 'txt' | 'md' | 'html'. Set at import time;
+    // table view renders it as a small badge. Legacy records without a
+    // format default to 'epub' at render — vast majority of imports.
+    format: book.format || null,
+    // Wall-clock timestamp (ms since epoch) of the most recent time the
+    // user opened this book. Drives the table-view status indicator
+    // (reading / stale / unread). Updated in openBookById.
+    lastReadAt: book.lastReadAt || 0,
     // User-defined tags. Free-form strings, lowercased+trimmed on save
     // for stable de-duplication across the library. No separate tag
     // store — the global tag list is derived from this union at render.
@@ -6821,43 +6910,119 @@ function renderTableView(el, books) {
     } else {
       coverInner = `<div class="tr-placeholder" style="background:linear-gradient(145deg,${c[0]},${c[1]})"></div>`;
     }
-    // Estimate time to finish from content size and progress.
-    let timeMeta = '';
-    if (b.contentSize && p < 100) {
-      const textChars = b.contentSize * 0.75;
-      const remainingChars = textChars * (1 - p / 100);
-      const mins = estimateReadingMinutes(remainingChars);
-      const formatted = formatReadingTime(mins);
-      if (formatted) timeMeta = `<span class="tr-meta-item"><i class="ph ph-clock" aria-hidden="true"></i>${formatted} left</span>`;
+
+    // Tags: first two inline, plus a "+N" overflow chip when there are
+    // more. Keeps the row from drowning in chips for heavily-tagged books.
+    let tagsHTML = '';
+    if (Array.isArray(b.tags) && b.tags.length > 0) {
+      const head = b.tags.slice(0, 2).map(t => `<span class="tr-tag">${esc(t)}</span>`).join('');
+      const overflow = b.tags.length > 2 ? `<span class="tr-tag">+${b.tags.length - 2}</span>` : '';
+      tagsHTML = `<div class="tr-tags">${head}${overflow}</div>`;
     }
-    const readDuration = _formatReadingDuration(b.readingSeconds);
-    const readMeta = readDuration
-      ? `<span class="tr-meta-item"><i class="ph ph-eye" aria-hidden="true"></i>${readDuration} read</span>`
-      : '';
-    const tags = Array.isArray(b.tags) && b.tags.length > 0
-      ? '<span class="tr-tags">' + b.tags.map(t => `<span class="tr-tag">${esc(t)}</span>`).join('') + '</span>'
-      : '';
-    const progressLabel = isFinished
-      ? '<span class="tr-meta-item is-done"><i class="ph ph-check" aria-hidden="true"></i>Finished</span>'
-      : isReading
-        ? `<span class="tr-meta-item"><span class="tr-progress-bar"><span class="tr-progress-bar-fill" style="width:${p}%"></span></span><span>${Math.round(p)}%</span></span>`
-        : '<span class="tr-meta-item is-unread">Unread</span>';
+
+    // Format badge — small uppercase pill. Legacy records without a
+    // stored format default to 'epub' (the vast majority of imports).
+    const format = (b.format || 'epub').toUpperCase();
+    const formatHTML = `<div class="tr-format">${esc(format)}</div>`;
+
+    // Progress: bar + percent for reading, just "Finished" / "Unread"
+    // otherwise. Unread variant hides the bar so the row stays clean.
+    let progressHTML;
+    if (isFinished) {
+      progressHTML = `<div class="tr-progress is-done">
+        <span class="tr-progress-bar"><span class="tr-progress-bar-fill" style="width:100%"></span></span>
+        <span class="tr-progress-pct">100%</span>
+      </div>`;
+    } else if (isReading) {
+      progressHTML = `<div class="tr-progress">
+        <span class="tr-progress-bar"><span class="tr-progress-bar-fill" style="width:${p}%"></span></span>
+        <span class="tr-progress-pct">${Math.round(p)}%</span>
+      </div>`;
+    } else {
+      progressHTML = `<div class="tr-progress is-unread">
+        <span class="tr-progress-pct">Unread</span>
+      </div>`;
+    }
+
+    // Time column: "X left" while reading, "~X read" estimated total for
+    // unread, "Finished" for done. Uses the user-selected reading pace
+    // (Profile → reading speed) via estimateReadingMinutes.
+    let timeStr = '';
+    if (isFinished) {
+      timeStr = 'Finished';
+    } else if (b.contentSize) {
+      const textChars = b.contentSize * 0.75;
+      if (isReading) {
+        const mins = estimateReadingMinutes(textChars * (1 - p / 100));
+        const f = formatReadingTime(mins);
+        if (f) timeStr = `${f} left`;
+      } else {
+        const mins = estimateReadingMinutes(textChars);
+        const f = formatReadingTime(mins);
+        if (f) timeStr = `~${f}`;
+      }
+    }
+    const timeHTML = `<div class="tr-time">${esc(timeStr)}</div>`;
+
+    // Right-edge status: dot + relative-time chip. Helpers below classify
+    // the state and format the timestamp.
+    const status = _bookStatus(b);
+    const statusTime = (status === 'unread') ? '—' : _formatRelativeTime(b.lastReadAt);
+    const statusHTML = `<div class="tr-status is-${status}">
+      <span class="tr-status-dot"></span>
+      <span class="tr-status-time">${esc(statusTime)}</span>
+    </div>`;
+
     return `<div class="tr-item${sel}" data-book-id="${b.id}" onclick="openBookById('${b.id}')" title="Right-click or long-press for options">
       <div class="tr-cover" data-book-id="${b.id}">${coverInner}</div>
       <div class="tr-main">
         <div class="tr-title">${esc(b.title)}</div>
         <div class="tr-author">${esc(b.author || 'Unknown')}</div>
-        <div class="tr-meta">
-          ${progressLabel}
-          ${timeMeta}
-          ${readMeta}
-          ${tags}
-        </div>
       </div>
-      <button class="tr-menu-hint" tabindex="-1" aria-hidden="true" onclick="openBookMenu(event, '${b.id}')"><i class="ph ph-dots-three"></i></button>
+      ${tagsHTML}
+      ${formatHTML}
+      ${progressHTML}
+      ${timeHTML}
+      ${statusHTML}
     </div>`;
   }).join('') + '</div>';
   _observeBookCovers(el, '.tr-cover[data-book-id]');
+}
+
+// Short relative-time chip ("2d", "3w", "6mo", "—") used by table view's
+// right-edge status block. Tuned for "at-a-glance, how recent" — units
+// flip at natural thresholds (minutes for the last hour, hours for the
+// last day, days under two weeks, weeks under two months, months under
+// a year, years beyond). Returns "—" for missing timestamps.
+function _formatRelativeTime(ts) {
+  if (!ts) return '—';
+  const dt = Date.now() - ts;
+  if (dt < 60 * 1000) return 'now';
+  const secs = dt / 1000;
+  if (secs < 3600) return Math.floor(secs / 60) + 'm';
+  if (secs < 86400) return Math.floor(secs / 3600) + 'h';
+  const days = secs / 86400;
+  if (days < 14) return Math.floor(days) + 'd';
+  if (days < 60) return Math.floor(days / 7) + 'w';
+  if (days < 365) return Math.floor(days / 30) + 'mo';
+  return Math.floor(days / 365) + 'y';
+}
+
+// Classify a book for the right-edge status indicator. The "reading"
+// vs "stale" threshold is deliberately generous (30 days) — skipping
+// a book for a few weeks shouldn't read as abandonment. Returns one of
+// 'reading' | 'stale' | 'finished' | 'unread'.
+function _bookStatus(book) {
+  const p = book.progress || 0;
+  if (p >= 100) return 'finished';
+  if (p <= 0) return 'unread';
+  const last = book.lastReadAt || 0;
+  // Pre-lastReadAt books have progress but no timestamp — they were
+  // opened before this column existed. Render as stale rather than
+  // mislabeling them "unread"; the indicator self-corrects on next open.
+  if (!last) return 'stale';
+  const days = (Date.now() - last) / 86400000;
+  return days > 30 ? 'stale' : 'reading';
 }
 
 // Render a single group tile: a book-sized but otherwise invisible
@@ -7130,11 +7295,18 @@ async function loadTextFile(file, batch = false) {
     html = plainTextToHtml(text, title);
   }
 
+  // Derive a stable format token from the original filename extension —
+  // recorded on the book record so table view can show the right badge
+  // without re-inspecting the file later.
+  let format = 'txt';
+  if (lowerName.endsWith('.html') || lowerName.endsWith('.htm')) format = 'html';
+  else if (lowerName.endsWith('.md') || lowerName.endsWith('.markdown')) format = 'md';
   const book = {
     id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
     title, author: '', cover: null,
     chapters: [{ title, html }], toc: [{ title, index: 0 }],
-    progress: 0, chapterIndex: 0, scrollPos: 0
+    progress: 0, chapterIndex: 0, scrollPos: 0,
+    format
   };
   // Post-parse dedup against (title, author). Plain-text files have empty
   // author so the match is title-only here, but the comparison structure
@@ -7158,7 +7330,7 @@ async function loadTextFile(file, batch = false) {
     coverV: book.coverV || 3,
     progress: 0, chapterIndex: 0, scrollPos: 0,
     chapterCount: 1, contentSize: html.length,
-    fontFace: null
+    fontFace: null, format, lastReadAt: 0
   });
   _bumpLibraryVersion();
   if (!batch) renderLibrary();
@@ -7795,6 +7967,7 @@ async function loadEpub(file, batch = false) {
       id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
       title, author, cover, chapters: bookChapters, toc: finalToc,
       progress: 0, chapterIndex: 0, scrollPos: 0, spineColor,
+      format: 'epub',
       // coverV=3 means the cover lives in the covers store (split out
       // from the books store as of DB v3). The book object still
       // carries `cover` in memory for the current session so the grid
@@ -7838,7 +8011,7 @@ async function loadEpub(file, batch = false) {
       coverV: book.coverV || 3,
       progress: 0, chapterIndex: 0, scrollPos: 0,
       chapterCount: bookChapters.length, contentSize, spineColor,
-      fontFace: null
+      fontFace: null, format: 'epub', lastReadAt: 0
     });
     _bumpLibraryVersion();
     if (!batch) renderLibrary();
@@ -8024,6 +8197,25 @@ async function openBookById(id) {
   // is loaded so a stale "fn1" entry can't resolve to the previous book.
   _noteCache.clear();
   localStorage.setItem('tomen_lastRead', id);
+  // Stamp the per-book last-opened timestamp. The library array carries
+  // the meta the views render from, so write it there immediately; the
+  // subsequent saveProgress / book-close path persists it to IDB via
+  // bookMetaFromBook. Stamped on every open (not only on first open or
+  // on close) so a quick "peek" still updates the table-view status.
+  {
+    const _now = Date.now();
+    const _idx = library.findIndex(b => b.id === id);
+    if (_idx >= 0) {
+      library[_idx].lastReadAt = _now;
+      _bumpLibraryVersion();
+      // Fire-and-forget persistence so the timestamp survives even if
+      // the user immediately closes the tab without triggering a
+      // saveProgress write. Ignore failures — the in-memory value
+      // already drives the library UI.
+      saveBookMeta(library[_idx]).catch(() => {});
+    }
+    meta.lastReadAt = _now;
+  }
   showLoading(true, 'Opening book…');
   try {
     const content = await loadBookContent(meta.id);
