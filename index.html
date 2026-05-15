@@ -1056,8 +1056,9 @@ html, body {
    show reading state without taking visual weight. */
 .view-columns {
   display: grid;
-  /* Fewer, wider columns so the bumped-up titles have room to read. */
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  /* Column count is user-controlled via the +/- popup that hangs off the
+     text-view icon. Default 3; setLibraryColumns rewrites --lib-cols. */
+  grid-template-columns: repeat(var(--lib-cols, 3), minmax(0, 1fr));
   gap: 6px 32px;
   padding: 8px 0;
 }
@@ -1069,16 +1070,17 @@ html, body {
   user-select: none;
 }
 .col-item:hover .col-title { color: var(--brand-ink); }
-/* Zune-ish title typography: confident, generous, in the reading face,
-   2-line clamp so long titles ellipsize cleanly. */
+/* Zune-ish title typography: confident, generous, in the reading face.
+   Single-line truncation — long titles ellipsize at the column edge
+   rather than wrapping; user controls column count via the stepper so
+   they can widen the columns if titles are getting cut. */
 .col-title {
   font-family: var(--font-read); font-size: 36px; font-weight: 400;
   line-height: 1.05; color: var(--ink);
   letter-spacing: -0.6px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 .col-author {
   font-size: 13px; color: var(--stone); margin-top: 8px;
@@ -3800,6 +3802,9 @@ body.lib-select-mode .col-item {
      at narrow widths, but we still want it noticeably bigger than the
      old 15px so the menu feel survives. */
   .col-title { font-size: 26px; letter-spacing: -0.4px; }
+  /* Phones can't usefully hold the user-picked column count — force a
+     single column regardless of --lib-cols so titles get full width. */
+  .view-columns { grid-template-columns: 1fr; }
   .icon-btn { width: 32px; height: 32px; }
   .icon-btn svg { width: 18px; height: 18px; }
   .icon-btn .ph { font-size: 18px; }
@@ -3934,7 +3939,7 @@ body.lib-select-mode .col-item {
         <button class="view-switch-btn active" data-view="grid" onclick="onGridViewClick()" title="Grid — browse covers" aria-label="Grid view" role="radio" aria-checked="true">
           <i class="ph ph-squares-four"></i>
         </button>
-        <button class="view-switch-btn" data-view="columns" onclick="setView('columns')" title="Text — scan titles fast" aria-label="Text view" role="radio" aria-checked="false">
+        <button class="view-switch-btn" data-view="columns" onclick="onColumnsViewClick()" title="Text — scan titles fast" aria-label="Text view" role="radio" aria-checked="false">
           <i class="ph ph-text-columns"></i>
         </button>
         <button class="view-switch-btn" data-view="table" onclick="setView('table')" title="Detail — full info" aria-label="Detail view" role="radio" aria-checked="false">
@@ -3949,6 +3954,15 @@ body.lib-select-mode .col-item {
         <button class="lib-size-btn" id="lib-size-dec" onclick="libSizeDec()" aria-label="Fewer rows">−</button>
         <span class="lib-size-num" id="lib-size-num" aria-live="polite">3</span>
         <button class="lib-size-btn" id="lib-size-inc" onclick="libSizeInc()" aria-label="More rows">+</button>
+      </div>
+      <!-- Text-view column count stepper — same shape as the grid rows
+           popup, opened by clicking the text view icon. Drives --lib-cols
+           which .view-columns reads to set grid-template-columns live. -->
+      <div class="lib-size" id="lib-cols" aria-label="Text columns">
+        <span class="lib-size-label">columns</span>
+        <button class="lib-size-btn" id="lib-cols-dec" onclick="libColsDec()" aria-label="Fewer columns">−</button>
+        <span class="lib-size-num" id="lib-cols-num" aria-live="polite">3</span>
+        <button class="lib-size-btn" id="lib-cols-inc" onclick="libColsInc()" aria-label="More columns">+</button>
       </div>
     </div>
     <!-- Right group: sort + profile. -->
@@ -6031,8 +6045,10 @@ function setView(v) {
   // Leaving grid view closes the floating card-size slider — it's a
   // grid-only control. Switching TO grid doesn't auto-open it; that's
   // onGridViewClick's job, so a programmatic setView (e.g. on load)
-  // doesn't pop the slider unprompted.
+  // doesn't pop the slider unprompted. Same pattern for the text-view
+  // columns popup: only the text view owns it.
   if (v !== 'grid') setLibSizePopup(false);
+  if (v !== 'columns') setLibColsPopup(false);
   // Grid view: zero lib-body padding so books bleed to all four edges
   // of the viewport — they extend behind the transparent overlay
   // header at top and run off the screen edge horizontally as the
@@ -6068,15 +6084,42 @@ function toggleLibSizePopup() {
   const el = $('lib-size');
   if (el) el.classList.toggle('open');
 }
+// Text-view click — symmetric to onGridViewClick. First click switches
+// to text view and reveals the column-count stepper; clicking the icon
+// again while text view is active toggles the popup.
+function onColumnsViewClick() {
+  if (currentView === 'columns') {
+    toggleLibColsPopup();
+  } else {
+    setView('columns');
+    setLibColsPopup(true);
+  }
+}
+function setLibColsPopup(show) {
+  const el = $('lib-cols');
+  if (el) el.classList.toggle('open', show);
+}
+function toggleLibColsPopup() {
+  const el = $('lib-cols');
+  if (el) el.classList.toggle('open');
+}
 // Close the card-size popup on any click outside it. The grid view icon
 // is excluded — onGridViewClick already toggles the popup, and letting
-// this handler fire on the same click would just cancel that out.
+// this handler fire on the same click would just cancel that out. Same
+// pattern for the text-view columns popup.
 document.addEventListener('click', e => {
-  const el = $('lib-size');
-  if (!el || !el.classList.contains('open')) return;
-  if (e.target.closest('.lib-size')) return;
-  if (e.target.closest('[data-view="grid"]')) return;
-  el.classList.remove('open');
+  const sizeEl = $('lib-size');
+  if (sizeEl && sizeEl.classList.contains('open')
+      && !e.target.closest('.lib-size')
+      && !e.target.closest('[data-view="grid"]')) {
+    sizeEl.classList.remove('open');
+  }
+  const colsEl = $('lib-cols');
+  if (colsEl && colsEl.classList.contains('open')
+      && !e.target.closest('#lib-cols')
+      && !e.target.closest('[data-view="columns"]')) {
+    colsEl.classList.remove('open');
+  }
 });
 // Scrolling the grid also closes the popup — once you start browsing the
 // shelf you're done sizing. scroll doesn't bubble, so listen in capture;
@@ -6169,6 +6212,28 @@ function _currentLibSize() {
 }
 function libSizeInc() { setLibrarySize(_currentLibSize() + 1); }
 function libSizeDec() { setLibrarySize(_currentLibSize() - 1); }
+
+// Text-view column count — written to --lib-cols, read by .view-columns
+// in CSS. Range 1-6 mirrors the grid stepper. Persisted across sessions
+// (preference, not device-bucketed). No re-render needed: the CSS grid
+// reflows live when the custom property changes.
+function setLibraryColumns(value) {
+  const cols = Math.max(1, Math.min(6, parseInt(value, 10) || 3));
+  document.documentElement.style.setProperty('--lib-cols', cols);
+  const numEl = $('lib-cols-num');
+  if (numEl) numEl.textContent = String(cols);
+  const dec = $('lib-cols-dec');
+  const inc = $('lib-cols-inc');
+  if (dec) dec.disabled = cols <= 1;
+  if (inc) inc.disabled = cols >= 6;
+  localStorage.setItem('tomen_libColsCount', String(cols));
+}
+function _currentLibCols() {
+  const saved = parseInt(localStorage.getItem('tomen_libColsCount'), 10);
+  return (saved >= 1 && saved <= 6) ? saved : 3;
+}
+function libColsInc() { setLibraryColumns(_currentLibCols() + 1); }
+function libColsDec() { setLibraryColumns(_currentLibCols() - 1); }
 
 function setSort(s) {
   currentSort = s;
@@ -11461,6 +11526,11 @@ function renderGreeting() {
   const savedLibSize = parseInt(localStorage.getItem('tomen_libGridSize'), 10);
   const initialRows = (savedLibSize >= 1 && savedLibSize <= 6) ? savedLibSize : 3;
   setLibrarySize(initialRows);
+
+  // Restore the text-view column count — same shape as the grid rows
+  // restore: clamped to [1, 6], default 3. Sets --lib-cols so the CSS
+  // grid is right on first paint regardless of which view is active.
+  setLibraryColumns(_currentLibCols());
 
   // Smooth wheel scrolling for the library — eases mouse-wheel input on
   // both the vertical (columns/table) and horizontal (grid) axes. See
