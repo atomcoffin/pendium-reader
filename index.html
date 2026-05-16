@@ -291,6 +291,33 @@ body.crt .brightness-dim { display: none; }
   --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.44);
 }
 
+/* Highlighter — the chartreuse brand color as the paper itself. The
+   palette inverts the usual relationship: where every other theme uses
+   brand as the accent against a paper background, here brand IS the
+   background and accents are deep-green/ink to keep contrast high.
+   Loud, vibe-forward, but still legible — ink darkens to nearly black
+   for body text and stone/fog graduate to muted olives. */
+.highlighter {
+  --paper: #C8FF00;
+  --linen: #B6EE00;
+  --card: #D8FF40;
+  --paper-edge: #A0D800;
+  --ink: #1A2908;
+  --stone: #3D5510;
+  --fog: #6E8B22;
+  /* Brand accents (progress bars, ribbon, etc.) need to stand against
+     the chartreuse paper, so they reuse the deep-green ink palette
+     rather than the chartreuse default. brand-text goes the other
+     direction so labels printed onto brand-colored chips remain bright. */
+  --brand: #1A2908;
+  --brand-ink: #1A2908;
+  --brand-deep: #2C4214;
+  --brand-text: #C8FF00;
+  --border: rgba(26, 41, 8, 0.10);
+  --shadow-cover: 0 4px 16px rgba(26, 41, 8, 0.14);
+  --shadow-float: 0 8px 32px rgba(26, 41, 8, 0.22);
+}
+
 /* ===== Experimental themes =====
    These prioritize visual concept over pure legibility. Each pairs a
    palette with one or two layered effects (scanlines, grid lines,
@@ -2838,6 +2865,8 @@ body.r-mode-editing .r-inner {
 .swatch-chip[data-swatch="dark"]::after    { background: #B8E635; }
 .swatch-chip[data-swatch="inkwell"] { background: #152220; }
 .swatch-chip[data-swatch="inkwell"]::after { background: #B8E635; }
+.swatch-chip[data-swatch="highlighter"] { background: #C8FF00; }
+.swatch-chip[data-swatch="highlighter"]::after { background: #1A2908; }
 .swatch-chip[data-swatch="crt"]     { background: #0A0805; }
 .swatch-chip[data-swatch="crt"]::after     { background: #FFD080; }
 .swatch-chip[data-swatch="terminal"]   { background: #050805; }
@@ -4556,6 +4585,10 @@ body.lib-select-mode .col-item {
   <button class="theme-menu-item" role="menuitem" data-theme="inkwell" onclick="pickTheme('inkwell')">
     <span class="swatch-chip" data-swatch="inkwell"></span>
     <span class="theme-menu-name">Inkwell</span>
+  </button>
+  <button class="theme-menu-item" role="menuitem" data-theme="highlighter" onclick="pickTheme('highlighter')">
+    <span class="swatch-chip" data-swatch="highlighter"></span>
+    <span class="theme-menu-name">Highlighter</span>
   </button>
   <div class="theme-menu-section">Experimental</div>
   <button class="theme-menu-item" role="menuitem" data-theme="crt" onclick="pickTheme('crt')">
@@ -10796,17 +10829,18 @@ const _THEME_PAPER_COLORS = {
 // List of all non-default theme class names. Used by setTheme to remove
 // the previous theme before applying a new one — keeping this as a single
 // source of truth so adding a future theme only requires one edit here.
-const _THEME_CLASSES = ['dark', 'inkwell', 'paper', 'crt', 'terminal', 'blueprint', 'brutalist', 'horror'];
+const _THEME_CLASSES = ['dark', 'inkwell', 'paper', 'highlighter', 'crt', 'terminal', 'blueprint', 'brutalist', 'horror'];
 // Theme metadata for the picker: display name, category (drives the
 // "Reading"/"Experimental" grouping in the menu), and forcesFace (if
 // present, the theme hardcodes that reading face, so the Appearance
 // panel's Typeface row is locked to prevent the user from making a
 // change that would have no visible effect under this theme).
 const _THEME_INFO = {
-  '':          { name: 'Light',     category: 'reading' },
-  'paper':     { name: 'Paper',     category: 'reading' },
-  'dark':      { name: 'Dark',      category: 'reading' },
-  'inkwell':   { name: 'Inkwell',   category: 'reading' },
+  '':            { name: 'Light',       category: 'reading' },
+  'paper':       { name: 'Paper',       category: 'reading' },
+  'dark':        { name: 'Dark',        category: 'reading' },
+  'inkwell':     { name: 'Inkwell',     category: 'reading' },
+  'highlighter': { name: 'Highlighter', category: 'reading' },
   'crt':       { name: 'CRT',       category: 'experimental' },
   'terminal':  { name: 'Terminal',  category: 'experimental', forcesFace: 'mono' },
   'blueprint': { name: 'Blueprint', category: 'experimental' },
