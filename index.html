@@ -1641,9 +1641,10 @@ body.lib-dragging .view-grid {
    the cover, inset from the left (spine) edge; its height is the reading
    progress, so it hangs further down the more you've read — full height,
    touching the bottom, at 100%. Height is set inline from the progress %;
-   not rendered at all at 0%. The clip-path notches a little V into the
-   hanging end so it reads as a ribbon rather than a plain bar; drop-shadow
-   (not box-shadow) is used so the shadow follows that notched shape. */
+   not rendered at all at 0%. The clip-path notches a V *upward* into the
+   hanging end so the ribbon ends in two corner points and a center notch
+   — classic fishtail bookmark silhouette. drop-shadow (not box-shadow)
+   follows that notched outline. */
 .gc-prog {
   position: absolute;
   top: 0; left: 12px;
@@ -1651,7 +1652,7 @@ body.lib-dragging .view-grid {
   z-index: 1;
   background: var(--brand);
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.28));
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 4px), 50% 100%, 0 calc(100% - 4px));
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - 4px), 0 100%);
 }
 
 /* Register --book-depth as a <length> so the press animation can
