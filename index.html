@@ -577,6 +577,45 @@ html, body {
 }
 .lib-brand .greeting-name:hover { border-bottom-color: var(--brand-ink); }
 
+/* Group-filter breadcrumb. Takes over the greeting slot whenever an
+   _activeGroupId is set — back arrow on the left, group name in the
+   middle, rename pencil on the right. Replaces the easily-missed
+   tiny chip with explicit, clickable affordances. */
+.lib-brand-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.lib-brand-back,
+.lib-brand-rename {
+  width: 28px; height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--stone);
+  cursor: pointer;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 140ms ease, color 140ms ease;
+}
+.lib-brand-back:hover,
+.lib-brand-rename:hover { background: var(--linen); color: var(--brand-ink); }
+.lib-brand-back .ph,
+.lib-brand-rename .ph { font-size: 18px; line-height: 1; }
+.lib-brand-group-name {
+  font-family: var(--font-read);
+  font-size: 21px;
+  color: var(--ink);
+  letter-spacing: -0.3px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 360px;
+}
+
 /* Library search. Sits between the greeting and the toolbar, taking the
    flex growth slot so the toolbar stays pinned right. The input is styled
    minimally — single-underline focus ring, no drop-shadow, no pill border —
@@ -5766,9 +5805,10 @@ function _renderTagFilterStrip() {
   const strip = $('lib-tag-strip');
   if (!strip) return;
   const tags = _allLibraryTags();
-  const groupChip = _activeGroupId ? _findGroup(_activeGroupId) : null;
-  // Strip is hidden only when there are no tags AND no active group filter.
-  if (tags.length === 0 && !groupChip) {
+  // Strip is hidden when there are no tags. Active group filter is now
+  // surfaced in the header breadcrumb (see renderGreeting), not as a
+  // chip down here — kept the strip focused on tag filters only.
+  if (tags.length === 0) {
     if (_tagStripCache !== 'empty') {
       strip.hidden = true;
       strip.innerHTML = '';
@@ -5777,20 +5817,14 @@ function _renderTagFilterStrip() {
     _activeTagFilter = null;
     return;
   }
-  const cacheKey = tags.join('|') + '||' + (_activeTagFilter || '') + '||g:' + (groupChip ? groupChip.id + ':' + groupChip.name : '');
+  const cacheKey = tags.join('|') + '||' + (_activeTagFilter || '');
   if (_tagStripCache === cacheKey) return;
   strip.hidden = false;
   const parts = [];
-  // Group chip leads when active. Clicking the ✕ clears the group filter.
-  if (groupChip) {
-    parts.push(`<button class="lib-tag-chip lib-group-chip active" onclick="setGroupFilter(null)" aria-label="Clear group filter"><i class="ph ph-folder-simple" aria-hidden="true"></i>${esc(_groupDisplayName(groupChip))}<span class="lib-tag-chip-x" aria-hidden="true">✕</span></button>`);
-  }
-  if (tags.length > 0) {
-    parts.push(`<button class="lib-tag-chip${_activeTagFilter === null ? ' active' : ''}" onclick="setTagFilter(null)">All</button>`);
-    for (const t of tags) {
-      const safe = esc(t);
-      parts.push(`<button class="lib-tag-chip${_activeTagFilter === t ? ' active' : ''}" onclick="setTagFilter('${safe.replace(/'/g, "\\'")}')">${safe}</button>`);
-    }
+  parts.push(`<button class="lib-tag-chip${_activeTagFilter === null ? ' active' : ''}" onclick="setTagFilter(null)">All</button>`);
+  for (const t of tags) {
+    const safe = esc(t);
+    parts.push(`<button class="lib-tag-chip${_activeTagFilter === t ? ' active' : ''}" onclick="setTagFilter('${safe.replace(/'/g, "\\'")}')">${safe}</button>`);
   }
   strip.innerHTML = parts.join('');
   _tagStripCache = cacheKey;
@@ -6767,6 +6801,10 @@ function getSortedLibrary() {
 
 function renderLibrary() {
   const body = $('lib-body');
+  // Header brand (greeting OR active-group breadcrumb) is re-derived
+  // every render so it stays in sync with _activeGroupId / a group
+  // rename / a deletion. Cheap — a single innerHTML rewrite.
+  renderGreeting();
   // Tag strip mirrors current library state on every render — cheap and
   // keeps it accurate after add/remove/delete without manual sync calls.
   _renderTagFilterStrip();
@@ -12129,8 +12167,24 @@ function getGreeting() {
 }
 
 function renderGreeting() {
-  const name = localStorage.getItem('tomen_name') || '';
   const el = $('lib-greeting');
+  if (!el) return;
+  // When a group filter is active, the greeting slot becomes a
+  // breadcrumb: back-arrow (clears the filter), group name, rename
+  // pencil. Replaces the small chip-with-tiny-X that was easy to miss.
+  if (_activeGroupId) {
+    const g = _findGroup(_activeGroupId);
+    if (g) {
+      const safe = esc(_groupDisplayName(g));
+      el.innerHTML = `<span class="lib-brand-group">
+        <button class="lib-brand-back" onclick="setGroupFilter(null)" aria-label="Back to all books" title="Back to all books"><i class="ph ph-arrow-left" aria-hidden="true"></i></button>
+        <span class="lib-brand-group-name">${safe}</span>
+        <button class="lib-brand-rename" onclick="renameGroupPrompt('${g.id}')" aria-label="Rename group" title="Rename group"><i class="ph ph-pencil-simple" aria-hidden="true"></i></button>
+      </span>`;
+      return;
+    }
+  }
+  const name = localStorage.getItem('tomen_name') || '';
   if (name) {
     el.innerHTML = `${getGreeting()}, <span class="greeting-name" onclick="toggleProfile()" title="Profile">${esc(name)}</span>`;
   } else {
