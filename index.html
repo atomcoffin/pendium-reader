@@ -1016,29 +1016,48 @@ html, body {
 
 /* Inline +/- buttons that flank the active view icon inside .view-switch.
    setView reorders them in the DOM so they always bracket the active
-   button; hidden entirely when Detail/table is active. Shares one pair
-   of buttons across grid (rows) and columns (cols) — viewStepDec/Inc
-   dispatch by currentView. Sized to match .view-switch-btn height so
-   the row stays a clean horizontal strip; narrower since they're text. */
+   button; hidden entirely when Detail/table is active. One pair of
+   buttons serves grid (rows) and columns (cols) — viewStepDec/Inc
+   dispatch by currentView.
+
+   Visual grouping: when shown, they share the active button's white
+   `--card` background and meet it flush (no gap), so [- icon +] reads
+   as one connected pill against the linen track. Outer corners round
+   on dec/inc, inner corners go square via the `.flanked` class that
+   placeViewSteppers stamps on the active view-switch-btn. Negative
+   margins cancel the parent's 3px flex gap so the three buttons abut
+   without seams. */
 .view-step-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 28px; height: 40px;
-  border: none; background: transparent;
-  border-radius: 5px;
+  border: none;
+  background: var(--card);
   color: var(--stone);
   cursor: pointer;
   font-family: var(--font-ui);
   font-size: 18px;
   line-height: 1;
   padding: 0;
-  transition: color 140ms ease, background 140ms ease;
+  transition: color 140ms ease;
 }
-.view-step-btn:hover { color: var(--brand-ink); background: var(--card); }
-.view-step-btn:disabled { opacity: 0.35; cursor: default; color: var(--fog); }
-.view-step-btn:disabled:hover { background: transparent; color: var(--fog); }
+.view-step-btn:hover { color: var(--brand-ink); }
+.view-step-btn:disabled { cursor: default; color: var(--fog); }
+.view-step-btn:disabled:hover { color: var(--fog); }
 .view-step-btn[hidden] { display: none; }
+#view-step-dec {
+  border-radius: 5px 0 0 5px;
+  margin-right: -3px;
+}
+#view-step-inc {
+  border-radius: 0 5px 5px 0;
+  margin-left: -3px;
+}
+/* The active view button between the +/- has square inner corners so the
+   three buttons fuse into one pill. Stamped by placeViewSteppers; absent
+   when Detail is active (its lone-button pill stays fully rounded). */
+.view-switch-btn.flanked { border-radius: 0; }
 
 /* Library body */
 /* Top padding reserves room for the absolutely-positioned lib-header so
@@ -6413,6 +6432,9 @@ function placeViewSteppers(v) {
   const dec = $('view-step-dec');
   const inc = $('view-step-inc');
   if (!dec || !inc) return;
+  // Clear any previous flanked marker — only the currently-active view
+  // (when it has +/- siblings) should get the squared inner corners.
+  document.querySelectorAll('#view-switch .view-switch-btn').forEach(b => b.classList.remove('flanked'));
   if (v === 'table') {
     dec.hidden = true;
     inc.hidden = true;
@@ -6424,6 +6446,7 @@ function placeViewSteppers(v) {
   targetBtn.parentNode.insertBefore(inc, targetBtn.nextSibling);
   dec.hidden = false;
   inc.hidden = false;
+  targetBtn.classList.add('flanked');
   syncViewStepperDisabled();
 }
 
