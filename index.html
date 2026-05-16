@@ -1030,14 +1030,19 @@ html, body {
 .view-step-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 28px; height: 40px;
+  /* justify-content set per-side below (flex-end on dec, flex-start on inc)
+     so the glyph sits toward the active icon, leaving room on the outer
+     rounded edge of the pill. */
+  width: 32px; height: 40px;
   border: none;
   background: var(--card);
   color: var(--stone);
   cursor: pointer;
   font-family: var(--font-ui);
-  font-size: 18px;
+  /* Match the view-icon glyph weight: 20px to match .view-switch-btn .ph,
+     700 weight so the text +/- doesn't read thinner than the icon line. */
+  font-size: 20px;
+  font-weight: 700;
   line-height: 1;
   padding: 0;
   transition: color 140ms ease;
@@ -1049,10 +1054,16 @@ html, body {
 #view-step-dec {
   border-radius: 5px 0 0 5px;
   margin-right: -3px;
+  /* Glyph hugs the right (inner) edge near the active icon; the wider
+     button leaves clear breathing room on the outer left rounded edge. */
+  justify-content: flex-end;
+  padding-right: 4px;
 }
 #view-step-inc {
   border-radius: 0 5px 5px 0;
   margin-left: -3px;
+  justify-content: flex-start;
+  padding-left: 4px;
 }
 /* The active view button between the +/- has square inner corners so the
    three buttons fuse into one pill. Stamped by placeViewSteppers; absent
