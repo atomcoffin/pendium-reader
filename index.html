@@ -1065,7 +1065,11 @@ html, body {
     background 200ms ease,
     visibility 0s linear 0s;
 }
-.view-step-btn:hover { color: var(--brand-ink); }
+/* Hover stays in the neutral gray family (--stone) instead of jumping to
+   brand-ink — the +/- are supporting controls, not brand moments, and an
+   olive-tinted hover on a white pill reads as "darker shade" against the
+   fog resting state. Disabled fades the whole button via opacity. */
+.view-step-btn:hover { color: var(--stone); }
 .view-step-btn:disabled { cursor: default; opacity: 0.4; }
 .view-step-btn:disabled:hover { color: var(--fog); }
 .view-step-btn.is-hidden {
