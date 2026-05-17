@@ -5,8 +5,8 @@
   "identifier": "com.atomcoffin.tomen",
   "build": {
     "frontendDist": "./dist",
-    "beforeDevCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stage-frontend.ps1",
-    "beforeBuildCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stage-frontend.ps1"
+    "beforeDevCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File src-tauri/scripts/stage-frontend.ps1",
+    "beforeBuildCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File src-tauri/scripts/stage-frontend.ps1"
   },
   "app": {
     "windows": [
