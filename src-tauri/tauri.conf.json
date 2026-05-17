@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.atomcoffin.tomen",
   "build": {
-    "frontendDist": "../"
+    "frontendDist": "./dist",
+    "beforeDevCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stage-frontend.ps1",
+    "beforeBuildCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stage-frontend.ps1"
   },
   "app": {
     "windows": [

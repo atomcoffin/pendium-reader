@@ -12551,7 +12551,12 @@ let _updatePollTimer = null;
 // update is found.
 let _checkInFlight = false;
 
-if ('serviceWorker' in navigator) {
+// Skip SW registration inside the Tauri native shell — assets are bundled,
+// so PWA caching is redundant, and the SW lifecycle is unreliable on some
+// Tauri webviews (Edge WebView2, WKWebView). The version readout below still
+// fetches sw.js to display CACHE_VERSION, which works either way.
+const _inTauri = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__;
+if ('serviceWorker' in navigator && !_inTauri) {
   navigator.serviceWorker.register('./sw.js').then(reg => {
     swRegistration = reg;
     if (reg.waiting) markUpdateAvailable(reg.waiting);
