@@ -629,20 +629,20 @@ html, body {
   flex: 0 1 274px;
   min-width: 0;
 }
-/* Filled-chip language to match .view-switch: linen background at rest,
-   lifts to --card when focused (same way the active view button lifts
-   out of the linen track). No border — the linen pill defines the field. */
+/* Bordered-chip language: 0.5px border at rest, focus brightens the
+   border to brand-ink. Matches .sort-wrap and .view-switch so the
+   header reads as one chrome family. */
 .lib-search {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
   display: flex; align-items: center;
-  border: none;
+  border: 0.5px solid var(--border);
   border-radius: 0;
-  background: var(--linen);
-  transition: background 140ms ease;
+  background: transparent;
+  transition: border-color 140ms ease;
 }
-.lib-search:focus-within { background: var(--card); }
+.lib-search:focus-within { border-color: var(--brand-ink); }
 .lib-search-icon {
   position: absolute; left: 10px; top: 50%;
   transform: translateY(-50%);
@@ -682,7 +682,7 @@ html, body {
 }
 .lib-search-clear:hover {
   color: var(--brand-ink);
-  background: var(--card);
+  background: var(--linen);
 }
 .lib-search.has-value .lib-search-clear { display: flex; }
 
@@ -711,20 +711,12 @@ html, body {
   flex: 1 1 0; min-width: 0;
   display: flex; align-items: center; justify-content: flex-end; gap: 6px;
 }
-/* Library-nav profile button is bumped a touch to match the bigger view
-   buttons. Scoped to .lib-toolbar so the reader's icon-btn rules don't
-   pick this up. Filled-chip language: linen at rest, lifts to --card on
-   hover so it reads like the active view button. Square corners match
-   the rest of the header chrome. */
-.lib-toolbar .icon-btn {
-  width: 40px; height: 40px;
-  background: var(--linen);
-  border-radius: 0;
-  color: var(--stone);
-}
+/* Library-nav settings button — bumped to match the bigger view buttons.
+   Borderless on purpose: it sits at the trailing edge of the header and
+   would visually pile up with the sort chip's border. Inherits the base
+   .icon-btn hover (transparent → linen). */
+.lib-toolbar .icon-btn { width: 40px; height: 40px; }
 .lib-toolbar .icon-btn .ph { font-size: 22px; }
-.lib-toolbar .icon-btn:hover { background: var(--card); color: var(--brand-ink); }
-.lib-toolbar .icon-btn.active { background: var(--card); color: var(--brand-ink); }
 
 /* Import dropdown */
 .import-wrap { position: relative; }
@@ -1015,7 +1007,13 @@ html, body {
   flex: 0 0 auto;
   align-items: center;
 }
-.view-switch { display: flex; gap: 3px; background: var(--linen); border-radius: 0; padding: 4px; }
+.view-switch {
+  display: flex; gap: 3px;
+  background: transparent;
+  border: 0.5px solid var(--border);
+  border-radius: 0;
+  padding: 4px;
+}
 /* Icon-only view buttons, sized for tappability and to match the bumped
    nav scale. */
 .view-switch-btn {
@@ -1029,7 +1027,9 @@ html, body {
 }
 .view-switch-btn .ph { font-size: 20px; line-height: 1; }
 .view-switch-btn:hover { color: var(--ink); }
-.view-switch-btn.active { background: var(--card); color: var(--ink); }
+/* Active gets a linen fill so it reads as the "engaged" cell inside the
+   bordered track — matches sort-wrap's hover/open language. */
+.view-switch-btn.active { background: var(--linen); color: var(--ink); }
 
 /* Inline +/- buttons that flank each sizable view button inside .view-switch.
    Each sizable view (grid → rows, columns → cols) owns its own pair; only
@@ -1054,13 +1054,13 @@ html, body {
   align-items: center;
   /* justify-content set per-side below (flex-end on dec, flex-start on inc)
      so the glyph sits toward the active icon, leaving room on the outer
-     rounded edge of the pill. */
+     edge of the pill. */
   width: 32px; height: 40px;
   border: none;
-  background: var(--card);
+  background: var(--linen);
   /* Dimmer than the view icon (--ink) so the icon reads as the anchor
      of the pill and the +/- as supporting controls — clear hierarchy
-     inside the connected white background. Hover lifts back to brand-ink. */
+     inside the connected linen background. */
   color: var(--fog);
   cursor: pointer;
   font-family: var(--font-ui);
@@ -1095,7 +1095,7 @@ html, body {
 .view-step-btn:disabled,
 .view-step-btn:disabled:hover {
   cursor: default;
-  color: color-mix(in srgb, var(--fog) 35%, var(--card));
+  color: color-mix(in srgb, var(--fog) 35%, var(--linen));
 }
 .view-step-btn.is-hidden {
   /* Collapse the slot entirely — width, padding, and the dec/inc negative
@@ -4154,8 +4154,8 @@ body.lib-select-mode .col-item {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 9px 10px;
   border-radius: 0;
-  border: none;
-  background: var(--linen);
+  border: 0.5px solid var(--border);
+  background: transparent;
   cursor: pointer;
   color: var(--stone);
   font-family: var(--font-ui); font-size: 13px;
@@ -4163,7 +4163,7 @@ body.lib-select-mode .col-item {
   outline: none;
 }
 .sort-wrap:hover,
-.sort-wrap[aria-expanded="true"] { background: var(--card); color: var(--ink); }
+.sort-wrap[aria-expanded="true"] { background: var(--linen); color: var(--ink); }
 .sort-wrap:focus-visible { outline: 2px solid var(--brand-ink); outline-offset: 2px; }
 .sort-icon {
   font-size: 14px;
