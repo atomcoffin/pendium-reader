@@ -629,12 +629,20 @@ html, body {
   flex: 0 1 274px;
   min-width: 0;
 }
+/* Border lives on the wrap (not the input) so it matches the sort-wrap
+   chip and the input itself can stay borderless. Square corners, same
+   0.5px var(--border) as the sort chip. */
 .lib-search {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
   display: flex; align-items: center;
+  border: 0.5px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  transition: border-color 140ms ease;
 }
+.lib-search:focus-within { border-color: var(--brand-ink); }
 .lib-search-icon {
   position: absolute; left: 10px; top: 50%;
   transform: translateY(-50%);
@@ -650,17 +658,14 @@ html, body {
      to reserve space for it on the right. */
   padding: 8px 30px 8px 30px;
   border: none;
-  border-bottom: 0.5px solid var(--border);
   background: transparent;
   font-family: var(--font-ui);
   font-size: 14px;
   color: var(--ink);
   outline: none;
-  transition: border-color 140ms ease;
   box-sizing: border-box;
 }
 .lib-search-input::placeholder { color: var(--fog); }
-.lib-search-input:focus { border-bottom-color: var(--brand-ink); }
 .lib-search:focus-within .lib-search-icon { color: var(--brand-ink); }
 .lib-search-clear {
   position: absolute; right: 6px; top: 50%;
@@ -1001,14 +1006,14 @@ html, body {
   flex: 0 0 auto;
   align-items: center;
 }
-.view-switch { display: flex; gap: 3px; background: var(--linen); border-radius: 8px; padding: 4px; }
+.view-switch { display: flex; gap: 3px; background: var(--linen); border-radius: 0; padding: 4px; }
 /* Icon-only view buttons, sized for tappability and to match the bumped
    nav scale. */
 .view-switch-btn {
   display: flex; align-items: center; justify-content: center;
   width: 40px; height: 40px;
   border: none; background: transparent;
-  border-radius: 5px;
+  border-radius: 0;
   color: var(--stone);
   cursor: pointer;
   transition: color 200ms ease, background 200ms ease;
@@ -1107,27 +1112,26 @@ html, body {
     visibility 0s linear 200ms;
 }
 .view-step-dec {
-  border-radius: 5px 0 0 5px;
+  border-radius: 0;
   margin-right: -3px;
   /* Glyph hugs the right (inner) edge near the active icon; the wider
-     button leaves clear breathing room on the outer left rounded edge. */
+     button leaves clear breathing room on the outer edge. */
   justify-content: flex-end;
   padding-right: 4px;
 }
 .view-step-inc {
-  border-radius: 0 5px 5px 0;
+  border-radius: 0;
   margin-left: -3px;
   justify-content: flex-start;
   padding-left: 4px;
 }
-/* The active view button between the +/- has square inner corners so the
-   three buttons fuse into one pill. Stamped by updateViewSteppers; absent
-   when Detail is active (its lone-button pill stays fully rounded). */
+/* The whole pill is square now, but .flanked is still stamped on the active
+   button so the [-,icon,+] trio stays a connected group rather than three
+   detached cells. */
 .view-switch-btn.flanked { border-radius: 0; }
-/* Bold variant + smaller size — the heft from ph-bold means we don't
-   need the full 20px to feel substantial alongside the regular-weight
-   view icon. */
-.view-step-btn .ph-bold { font-size: 16px; line-height: 1; }
+/* Smaller +/- glyph so they read as supporting controls next to the
+   20px view icon rather than competing with it. */
+.view-step-btn .ph-bold { font-size: 11px; line-height: 1; }
 
 /* Library body */
 /* Top padding reserves room for the absolutely-positioned lib-header so
@@ -4060,9 +4064,9 @@ body.lib-select-mode .col-item {
   .icon-btn { width: 32px; height: 32px; }
   .icon-btn svg { width: 18px; height: 18px; }
   .icon-btn .ph { font-size: 18px; }
-  .sort-wrap { padding: 0 8px; gap: 4px; }
+  .sort-wrap { padding: 6px 8px; gap: 4px; font-size: 11px; }
   .sort-icon { font-size: 12px; }
-  .sort-select { padding: 6px 14px 6px 0; font-size: 11px; }
+  .sort-caret { font-size: 10px; }
 }
 @media (min-width: 481px) and (max-width: 768px) {
   :root { --lib-edge-pad: 20px; }
@@ -4133,22 +4137,25 @@ body.lib-select-mode .col-item {
   .r-title { max-width: 100px; }
 }
 
-/* Sort select. .sort-wrap holds an icon + the native <select> in one
-   pill so the icon reads as a label for the dropdown. The wrap owns the
-   border + hover state; the <select> inside is bare so the two never
-   double-paint a border. */
+/* Sort trigger — a chip-shaped button that opens a custom .book-menu
+   popover. Square border (matches .lib-search and the view switcher),
+   leading "sort" icon, current sort label, trailing caret. The wrap owns
+   the border + hover state; everything inside inherits color. */
 .sort-wrap {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 0 10px 0 10px;
-  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+  border-radius: 0;
   border: 0.5px solid var(--border);
   background: transparent;
   cursor: pointer;
   color: var(--stone);
+  font-family: var(--font-ui); font-size: 13px;
   transition: background 140ms ease, color 140ms ease;
+  outline: none;
 }
 .sort-wrap:hover,
-.sort-wrap:focus-within { background: var(--linen); color: var(--ink); }
+.sort-wrap[aria-expanded="true"] { background: var(--linen); color: var(--ink); }
+.sort-wrap:focus-visible { outline: 2px solid var(--brand-ink); outline-offset: 2px; }
 .sort-icon {
   font-size: 14px;
   line-height: 1;
@@ -4156,16 +4163,32 @@ body.lib-select-mode .col-item {
   pointer-events: none;
   flex: 0 0 auto;
 }
-.sort-select {
-  padding: 9px 18px 9px 0;
-  border: none; background: transparent;
-  font-family: var(--font-ui); font-size: 13px; color: inherit;
-  cursor: pointer; appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238A7E76' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0 center;
-  outline: none;
+.sort-label {
+  font: inherit; color: inherit;
+  white-space: nowrap;
 }
+.sort-caret {
+  font-size: 12px;
+  line-height: 1;
+  color: inherit;
+  pointer-events: none;
+  flex: 0 0 auto;
+  margin-left: 2px;
+  transition: transform 140ms ease;
+}
+.sort-wrap[aria-expanded="true"] .sort-caret { transform: rotate(180deg); }
+
+/* Sort menu items reuse .book-menu-item styling and add a leading check
+   slot so the currently-selected option is unambiguous. The check is
+   always rendered (visibility-hidden when not current) so labels stay
+   left-aligned across rows. */
+.sort-menu-check {
+  width: 14px; font-size: 13px; line-height: 1;
+  color: var(--brand-ink);
+  flex-shrink: 0;
+  visibility: hidden;
+}
+.book-menu-item.is-current .sort-menu-check { visibility: visible; }
 </style>
 </head>
 <body>
@@ -4246,19 +4269,19 @@ body.lib-select-mode .col-item {
     </div>
     <!-- Right group: sort + settings. -->
     <div class="lib-toolbar">
-      <!-- Sort dropdown with a leading icon — purely decorative label so the
-           dropdown reads as "sort by ___" rather than an unlabeled menu. The
-           icon and select share a hover state via .sort-wrap:hover. -->
-      <label class="sort-wrap" for="sort-select" aria-label="Sort library">
+      <!-- Sort dropdown — custom trigger + body-level menu so the popover
+           can be themed to match the book context menu (native <select>
+           popups can't be styled cross-browser). The current sort label
+           shows in the trigger; the menu (.book-menu#sort-menu, declared
+           near the other body-level menus) opens beneath. -->
+      <button class="sort-wrap sort-trigger" id="sort-trigger" type="button"
+        onclick="toggleSortMenu(event)"
+        aria-haspopup="menu" aria-expanded="false"
+        aria-label="Sort library">
         <i class="ph ph-arrows-down-up sort-icon" aria-hidden="true"></i>
-        <select class="sort-select" id="sort-select" onchange="setSort(this.value)">
-          <option value="title">A — Z</option>
-          <option value="title-desc">Z — A</option>
-          <option value="author">Author</option>
-          <option value="recent">Recent</option>
-          <option value="progress">Progress</option>
-        </select>
-      </label>
+        <span class="sort-label" id="sort-label">A — Z</span>
+        <i class="ph ph-caret-down sort-caret" aria-hidden="true"></i>
+      </button>
       <button class="icon-btn" id="lib-profile-btn" onclick="toggleProfile()" title="Settings" aria-label="Settings">
         <i class="ph ph-gear-six"></i>
         <span class="update-dot" id="lib-profile-update-dot" hidden></span>
@@ -4682,6 +4705,12 @@ body.lib-select-mode .col-item {
      tapping a highlight in the rendered book. Shares .book-menu styling
      so the popover looks consistent. Populated dynamically per open. -->
 <div class="book-menu" id="mark-menu" role="menu" aria-label="Mark options"></div>
+
+<!-- Library sort menu. Opened by the sort trigger in the library header,
+     populated by openSortMenu(). Body-level so it floats over the header
+     without being clipped by parent overflow; reuses .book-menu styling
+     so popovers across the app feel related. -->
+<div class="book-menu sort-menu" id="sort-menu" role="menu" aria-label="Sort options"></div>
 
 <!-- Theme picker menu. Singleton popover opened from the .theme-current
      button in either Appearance or Profile. Each item is a chip + name
@@ -6766,11 +6795,85 @@ function _currentLibCols() {
   return (saved >= 1 && saved <= 6) ? saved : 3;
 }
 
+// Source of truth for the sort dropdown — labels here drive both the
+// trigger text and the menu rows. Order is the order shown in the menu.
+const SORT_OPTIONS = [
+  { value: 'title',      label: 'A — Z'    },
+  { value: 'title-desc', label: 'Z — A'    },
+  { value: 'author',     label: 'Author'   },
+  { value: 'recent',     label: 'Recent'   },
+  { value: 'progress',   label: 'Progress' },
+];
+function _sortLabelFor(value) {
+  const opt = SORT_OPTIONS.find(o => o.value === value);
+  return opt ? opt.label : value;
+}
+function _refreshSortTrigger() {
+  const label = document.getElementById('sort-label');
+  if (label) label.textContent = _sortLabelFor(currentSort);
+}
+
 function setSort(s) {
   currentSort = s;
   localStorage.setItem('tomen_sort', s);
+  _refreshSortTrigger();
+  closeSortMenu();
   renderLibrary();
 }
+
+// Populate the sort menu's rows from SORT_OPTIONS, stamping .is-current
+// on the active row so its check icon shows.
+function _renderSortMenu() {
+  const menu = document.getElementById('sort-menu');
+  if (!menu) return;
+  menu.innerHTML = SORT_OPTIONS.map(o => {
+    const cur = o.value === currentSort;
+    return `<button class="book-menu-item${cur ? ' is-current' : ''}"
+      role="menuitemradio" aria-checked="${cur ? 'true' : 'false'}"
+      onclick="setSort('${o.value}')">
+      <i class="ph ph-check sort-menu-check" aria-hidden="true"></i>
+      ${o.label}
+    </button>`;
+  }).join('');
+}
+
+function toggleSortMenu(ev) {
+  if (ev) ev.stopPropagation();
+  const menu = document.getElementById('sort-menu');
+  const trigger = document.getElementById('sort-trigger');
+  if (!menu || !trigger) return;
+  if (menu.classList.contains('open')) {
+    closeSortMenu();
+    return;
+  }
+  _renderSortMenu();
+  menu.classList.add('open');
+  trigger.setAttribute('aria-expanded', 'true');
+  // Defer positioning until after the menu has rendered + been measurable
+  // (display:none → block transition). positionFloatingMenu reads
+  // getBoundingClientRect on the menu, which needs the open class first.
+  positionFloatingMenu(menu, trigger);
+}
+function closeSortMenu() {
+  const menu = document.getElementById('sort-menu');
+  const trigger = document.getElementById('sort-trigger');
+  if (menu) menu.classList.remove('open');
+  if (trigger) trigger.setAttribute('aria-expanded', 'false');
+}
+// Outside-click + Escape — same pattern as book-menu so the popovers
+// behave consistently.
+document.addEventListener('mousedown', (ev) => {
+  const menu = document.getElementById('sort-menu');
+  if (!menu || !menu.classList.contains('open')) return;
+  if (ev.target.closest('#sort-menu')) return;
+  if (ev.target.closest('#sort-trigger')) return;
+  closeSortMenu();
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Escape') return;
+  const menu = document.getElementById('sort-menu');
+  if (menu && menu.classList.contains('open')) closeSortMenu();
+});
 
 function getLastReadId() {
   return localStorage.getItem('tomen_lastRead') || null;
@@ -12325,7 +12428,7 @@ function renderGreeting() {
   }
 
   // Restore sort
-  $('sort-select').value = currentSort;
+  _refreshSortTrigger();
 
   // Restore row count for the grid view. Old values were pixel widths
   // (100-280); now the slider's domain is rows (1-6), so anything
