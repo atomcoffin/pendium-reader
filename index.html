@@ -4271,16 +4271,16 @@ body.lib-select-mode .col-item {
          they hide when Detail/table is active since it has no size knob. -->
     <div class="view-switch-wrap">
       <div class="view-switch" id="view-switch" role="radiogroup" aria-label="Library view">
-        <button class="view-step-btn view-step-dec" data-stepper-for="grid" onclick="viewStepDec()" aria-label="Fewer rows"><i class="ph-bold ph-minus" aria-hidden="true"></i></button>
+        <button class="view-step-btn view-step-dec" data-stepper-for="grid" onclick="viewStepInc()" aria-label="Smaller covers"><i class="ph-bold ph-minus" aria-hidden="true"></i></button>
         <button class="view-switch-btn active flanked" data-view="grid" onclick="setView('grid')" title="Grid — browse covers" aria-label="Grid view" role="radio" aria-checked="true">
           <i class="ph ph-squares-four"></i>
         </button>
-        <button class="view-step-btn view-step-inc" data-stepper-for="grid" onclick="viewStepInc()" aria-label="More rows"><i class="ph-bold ph-plus" aria-hidden="true"></i></button>
-        <button class="view-step-btn view-step-dec is-hidden" data-stepper-for="columns" onclick="viewStepDec()" aria-label="Fewer columns"><i class="ph-bold ph-minus" aria-hidden="true"></i></button>
+        <button class="view-step-btn view-step-inc" data-stepper-for="grid" onclick="viewStepDec()" aria-label="Larger covers"><i class="ph-bold ph-plus" aria-hidden="true"></i></button>
+        <button class="view-step-btn view-step-dec is-hidden" data-stepper-for="columns" onclick="viewStepInc()" aria-label="Narrower columns"><i class="ph-bold ph-minus" aria-hidden="true"></i></button>
         <button class="view-switch-btn" data-view="columns" onclick="setView('columns')" title="Text — scan titles fast" aria-label="Text view" role="radio" aria-checked="false">
           <i class="ph ph-text-columns"></i>
         </button>
-        <button class="view-step-btn view-step-inc is-hidden" data-stepper-for="columns" onclick="viewStepInc()" aria-label="More columns"><i class="ph-bold ph-plus" aria-hidden="true"></i></button>
+        <button class="view-step-btn view-step-inc is-hidden" data-stepper-for="columns" onclick="viewStepDec()" aria-label="Wider columns"><i class="ph-bold ph-plus" aria-hidden="true"></i></button>
         <button class="view-switch-btn" data-view="table" onclick="setView('table')" title="Detail — full info" aria-label="Detail view" role="radio" aria-checked="false">
           <i class="ph ph-rows"></i>
         </button>
@@ -6665,9 +6665,11 @@ function syncViewStepperDisabled() {
   const setPair = (view, n) => {
     const pair = document.querySelectorAll(`#view-switch .view-step-btn[data-stepper-for="${view}"]`);
     if (pair.length !== 2) return;
-    // Document order: dec then inc.
-    pair[0].disabled = n <= 1;
-    pair[1].disabled = n >= 6;
+    // Document order: minus then plus. The minus button now adds
+    // rows/columns (smaller tiles) and plus removes them (larger tiles),
+    // so minus disables at the upper bound and plus at the lower bound.
+    pair[0].disabled = n >= 6;
+    pair[1].disabled = n <= 1;
   };
   setPair('grid', _currentLibSize());
   setPair('columns', _currentLibCols());
