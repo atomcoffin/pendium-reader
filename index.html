@@ -7676,10 +7676,20 @@ function renderTableView(el, books) {
 
     // Time column: "X left" while reading, "~X read" estimated total for
     // unread, "Finished" for done. Uses the user-selected reading pace
-    // (Profile → reading speed) via estimateReadingMinutes.
+    // (Profile → reading speed) via estimateReadingMinutes. For comics
+    // the text-character estimate doesn't apply — show pages-remaining
+    // (or total page count) instead so the column carries useful info.
     let timeStr = '';
+    const isComicBook = b.kind === 'comic';
     if (isFinished) {
       timeStr = 'Finished';
+    } else if (isComicBook && b.pageCount) {
+      if (isReading) {
+        const cur = (b.chapterIndex || 0) + 1;
+        timeStr = `${cur} of ${b.pageCount}`;
+      } else {
+        timeStr = `${b.pageCount} pages`;
+      }
     } else if (b.contentSize) {
       const textChars = b.contentSize * 0.75;
       if (isReading) {
@@ -11836,8 +11846,20 @@ function updateReaderRefs() {
   if (!el) return;
   if (!currentBook) { el.textContent = ''; return; }
   const bookTitle = currentBook.title || '';
-  const tocItem = toc.find(item => item.index === currentChapterIndex);
-  const chapterTitle = tocItem?.title || chapters[currentChapterIndex]?.title || '';
+  const isComic = currentBook.kind === 'comic';
+  // For comics, render as "N of M" so it's clear our number is a
+  // position-in-archive, not a printed page number — scans typically
+  // start with cover / front-matter so file index N is not the same as
+  // printed page N. For text, keep the TOC-derived chapter title.
+  let chapterTitle;
+  if (isComic) {
+    const idx = currentChapterIndex + 1;
+    const total = (currentBook.pages || chapters || []).length;
+    chapterTitle = total ? `${idx} of ${total}` : `${idx}`;
+  } else {
+    const tocItem = toc.find(item => item.index === currentChapterIndex);
+    chapterTitle = tocItem?.title || chapters[currentChapterIndex]?.title || '';
+  }
 
   // Build the primary identifier — Book · Chapter.
   const sep = '<span class="r-footer-ref-sep">·</span>';
@@ -11846,22 +11868,24 @@ function updateReaderRefs() {
   if (chapterTitle) idParts.push(esc(chapterTitle));
   const primary = `<span class="r-footer-ref-primary">${idParts.join(sep)}</span>`;
 
-  // Compute chapter time remaining. Uses visible chapter text
-  // (innerEl.textContent, so tags don't inflate) and proportional position
-  // (currentSpread / totalSpreads). Phrased "until next chapter" when
-  // there's a following chapter; "until finished" when this is the last.
+  // Chapter time remaining — text only. The estimator works off character
+  // count in the current chapter; comics have no text per page, and
+  // currentBook.contentSize is the archive byte size, so the estimate would
+  // come back as a nonsense number of hours.
   let timeSpan = '';
-  const innerEl = $('r-inner');
-  if (innerEl && totalSpreads > 0) {
-    const totalChars = innerEl.textContent.length;
-    const frac = totalSpreads > 1 ? (currentSpread / (totalSpreads - 1)) : 1;
-    const remainingChars = Math.max(0, totalChars * (1 - frac));
-    const mins = estimateReadingMinutes(remainingChars);
-    const formatted = formatReadingTime(mins);
-    if (formatted) {
-      const isLastChapter = currentChapterIndex >= chapters.length - 1;
-      const suffix = isLastChapter ? ' until finished' : ' until next chapter';
-      timeSpan = `<span class="r-footer-ref-time">${esc(formatted + suffix)}</span>`;
+  if (!isComic) {
+    const innerEl = $('r-inner');
+    if (innerEl && totalSpreads > 0) {
+      const totalChars = innerEl.textContent.length;
+      const frac = totalSpreads > 1 ? (currentSpread / (totalSpreads - 1)) : 1;
+      const remainingChars = Math.max(0, totalChars * (1 - frac));
+      const mins = estimateReadingMinutes(remainingChars);
+      const formatted = formatReadingTime(mins);
+      if (formatted) {
+        const isLastChapter = currentChapterIndex >= chapters.length - 1;
+        const suffix = isLastChapter ? ' until finished' : ' until next chapter';
+        timeSpan = `<span class="r-footer-ref-time">${esc(formatted + suffix)}</span>`;
+      }
     }
   }
 
@@ -11886,10 +11910,13 @@ function updateTopTitle(bookTitle, chapterTitle) {
   }
   const parts = [];
   if (bookTitle) parts.push(esc(bookTitle));
-  // Append book-level time remaining. Uses contentSize × 0.75 for the
-  // text-length approximation and current progress for what's consumed.
-  // Only shown when progress < 100%.
-  if (currentBook && currentBook.contentSize && (currentBook.progress || 0) < 100) {
+  // Book-level time remaining — text only. For comics, contentSize is
+  // the archive byte size, not a character count, so feeding it to the
+  // text-based reading-time estimator produces absurd values (hundreds
+  // of hours). The footer already shows "N of M" position; that's the
+  // right progress indicator for image-based content.
+  const isComic = currentBook && currentBook.kind === 'comic';
+  if (!isComic && currentBook && currentBook.contentSize && (currentBook.progress || 0) < 100) {
     const textChars = currentBook.contentSize * 0.75;
     const remainingChars = textChars * (1 - (currentBook.progress || 0) / 100);
     const mins = estimateReadingMinutes(remainingChars);
