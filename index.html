@@ -1751,6 +1751,53 @@ body.lib-dragging .view-grid {
   touch-action: none;
 }
 
+/* ===== Drag-and-drop import overlay =====
+   Full-viewport hint that drops will import. Shown while a file drag
+   hovers the library screen (body.is-dropping). pointer-events: none
+   on the overlay so the dragenter/over/leave/drop events keep firing
+   on the underlying library content — the window-level handler does
+   the work; the overlay is purely visual feedback. */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+body.is-dropping .drop-overlay { display: flex; }
+.drop-overlay-inner {
+  padding: 28px 44px;
+  border: 2px dashed var(--brand);
+  border-radius: 16px;
+  background: var(--paper);
+  text-align: center;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+  max-width: 80vw;
+}
+.drop-overlay-icon {
+  font-size: 44px;
+  color: var(--brand);
+  line-height: 1;
+}
+.drop-overlay-title {
+  font-family: var(--font-ui);
+  font-size: 20px;
+  font-weight: 600;
+  margin-top: 10px;
+  color: var(--ink);
+}
+.drop-overlay-hint {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--stone);
+  margin-top: 6px;
+}
+
 /* Name label — rendered only when the group has a name (unnamed groups
    are identified by their four mini-covers alone, no chrome). Sits at
    the bottom of the tile with a soft fade so it stays legible against
@@ -4906,6 +4953,19 @@ body.lib-select-mode .col-item {
   </div>
 </div>
 
+<!-- Drag-and-drop import overlay. Hidden by default; shown while files
+     are being dragged over the library screen (body.is-dropping). The
+     overlay is itself a drop target but has pointer-events: none so it
+     doesn't steal the actual drop event — the window-level drop handler
+     does all the work. -->
+<div class="drop-overlay" id="drop-overlay" aria-hidden="true">
+  <div class="drop-overlay-inner">
+    <i class="ph ph-download-simple drop-overlay-icon" aria-hidden="true"></i>
+    <div class="drop-overlay-title">Drop to import</div>
+    <div class="drop-overlay-hint" id="drop-overlay-hint"></div>
+  </div>
+</div>
+
 <script src="vendor/jszip.min.js"></script>
 <script>
 // ===== STATE =====
@@ -7821,6 +7881,145 @@ async function handleFiles(e) {
     else await loadTextFile(file);
   }
   e.target.value = '';
+}
+
+// ===== DRAG-AND-DROP IMPORT =====
+// Drop files (or folders) anywhere on the library screen to import.
+// Folders recurse into supported files just like the folder picker does.
+// Drops while reading are ignored — an accidental drop shouldn't yank
+// the user out of a book.
+
+// dragenter / dragleave fire on every child element transition, so we
+// count entries-minus-leaves rather than try to detect "left the window"
+// directly. The overlay shows when count > 0 and hides when it returns
+// to 0. drop forces a reset so a missed dragleave can't leave the
+// overlay stuck.
+let _dragCounter = 0;
+
+function _isFilesDrag(e) {
+  const types = e.dataTransfer && e.dataTransfer.types;
+  if (!types) return false;
+  // types is a DOMStringList in some browsers — Array.from is safe for both.
+  return Array.from(types).indexOf('Files') !== -1;
+}
+
+function _libraryActive() {
+  const lib = $('screen-lib');
+  return !!(lib && lib.classList.contains('active'));
+}
+
+function _showDropOverlay() {
+  const hint = $('drop-overlay-hint');
+  if (hint && !hint.textContent) {
+    hint.textContent = `Supports ${SUPPORTED_LIST_STR}`;
+  }
+  document.body.classList.add('is-dropping');
+}
+function _hideDropOverlay() {
+  document.body.classList.remove('is-dropping');
+}
+
+window.addEventListener('dragenter', (e) => {
+  if (!_isFilesDrag(e)) return;
+  if (!_libraryActive()) return;
+  _dragCounter++;
+  // preventDefault on dragenter + dragover is what tells the browser
+  // we accept the drop. Without it, drop never fires.
+  e.preventDefault();
+  _showDropOverlay();
+});
+
+window.addEventListener('dragover', (e) => {
+  if (!_isFilesDrag(e)) return;
+  if (!_libraryActive()) return;
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+});
+
+window.addEventListener('dragleave', (e) => {
+  if (!_isFilesDrag(e)) return;
+  _dragCounter = Math.max(0, _dragCounter - 1);
+  if (_dragCounter === 0) _hideDropOverlay();
+});
+
+window.addEventListener('drop', async (e) => {
+  if (!_isFilesDrag(e)) return;
+  if (!_libraryActive()) {
+    // Drops while reading: prevent the browser from navigating away to
+    // the file's blob URL, but otherwise no-op. The user gets no overlay
+    // and no import — exactly what they get if they drop on a page that
+    // doesn't accept files.
+    e.preventDefault();
+    return;
+  }
+  e.preventDefault();
+  _dragCounter = 0;
+  _hideDropOverlay();
+
+  const files = await _collectDroppedFiles(e.dataTransfer);
+  if (files.length === 0) {
+    alert(`No supported files found (${SUPPORTED_LIST_STR})`);
+    return;
+  }
+  await importFiles(files);
+});
+
+// Walk DataTransferItemList, recursing into directories. Falls back to
+// the flat .files list when getAsEntry isn't available (older browsers).
+// webkitGetAsEntry is the de-facto standard; FileSystemAccess's newer
+// getAsFileSystemHandle isn't widely supported yet, so we use the older
+// API to keep this working on more browsers.
+async function _collectDroppedFiles(dt) {
+  const out = [];
+  if (!dt) return out;
+  const items = dt.items;
+  const canWalk = items && items.length &&
+                  typeof items[0].webkitGetAsEntry === 'function';
+  if (canWalk) {
+    // Snapshot entries first — items is invalidated once we start
+    // awaiting async file reads on it, which would null out later
+    // items[i].webkitGetAsEntry() calls.
+    const entries = [];
+    for (const item of items) {
+      const entry = item.webkitGetAsEntry();
+      if (entry) entries.push(entry);
+    }
+    for (const entry of entries) {
+      await _walkDropEntry(entry, out);
+    }
+  } else {
+    for (const f of Array.from(dt.files || [])) {
+      if (isSupportedFile(f.name)) out.push(f);
+    }
+  }
+  return out;
+}
+
+async function _walkDropEntry(entry, out) {
+  if (!entry) return;
+  // Skip dotfiles/dotdirs to match the folder-picker behavior — keeps
+  // Calibre's .caltrash and OS metadata folders out of the import.
+  if (entry.name && entry.name.startsWith('.')) return;
+  if (entry.isFile) {
+    if (!isSupportedFile(entry.name)) return;
+    await new Promise(resolve => {
+      entry.file(f => { out.push(f); resolve(); }, () => resolve());
+    });
+    return;
+  }
+  if (entry.isDirectory) {
+    const reader = entry.createReader();
+    // readEntries returns at most ~100 entries per call; loop until empty.
+    while (true) {
+      const batch = await new Promise(resolve =>
+        reader.readEntries(resolve, () => resolve([]))
+      );
+      if (!batch || batch.length === 0) break;
+      for (const child of batch) {
+        await _walkDropEntry(child, out);
+      }
+    }
+  }
 }
 
 // Load any non-EPUB supported file: plain text, HTML, or Markdown. Each
