@@ -9612,6 +9612,10 @@ function renderComicPage() {
   // be confusing — what looked like "the bottom-right panel" on page 5
   // points at a completely different image on page 6.
   _resetComicZoomState();
+  // Hide upfront so the in-flight decode doesn't show the previous page
+  // at the new natural-size with the old transform when the src flips.
+  // Cleared in onload / onerror / the no-content early return below.
+  imgEl.style.visibility = 'hidden';
 
   const pages = currentBook?.pages;
   const archive = currentBook?.comicArchive;
@@ -9637,11 +9641,6 @@ function renderComicPage() {
   const myReq = ++_comicReqId;
   const prevBlobUrl = imgEl.dataset.blobUrl || '';
 
-  // The previous page stays visible during decode. Only when the new blob
-  // is in hand and we're about to flip the src do we hide briefly — that
-  // prevents the new image's natural dimensions from rendering through the
-  // old transform for a frame. Pre-hiding before decode produced a long
-  // blank stretch that made the reader feel unresponsive.
   const pageName = pages[idx];
   archive.read(pageName).then(blob => {
     if (myReq !== _comicReqId) return; // a newer turn supersedes us
@@ -9660,10 +9659,6 @@ function renderComicPage() {
       imgEl.style.visibility = '';
       _comicPageInFlight = false;
     };
-    // Hide just before the src change so the brief moment between
-    // new src being assigned and onload firing doesn't render the new
-    // image at the OLD transform (wrong scale/translate, looks broken).
-    imgEl.style.visibility = 'hidden';
     imgEl.src = url;
     imgEl.dataset.blobUrl = url;
     // Revoke the previous page's URL AFTER assigning the new one so
