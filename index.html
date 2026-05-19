@@ -9640,6 +9640,112 @@ let _comicPageInFlight = false;
 let _comicSpreadEnabled = localStorage.getItem('tomen_comicSpread') === 'on';
 function _isComicSpreadActive() { return _comicSpreadEnabled; }
 
+// ===== Comic page cache + prefetch =====
+// Decoded page blobs are cached so a tap on Next doesn't pay the decode
+// cost again — for CBR especially, archive.read can take 200-500ms per
+// page on the main thread (it's a synchronous WASM call we can't yield
+// inside). Map values are either a pending Promise<Blob> (while the
+// decode is in flight) or the resolved Blob; _decodePageCached dedups
+// in-flight requests for the same page so parallel callers share one
+// read. Cache is keyed by page INDEX in the current book; it's cleared
+// in _teardownComicMode when the book closes so it can't leak across
+// books.
+const _comicPageCache = new Map();
+const _COMIC_CACHE_RADIUS = 3;          // keep ±N pages around current
+const _COMIC_PREFETCH_DELAY_MS = 800;   // settle delay after page render
+let _comicPrefetchTimer = null;
+
+async function _decodePageCached(idx) {
+  if (_comicPageCache.has(idx)) {
+    const entry = _comicPageCache.get(idx);
+    // Already-resolved Blob is returned as-is; a pending Promise is
+    // awaited so two parallel callers share one underlying decode.
+    return entry instanceof Promise ? await entry : entry;
+  }
+  if (!currentBook || !currentBook.comicArchive || !currentBook.pages) {
+    throw new Error('no comic open');
+  }
+  const promise = currentBook.comicArchive.read(currentBook.pages[idx]);
+  _comicPageCache.set(idx, promise);
+  try {
+    const blob = await promise;
+    _comicPageCache.set(idx, blob);
+    return blob;
+  } catch (err) {
+    _comicPageCache.delete(idx);
+    throw err;
+  }
+}
+
+// Drop entries far from the current page so memory stays bounded. Comic
+// pages are ~1-3 MB each; keeping ±3 caps the cache at ~6 entries on top
+// of the two visible in spread mode.
+function _evictComicCacheFar() {
+  if (!currentBook || currentBook.kind !== 'comic') {
+    _comicPageCache.clear();
+    return;
+  }
+  const cur = currentChapterIndex;
+  for (const idx of Array.from(_comicPageCache.keys())) {
+    if (Math.abs(idx - cur) > _COMIC_CACHE_RADIUS) {
+      _comicPageCache.delete(idx);
+    }
+  }
+}
+
+// Schedule a delayed prefetch of the likely-next pages. The delay lets
+// the current render settle visually before we kick off a CPU-heavy
+// decode that would freeze the main thread briefly. If a new page-turn
+// arrives before the timer fires, the previous schedule is cleared in
+// renderComicPage's path so we don't pile up redundant work.
+function _schedulePrefetch() {
+  if (_comicPrefetchTimer) clearTimeout(_comicPrefetchTimer);
+  if (!currentBook || currentBook.kind !== 'comic') return;
+  const bookId = currentBook.id;
+  _comicPrefetchTimer = setTimeout(() => {
+    _comicPrefetchTimer = null;
+    if (!currentBook || currentBook.id !== bookId) return;
+    _runPrefetch();
+  }, _COMIC_PREFETCH_DELAY_MS);
+}
+
+async function _runPrefetch() {
+  if (!currentBook || currentBook.kind !== 'comic') return;
+  const pages = currentBook.pages;
+  if (!pages) return;
+  const cur = currentChapterIndex;
+  const spreadActive = _isComicSpreadActive();
+  const step = spreadActive ? 2 : 1;
+  const bookId = currentBook.id;
+
+  // Priority order: forward neighbors first (more likely to be needed),
+  // then the back-nav neighbor. In spread mode prefetch both pages of
+  // the next pair.
+  const targets = [];
+  const nextLeft = cur + step;
+  if (nextLeft >= 0 && nextLeft < pages.length) targets.push(nextLeft);
+  if (spreadActive && nextLeft + 1 < pages.length) targets.push(nextLeft + 1);
+  const prevLeft = cur - step;
+  if (prevLeft >= 0 && prevLeft < pages.length) targets.push(prevLeft);
+
+  for (const idx of targets) {
+    // Bail if the user navigated away mid-prefetch.
+    if (!currentBook || currentBook.id !== bookId) return;
+    if (_comicPageCache.has(idx)) continue;
+    try {
+      await _decodePageCached(idx);
+    } catch (err) {
+      // Silent — the user will see the real error if they navigate to
+      // a page that fails to decode for real.
+    }
+    // Yield so a tap or swipe that landed during the decode gets a
+    // chance to run between pages.
+    await new Promise(r => setTimeout(r, 0));
+  }
+  // Evict anything that's now drifted outside the window.
+  _evictComicCacheFar();
+}
+
 // Toggle the comic spread mode. Persists to localStorage, updates the
 // settings UI's active state, and (if a comic is open) re-renders so the
 // change takes immediate effect. Toggling on normalizes the current page
@@ -9741,13 +9847,13 @@ async function renderComicPage() {
   updateProgress();
 
   try {
-    // Sequential archive reads — the CBR adapter shares one extractor
-    // with a single file-position pointer, so parallel reads would race
-    // and corrupt each other. CBZ doesn't share state but the sequential
-    // pattern is harmless there.
-    const leftBlob = await archive.read(pages[leftIdx]);
+    // Sequential reads (cache-first). Cache hits return immediately; misses
+    // fall through to archive.read. The CBR adapter is sequential under
+    // the hood — multiple decodes would block each other anyway — so
+    // running these one at a time costs nothing.
+    const leftBlob = await _decodePageCached(leftIdx);
     if (myReq !== _comicReqId) return;
-    const rightBlob = (rightIdx >= 0) ? await archive.read(pages[rightIdx]) : null;
+    const rightBlob = (rightIdx >= 0) ? await _decodePageCached(rightIdx) : null;
     if (myReq !== _comicReqId) return;
 
     const leftUrl = URL.createObjectURL(leftBlob);
@@ -9775,6 +9881,10 @@ async function renderComicPage() {
 
     _computeComicFit();
     stage.style.visibility = '';
+    // Successful commit — kick the prefetch timer so adjacent pages are
+    // decoded in the background while the user reads this one.
+    _evictComicCacheFar();
+    _schedulePrefetch();
   } catch (err) {
     console.warn('[tomen] comic page decode failed:', err);
     stage.style.visibility = '';
@@ -10149,6 +10259,14 @@ function _teardownComicMode() {
   _comicReqId++; // invalidates any in-flight decode promises
   _comicPageInFlight = false;
   _resetComicZoomState();
+  // Drop the page cache so a different book's reads don't return stale
+  // blobs by page index. Cancel any pending prefetch timer for the same
+  // reason.
+  _comicPageCache.clear();
+  if (_comicPrefetchTimer) {
+    clearTimeout(_comicPrefetchTimer);
+    _comicPrefetchTimer = null;
+  }
   // Drop pending tap state too so a tap on the next comic isn't paired
   // with a stale tap from the previous read.
   _lastTapTime = 0;
