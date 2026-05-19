@@ -9591,6 +9591,11 @@ function renderChapter() {
 // blob URL is revoked on every swap so the browser can free its backing
 // memory promptly (otherwise a 200-page read leaks ~hundreds of MB).
 let _comicReqId = 0;
+// True while a comic page is being decoded + loaded. readerNext/Prev
+// drop new turns while this is set; otherwise rapid taps preempt the
+// in-flight decode and the user perceives pages being skipped (state
+// advances but only the most recent decode actually paints).
+let _comicPageInFlight = false;
 function renderComicPage() {
   // Reset spread state so the gesture machinery treats this page as one
   // atomic spread. Without this, an EPUB → comic transition can leave
@@ -9607,9 +9612,6 @@ function renderComicPage() {
   // be confusing — what looked like "the bottom-right panel" on page 5
   // points at a completely different image on page 6.
   _resetComicZoomState();
-  // Pre-hide the image until the new src loads + fit is computed, so we
-  // don't briefly flash the previous page's pixels at the wrong transform.
-  imgEl.style.visibility = 'hidden';
 
   const pages = currentBook?.pages;
   const archive = currentBook?.comicArchive;
@@ -9617,11 +9619,17 @@ function renderComicPage() {
   if (!pages || !archive || idx < 0 || idx >= pages.length) {
     imgEl.removeAttribute('src');
     imgEl.style.visibility = '';
+    _comicPageInFlight = false;
     updateReaderRefs();
     updateProgress();
     return;
   }
 
+  // Take the page-render lock for this turn. readerNext/Prev refuse new
+  // turns while this is set so a second tap can't pre-empt the in-flight
+  // decode — that was causing rapid taps to skip pages (state advanced
+  // twice but only the second decode actually painted).
+  _comicPageInFlight = true;
   // Request token: a later page-turn may arrive before the previous
   // decode resolves. The token check before assigning src ensures only
   // the most recent request actually paints — otherwise rapid swiping
@@ -9629,6 +9637,11 @@ function renderComicPage() {
   const myReq = ++_comicReqId;
   const prevBlobUrl = imgEl.dataset.blobUrl || '';
 
+  // The previous page stays visible during decode. Only when the new blob
+  // is in hand and we're about to flip the src do we hide briefly — that
+  // prevents the new image's natural dimensions from rendering through the
+  // old transform for a frame. Pre-hiding before decode produced a long
+  // blank stretch that made the reader feel unresponsive.
   const pageName = pages[idx];
   archive.read(pageName).then(blob => {
     if (myReq !== _comicReqId) return; // a newer turn supersedes us
@@ -9640,11 +9653,17 @@ function renderComicPage() {
       if (myReq !== _comicReqId) return;
       _computeComicFit();
       imgEl.style.visibility = '';
+      _comicPageInFlight = false;
     };
     imgEl.onerror = () => {
       if (myReq !== _comicReqId) return;
       imgEl.style.visibility = '';
+      _comicPageInFlight = false;
     };
+    // Hide just before the src change so the brief moment between
+    // new src being assigned and onload firing doesn't render the new
+    // image at the OLD transform (wrong scale/translate, looks broken).
+    imgEl.style.visibility = 'hidden';
     imgEl.src = url;
     imgEl.dataset.blobUrl = url;
     // Revoke the previous page's URL AFTER assigning the new one so
@@ -9653,6 +9672,7 @@ function renderComicPage() {
   }).catch(err => {
     console.warn('[tomen] comic page decode failed:', pageName, err);
     imgEl.style.visibility = '';
+    if (myReq === _comicReqId) _comicPageInFlight = false;
   });
 
   updateReaderRefs();
@@ -9994,6 +10014,7 @@ function _bindComicGestures() {
 function _teardownComicMode() {
   document.body.classList.remove('r-mode-comic', 'r-comic-zoomed', 'r-comic-panning');
   _comicReqId++; // invalidates any in-flight decode promises
+  _comicPageInFlight = false;
   _resetComicZoomState();
   // Drop pending tap state too so a tap on the next comic isn't paired
   // with a stale tap from the previous read.
@@ -10197,6 +10218,11 @@ function readerNext() {
   if (!currentBook) return;
   if (readerInteractionBlocked()) return;
   if (_animatingTurn) return;
+  // For comics, refuse to advance until the in-flight page render commits.
+  // This is what prevents rapid taps/swipes from skipping pages (a second
+  // turn would otherwise bump _comicReqId and silently abandon the first
+  // page's decode just before it would have painted).
+  if (currentBook.kind === 'comic' && _comicPageInFlight) return;
   if (currentSpread < totalSpreads - 1) {
     currentSpread++;
     applySpread(true);
@@ -10218,6 +10244,8 @@ function readerPrev() {
   if (!currentBook) return;
   if (readerInteractionBlocked()) return;
   if (_animatingTurn) return;
+  // Same lock as readerNext — see the comment there.
+  if (currentBook.kind === 'comic' && _comicPageInFlight) return;
   if (currentSpread > 0) {
     currentSpread--;
     applySpread(true);
