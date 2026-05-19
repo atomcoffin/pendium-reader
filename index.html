@@ -4476,7 +4476,7 @@ body.lib-select-mode .col-item {
        a chip to show only books with that tag, "All" clears. -->
   <div class="lib-tag-strip" id="lib-tag-strip" role="toolbar" aria-label="Filter by tag" hidden></div>
   <div class="lib-body" id="lib-body"></div>
-  <input type="file" id="file-input" accept=".epub,.txt,.html,.htm,.md,.markdown,.cbz" multiple onchange="handleFiles(event)">
+  <input type="file" id="file-input" accept=".epub,.txt,.html,.htm,.md,.markdown,.cbz,.cbr" multiple onchange="handleFiles(event)">
   <!-- Bulk select action bar. Slides up from the bottom when the user
        enters select mode from a book's ⋯ menu. While open, taps on
        library books toggle their selection instead of opening them. -->
@@ -5047,6 +5047,11 @@ body.lib-select-mode .col-item {
 </div>
 
 <script src="vendor/jszip.min.js"></script>
+<!-- CBR adapter. Exposes window.tomenUnrar IF the node-unrar-js library +
+     its WASM binary have been vendored (see vendor/tomen-unrar.js for
+     setup). Always loads cleanly; CBR opens only fail if the underlying
+     library isn't present, and we surface that as a friendly alert. -->
+<script src="vendor/tomen-unrar.js"></script>
 <script>
 // ===== STATE =====
 let library = []; // Metadata only: {id, title, author, cover, progress, chapterIndex, scrollPos}
@@ -5339,12 +5344,20 @@ async function saveBookAtomic(book) {
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
     tx.objectStore('books').put(bookMetaFromBook(book));
-    // Comics store the raw .cbz blob + the sorted page filename index in
-    // the content store. Pages are decoded on demand at read time (see
-    // openBookById's comic branch) — pre-decoding to data URLs would blow
-    // up storage by ~33% per page for no runtime benefit.
+    // Comics store the raw archive blob + the sorted page filename index
+    // + the format token in the content store. Pages are decoded on
+    // demand at read time (see openBookById's comic branch) — pre-decoding
+    // to data URLs would blow up storage by ~33% per page for no runtime
+    // benefit. The format token tells the reader which decoder to use
+    // (cbz → JSZip, cbr → window.tomenUnrar).
     const contentRec = book.kind === 'comic'
-      ? { id: book.id, kind: 'comic', blob: book.cbzBlob, pages: book.pages }
+      ? {
+          id: book.id,
+          kind: 'comic',
+          format: book.format || 'cbz',
+          blob: book.archiveBlob,
+          pages: book.pages
+        }
       : { id: book.id, chapters: book.chapters, toc: book.toc };
     tx.objectStore('content').put(contentRec);
   });
@@ -7859,8 +7872,8 @@ function _observeBookCovers(rootEl, selector) {
 }
 
 // ===== FILE HANDLING =====
-const SUPPORTED_EXT = ['.epub', '.txt', '.html', '.htm', '.md', '.markdown', '.cbz'];
-const SUPPORTED_LIST_STR = '.epub, .txt, .html, .htm, .md, .markdown, .cbz';
+const SUPPORTED_EXT = ['.epub', '.txt', '.html', '.htm', '.md', '.markdown', '.cbz', '.cbr'];
+const SUPPORTED_LIST_STR = '.epub, .txt, .html, .htm, .md, .markdown, .cbz, .cbr';
 function isSupportedFile(name) { return SUPPORTED_EXT.some(ext => name.toLowerCase().endsWith(ext)); }
 
 async function handleFolderPick() {
@@ -7980,7 +7993,7 @@ async function importFiles(files) {
     const importPromise = (async () => {
       const lower = file.name.toLowerCase();
       if (lower.endsWith('.epub')) await loadEpub(file, true);
-      else if (lower.endsWith('.cbz')) await loadCbz(file, true);
+      else if (lower.endsWith('.cbz') || lower.endsWith('.cbr')) await loadComic(file, true);
       else await loadTextFile(file, true);
     })();
 
@@ -8026,7 +8039,7 @@ async function handleFiles(e) {
   for (const file of Array.from(e.target.files)) {
     const lower = file.name.toLowerCase();
     if (lower.endsWith('.epub')) await loadEpub(file);
-    else if (lower.endsWith('.cbz')) await loadCbz(file);
+    else if (lower.endsWith('.cbz') || lower.endsWith('.cbr')) await loadComic(file);
     else await loadTextFile(file);
   }
   e.target.value = '';
@@ -8932,12 +8945,19 @@ async function loadEpub(file, batch = false) {
   }
 }
 
-// ===== CBZ (COMIC ARCHIVE) =====
-// CBZ is just a zip of page images. We don't pre-decode pages at import
-// time: storing N data URLs per book would balloon storage by ~33% per
-// page (data URL overhead) for no runtime benefit. Instead the raw .cbz
-// blob goes into the content store; openBookById parses it with JSZip
-// and the reader extracts pages on demand to blob URLs.
+// ===== COMIC ARCHIVES (CBZ / CBR) =====
+// Comics are zip (CBZ) or rar (CBR) archives of page images. We don't
+// pre-decode pages at import time: storing N data URLs per book would
+// balloon storage by ~33% per page (data URL overhead) for no runtime
+// benefit. The raw archive blob goes into the content store; openBookById
+// re-parses it with the right decoder on open and the reader extracts
+// pages on demand to blob URLs.
+//
+// Decoders live behind a uniform interface (_openComicArchive returns
+// { format, list, read, findByRegex }) so the loader, reader, and any
+// future format share one code path. CBZ uses JSZip directly; CBR
+// dispatches through a small window.tomenUnrar adapter the user
+// vendors alongside node-unrar-js (see vendor/tomen-unrar.js).
 
 // Natural-order sort: "page2.jpg" < "page10.jpg". Crucial for getting
 // pages in the order a human reads them — alphabetic sort puts page10
@@ -8949,14 +8969,76 @@ function _naturalCompare(a, b) {
 // Page-image filter. Excludes macOS resource forks ("__MACOSX/" prefix,
 // "._" siblings) which sneak into archives zipped on a Mac and otherwise
 // show up as black/garbled "pages" at the start of every chapter.
-const _CBZ_IMAGE_RE = /\.(jpe?g|png|gif|webp|avif|bmp)$/i;
-function _isCbzPageEntry(name, entry) {
-  if (entry && entry.dir) return false;
-  if (!_CBZ_IMAGE_RE.test(name)) return false;
+const _COMIC_IMAGE_RE = /\.(jpe?g|png|gif|webp|avif|bmp)$/i;
+function _isComicPageEntry(name) {
+  if (!_COMIC_IMAGE_RE.test(name)) return false;
   if (name.startsWith('__MACOSX/')) return false;
   const base = name.split('/').pop() || '';
   if (base.startsWith('._')) return false;
   return true;
+}
+
+// Extension → format token. Lowercased; returns null for non-comics.
+function _comicFormatForFile(fileName) {
+  const lower = (fileName || '').toLowerCase();
+  if (lower.endsWith('.cbz')) return 'cbz';
+  if (lower.endsWith('.cbr')) return 'cbr';
+  return null;
+}
+
+// Open an archive blob and return a uniform interface. Throws on
+// unsupported formats or missing decoders. Caller is responsible for
+// holding the returned handle for the lifetime of the read session;
+// page extraction reads from the live decoder, not a precomputed list.
+async function _openComicArchive(blob, format) {
+  if (format === 'cbz') return _openCbzArchive(blob);
+  if (format === 'cbr') return _openCbrArchive(blob);
+  throw new Error(`Unsupported comic archive format: ${format}`);
+}
+
+async function _openCbzArchive(blob) {
+  const zip = await JSZip.loadAsync(blob);
+  return {
+    format: 'cbz',
+    list() {
+      const out = [];
+      zip.forEach((p, e) => { if (!e.dir) out.push(p); });
+      return out;
+    },
+    async read(name) {
+      const entry = zip.file(name);
+      if (!entry) throw new Error(`Archive entry not found: ${name}`);
+      return entry.async('blob');
+    },
+    findByRegex(re) {
+      // JSZip natively supports regex lookups, but only on string-typed
+      // input; cap with the explicit instanceof check defensively.
+      return (re instanceof RegExp ? zip.file(re) : []).map(e => e.name);
+    }
+  };
+}
+
+async function _openCbrArchive(blob) {
+  // CBR decoding lives in a vendored adapter the user wires up alongside
+  // node-unrar-js. If the adapter isn't present at runtime, surface a
+  // friendly explanation rather than crashing the import.
+  if (!window.tomenUnrar || typeof window.tomenUnrar.open !== 'function') {
+    const err = new Error('CBR support is not enabled — vendor node-unrar-js + the adapter to read CBR files.');
+    err.code = 'CBR_NO_DECODER';
+    throw err;
+  }
+  const handle = await window.tomenUnrar.open(blob);
+  // The adapter is expected to expose at least list() and read(name).
+  // We wrap it so the rest of the code doesn't have to know about the
+  // specific adapter quirks.
+  return {
+    format: 'cbr',
+    list: () => handle.list(),
+    read: (name) => handle.read(name),
+    findByRegex(re) {
+      return handle.list().filter(n => re.test(n));
+    }
+  };
 }
 
 // One-shot request to flip the bucket to persistent storage. Comics are
@@ -8979,16 +9061,15 @@ async function _ensurePersistentStorage() {
   }
 }
 
-async function loadCbz(file, batch = false) {
+async function loadComic(file, batch = false) {
+  const format = _comicFormatForFile(file.name);
+  if (!format) throw new Error('Not a comic archive');
   if (!batch) showLoading(true);
   try {
-    const zip = await JSZip.loadAsync(file);
+    const archive = await _openComicArchive(file, format);
 
     // Collect, filter, and naturally sort the page image entries.
-    const pages = [];
-    zip.forEach((relPath, entry) => {
-      if (_isCbzPageEntry(relPath, entry)) pages.push(relPath);
-    });
+    const pages = archive.list().filter(_isComicPageEntry);
     if (pages.length === 0) {
       throw new Error('No page images found in archive');
     }
@@ -8998,16 +9079,16 @@ async function loadCbz(file, batch = false) {
     // Calibre. When present, prefer it over filename heuristics. Fields
     // we care about: Title, Series, Number, Writer/Penciller, Summary.
     // Lookup is case-insensitive to handle archives that ship the file
-    // as comicinfo.xml or COMICINFO.XML.
-    let title = file.name.replace(/\.cbz$/i, '');
+    // as comicinfo.xml or COMICINFO.XML, and also matches nested folders
+    // since plenty of archives bury everything under "Series Vol01/".
+    const baseFromName = file.name.replace(/\.(cbz|cbr)$/i, '');
+    let title = baseFromName;
     let author = '';
-    // Spec says ComicInfo.xml lives at the archive root, but plenty of
-    // real-world archives nest everything under a "Series Vol01/" folder.
-    // Match either case-insensitively. zip.file(regex) returns an array.
-    const infoEntry = zip.file(/(^|\/)comicinfo\.xml$/i)[0];
-    if (infoEntry) {
+    const infoMatches = archive.findByRegex(/(^|\/)comicinfo\.xml$/i);
+    if (infoMatches.length > 0) {
       try {
-        const xml = await infoEntry.async('text');
+        const infoBlob = await archive.read(infoMatches[0]);
+        const xml = await infoBlob.text();
         const doc = new DOMParser().parseFromString(xml, 'application/xml');
         const get = (tag) => {
           const el = doc.querySelector(tag);
@@ -9032,28 +9113,30 @@ async function loadCbz(file, batch = false) {
     // grid thumbnails stay consistent across formats.
     let cover = null;
     let spineColor = null;
-    const firstFile = zip.file(pages[0]);
-    if (firstFile) {
-      const rawDataUrl = await blobToDataURL(await firstFile.async('blob'));
+    try {
+      const firstBlob = await archive.read(pages[0]);
+      const rawDataUrl = await blobToDataURL(firstBlob);
       if (rawDataUrl) {
         const small = await shrinkCoverDataURL(rawDataUrl);
         cover = small || rawDataUrl;
       }
+    } catch (e) {
+      console.warn('[tomen] cover extraction failed:', e);
     }
     if (cover) spineColor = await extractColor(cover);
     if (!spineColor) spineColor = strColor(title);
 
     const id = Date.now().toString() + Math.random().toString(36).slice(2, 6);
-    // cbzBlob and pages are consumed by saveBookAtomic's comic branch
+    // archiveBlob + pages are consumed by saveBookAtomic's comic branch
     // and dropped from the in-memory record after persistence — the
     // reader re-parses the blob fresh on open.
     const book = {
       id, title, author, cover, spineColor,
       progress: 0, chapterIndex: 0, scrollPos: 0,
-      format: 'cbz',
+      format,
       kind: 'comic',
       pageCount: pages.length,
-      cbzBlob: file,
+      archiveBlob: file,
       pages,
       coverV: 3
     };
@@ -9086,7 +9169,7 @@ async function loadCbz(file, batch = false) {
       coverV: 3,
       progress: 0, chapterIndex: 0, scrollPos: 0,
       chapterCount: pages.length, contentSize: file.size, spineColor,
-      fontFace: null, format: 'cbz', lastReadAt: 0,
+      fontFace: null, format, lastReadAt: 0,
       kind: 'comic', pageCount: pages.length
     });
     _bumpLibraryVersion();
@@ -9099,10 +9182,15 @@ async function loadCbz(file, batch = false) {
       if (!batch) alert('This book is already in your library.');
       throw err;
     }
-    console.error('CBZ parse error:', err);
+    if (err && err.code === 'CBR_NO_DECODER') {
+      if (!batch) alert('CBR support isn\'t enabled. Drop node-unrar-js + the adapter into vendor/ to read .cbr files.');
+      throw err;
+    }
+    console.error('Comic parse error:', err);
     if (!batch) {
       const quotaMsg = quotaMessageForError(err);
-      alert(quotaMsg || 'Could not open this CBZ. It may be corrupt or not a valid comic archive.');
+      const ext = format ? format.toUpperCase() : 'comic';
+      alert(quotaMsg || `Could not open this ${ext}. It may be corrupt or not a valid comic archive.`);
     }
     throw err;
   } finally {
@@ -9293,14 +9381,17 @@ async function openBookById(id) {
   try {
     const content = await loadBookContent(meta.id);
     if (content && content.kind === 'comic') {
-      // Comic content store record: { id, kind, blob, pages: [filename...] }.
-      // Parse the blob to a JSZip instance kept in-memory while the book is
-      // open; renderComicPage extracts the current page from it on demand.
+      // Comic content store record: { id, kind, format, blob, pages }.
+      // Parse the blob through the unified archive abstraction so CBZ and
+      // CBR share one open path. Records written before the format field
+      // existed default to cbz (all pre-CBR records were zip).
+      //
       // Each page is modeled as a single-spread "chapter" so the existing
       // readerNext/Prev/progress machinery (which walks chapters when the
       // chapter has only one spread) walks pages without modification.
       const pages = Array.isArray(content.pages) ? content.pages : [];
-      const cbzZip = await JSZip.loadAsync(content.blob);
+      const format = content.format || meta.format || 'cbz';
+      const comicArchive = await _openComicArchive(content.blob, format);
       const synthChapters = pages.map((name, i) => ({
         title: `Page ${i + 1}`,
         // html is unused for comics — renderChapter routes to renderComicPage
@@ -9311,8 +9402,9 @@ async function openBookById(id) {
       currentBook = {
         ...meta,
         kind: 'comic',
+        format,
         pages,
-        cbzZip,
+        comicArchive,
         chapters: synthChapters,
         toc: [{ title: 'Page 1', index: 0 }]
       };
@@ -9520,9 +9612,9 @@ function renderComicPage() {
   imgEl.style.visibility = 'hidden';
 
   const pages = currentBook?.pages;
-  const zip = currentBook?.cbzZip;
+  const archive = currentBook?.comicArchive;
   const idx = currentChapterIndex;
-  if (!pages || !zip || idx < 0 || idx >= pages.length) {
+  if (!pages || !archive || idx < 0 || idx >= pages.length) {
     imgEl.removeAttribute('src');
     imgEl.style.visibility = '';
     updateReaderRefs();
@@ -9538,16 +9630,7 @@ function renderComicPage() {
   const prevBlobUrl = imgEl.dataset.blobUrl || '';
 
   const pageName = pages[idx];
-  const entry = zip.file(pageName);
-  if (!entry) {
-    imgEl.removeAttribute('src');
-    imgEl.style.visibility = '';
-    updateReaderRefs();
-    updateProgress();
-    return;
-  }
-
-  entry.async('blob').then(blob => {
+  archive.read(pageName).then(blob => {
     if (myReq !== _comicReqId) return; // a newer turn supersedes us
     const url = URL.createObjectURL(blob);
     // Re-bind load handler each time — the previous page's handler
