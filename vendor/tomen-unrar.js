@@ -29,15 +29,25 @@
 (function () {
   if (typeof window === 'undefined') return;
 
+  // Resolve sibling resources (node-unrar-js + unrar.wasm) against THIS
+  // script's URL, not the document URL. Dynamic import() in a classic
+  // script resolves relative to the script (not the document), whereas
+  // fetch() resolves against the document — using a shared script-relative
+  // base keeps the two in lockstep regardless of where the page is served
+  // from. document.currentScript is only valid during initial execution
+  // of the script, so capture it now and stash the base for later calls.
+  const _scriptSrc = document.currentScript ? document.currentScript.src : '';
+  const _vendorBase = _scriptSrc
+    ? _scriptSrc.substring(0, _scriptSrc.lastIndexOf('/') + 1)
+    : '';
+
   // Cached module + wasm bytes so repeated comic opens don't re-fetch.
   let _modPromise = null;
   let _wasmPromise = null;
 
   function _loadModule() {
     if (_modPromise) return _modPromise;
-    // Dynamic import works from regular scripts too. Path is resolved
-    // relative to the document URL (index.html), not this file.
-    _modPromise = import('./vendor/node-unrar-js/index.js').catch(err => {
+    _modPromise = import(_vendorBase + 'node-unrar-js/index.js').catch(err => {
       _modPromise = null;
       const wrapped = new Error(
         'Could not load node-unrar-js from vendor/node-unrar-js/. ' +
@@ -51,7 +61,7 @@
 
   function _loadWasm() {
     if (_wasmPromise) return _wasmPromise;
-    _wasmPromise = fetch('vendor/unrar.wasm').then(r => {
+    _wasmPromise = fetch(_vendorBase + 'unrar.wasm').then(r => {
       if (!r.ok) {
         _wasmPromise = null;
         throw new Error('vendor/unrar.wasm fetch returned ' + r.status);
