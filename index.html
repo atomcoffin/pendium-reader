@@ -2324,6 +2324,52 @@ body.r-ui-visible .r-footer-ref {
    now targets the whole spread (both slots fade in sync). */
 .r-spread.fade .r-slot-inner { opacity: 0; }
 
+/* ===== Comic (CBZ) page viewer =====
+   Lives inside .r-book as a sibling of .r-spread. Hidden by default;
+   shown when body.r-mode-comic is set (stamped by openBookById when the
+   open book has kind === 'comic'). When visible, the dual-slot text
+   layout is hidden — comics get a single full-bleed image centered in
+   the page with object-fit: contain. */
+.r-comic { display: none; }
+body.r-mode-comic .r-spread { display: none; }
+body.r-mode-comic .r-comic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+body.r-mode-comic .r-book {
+  /* Drop the reading-width clamp for comics. Text reading benefits from
+     a narrower measure; comics want as much canvas as the viewport offers
+     so art renders at the largest possible size. */
+  max-width: 100%;
+  height: 100%;
+}
+.r-comic-img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  /* object-fit isn't doing anything here (the element auto-sizes from
+     max-w/max-h), but keep it for the future spread/zoom passes. */
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.r-comic.fade .r-comic-img { opacity: 0; }
+.r-comic-img { transition: opacity 160ms ease; opacity: 1; }
+
+/* Typography controls don't apply to comics — hide them in the
+   Appearance panel when the current book is a comic. Theme and
+   Brightness stay (those affect the chrome around the page, not
+   text rendering). */
+body.r-mode-comic .settings-compact .face-cell,
+body.r-mode-comic .settings-compact .set-paragraph-cluster {
+  display: none;
+}
+
 /* Click zones for pagination. Cursor hides when over the zone so the
    hover-ring stands in for it. */
 /* Page-turn click zones. On desktop they cover the outer 40% of each side,
@@ -4312,7 +4358,7 @@ body.lib-select-mode .col-item {
        a chip to show only books with that tag, "All" clears. -->
   <div class="lib-tag-strip" id="lib-tag-strip" role="toolbar" aria-label="Filter by tag" hidden></div>
   <div class="lib-body" id="lib-body"></div>
-  <input type="file" id="file-input" accept=".epub,.txt,.html,.htm,.md,.markdown" multiple onchange="handleFiles(event)">
+  <input type="file" id="file-input" accept=".epub,.txt,.html,.htm,.md,.markdown,.cbz" multiple onchange="handleFiles(event)">
   <!-- Bulk select action bar. Slides up from the bottom when the user
        enters select mode from a book's ⋯ menu. While open, taps on
        library books toggle their selection instead of opening them. -->
@@ -4380,6 +4426,14 @@ body.lib-select-mode .col-item {
         <div class="r-slot r-slot-right" id="r-slot-right">
           <div class="r-slot-inner r-inner" id="r-inner-right" aria-hidden="true"></div>
         </div>
+      </div>
+      <!-- Comic (CBZ) page viewer. Sibling of .r-spread; hidden unless
+           body.r-mode-comic is set. A single <img> swapped out per page
+           turn — readerNext/Prev walk currentChapterIndex (one chapter
+           per page for comics) and renderComicPage decodes the page
+           image from the in-memory JSZip to a blob URL. -->
+      <div class="r-comic" id="r-comic">
+        <img class="r-comic-img" id="r-comic-img" alt="" draggable="false">
       </div>
     </div>
     <!-- Book + chapter reminder at bottom. -->
@@ -5065,6 +5119,7 @@ async function saveBookContent(book) {
 // saveBookMeta and saveBookAtomic can share the projection logic. Marks are
 // stored in their own object store now and intentionally excluded here.
 function bookMetaFromBook(book) {
+  const isComic = book.kind === 'comic';
   const meta = {
     id: book.id, title: book.title, author: book.author,
     // Cover-storage version. 1 = raw cover in books store (legacy),
@@ -5073,8 +5128,14 @@ function bookMetaFromBook(book) {
     coverV: book.coverV || 3,
     progress: book.progress || 0, chapterIndex: book.chapterIndex || 0,
     spreadIndex: book.spreadIndex || 0,
-    scrollPos: book.scrollPos || 0, chapterCount: (book.chapters || []).length,
-    contentSize: (book.chapters || []).reduce((s, c) => s + (c.html?.length || 0), 0),
+    scrollPos: book.scrollPos || 0,
+    // For comics, chapterCount mirrors pageCount so library views show a
+    // consistent "N pages" / progress count; contentSize is the raw zip
+    // size (the heavy content here is the archived images, not HTML).
+    chapterCount: isComic ? (book.pageCount || 0) : (book.chapters || []).length,
+    contentSize: isComic
+      ? (book.cbzBlob?.size || book.contentSize || 0)
+      : (book.chapters || []).reduce((s, c) => s + (c.html?.length || 0), 0),
     spineColor: book.spineColor || null,
     // Per-book typography override. null = use the global default. Valid
     // values match _READING_FACES keys: 'serif' | 'sans' | 'mono'.
@@ -5106,6 +5167,14 @@ function bookMetaFromBook(book) {
     // store — the global tag list is derived from this union at render.
     tags: Array.isArray(book.tags) ? book.tags : []
   };
+  // Stamp comic-specific fields so the library renderers and reader
+  // open path can branch on `kind` without re-reading the content
+  // store first. pageCount is what library views show in lieu of
+  // chapter counts.
+  if (isComic) {
+    meta.kind = 'comic';
+    meta.pageCount = book.pageCount || 0;
+  }
   // Preserve a legacy cover field ONLY when the book hasn't been
   // migrated yet — coverV < 3 means the cover is supposed to live in
   // the books store still, and stripping it on a mid-migration
@@ -5130,7 +5199,14 @@ async function saveBookAtomic(book) {
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
     tx.objectStore('books').put(bookMetaFromBook(book));
-    tx.objectStore('content').put({ id: book.id, chapters: book.chapters, toc: book.toc });
+    // Comics store the raw .cbz blob + the sorted page filename index in
+    // the content store. Pages are decoded on demand at read time (see
+    // openBookById's comic branch) — pre-decoding to data URLs would blow
+    // up storage by ~33% per page for no runtime benefit.
+    const contentRec = book.kind === 'comic'
+      ? { id: book.id, kind: 'comic', blob: book.cbzBlob, pages: book.pages }
+      : { id: book.id, chapters: book.chapters, toc: book.toc };
+    tx.objectStore('content').put(contentRec);
   });
 }
 
@@ -7643,8 +7719,8 @@ function _observeBookCovers(rootEl, selector) {
 }
 
 // ===== FILE HANDLING =====
-const SUPPORTED_EXT = ['.epub', '.txt', '.html', '.htm', '.md', '.markdown'];
-const SUPPORTED_LIST_STR = '.epub, .txt, .html, .htm, .md, .markdown';
+const SUPPORTED_EXT = ['.epub', '.txt', '.html', '.htm', '.md', '.markdown', '.cbz'];
+const SUPPORTED_LIST_STR = '.epub, .txt, .html, .htm, .md, .markdown, .cbz';
 function isSupportedFile(name) { return SUPPORTED_EXT.some(ext => name.toLowerCase().endsWith(ext)); }
 
 async function handleFolderPick() {
@@ -7702,7 +7778,9 @@ async function importFiles(files) {
       setTimeout(() => reject(new Error('timeout after 30s')), 30000)
     );
     const importPromise = (async () => {
-      if (file.name.toLowerCase().endsWith('.epub')) await loadEpub(file, true);
+      const lower = file.name.toLowerCase();
+      if (lower.endsWith('.epub')) await loadEpub(file, true);
+      else if (lower.endsWith('.cbz')) await loadCbz(file, true);
       else await loadTextFile(file, true);
     })();
 
@@ -7737,7 +7815,9 @@ async function importFiles(files) {
 
 async function handleFiles(e) {
   for (const file of Array.from(e.target.files)) {
-    if (file.name.endsWith('.epub')) await loadEpub(file);
+    const lower = file.name.toLowerCase();
+    if (lower.endsWith('.epub')) await loadEpub(file);
+    else if (lower.endsWith('.cbz')) await loadCbz(file);
     else await loadTextFile(file);
   }
   e.target.value = '';
@@ -8504,6 +8584,184 @@ async function loadEpub(file, batch = false) {
   }
 }
 
+// ===== CBZ (COMIC ARCHIVE) =====
+// CBZ is just a zip of page images. We don't pre-decode pages at import
+// time: storing N data URLs per book would balloon storage by ~33% per
+// page (data URL overhead) for no runtime benefit. Instead the raw .cbz
+// blob goes into the content store; openBookById parses it with JSZip
+// and the reader extracts pages on demand to blob URLs.
+
+// Natural-order sort: "page2.jpg" < "page10.jpg". Crucial for getting
+// pages in the order a human reads them — alphabetic sort puts page10
+// before page2 and the comic reads out of sequence.
+function _naturalCompare(a, b) {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+// Page-image filter. Excludes macOS resource forks ("__MACOSX/" prefix,
+// "._" siblings) which sneak into archives zipped on a Mac and otherwise
+// show up as black/garbled "pages" at the start of every chapter.
+const _CBZ_IMAGE_RE = /\.(jpe?g|png|gif|webp|avif|bmp)$/i;
+function _isCbzPageEntry(name, entry) {
+  if (entry && entry.dir) return false;
+  if (!_CBZ_IMAGE_RE.test(name)) return false;
+  if (name.startsWith('__MACOSX/')) return false;
+  const base = name.split('/').pop() || '';
+  if (base.startsWith('._')) return false;
+  return true;
+}
+
+// One-shot request to flip the bucket to persistent storage. Comics are
+// large (50-300MB each) and the default best-effort bucket gets evicted
+// under storage pressure; persisted buckets don't. Fire-and-forget.
+let _persistRequested = false;
+async function _ensurePersistentStorage() {
+  if (_persistRequested) return;
+  _persistRequested = true;
+  try {
+    if (navigator.storage && typeof navigator.storage.persist === 'function') {
+      const already = navigator.storage.persisted
+        ? await navigator.storage.persisted()
+        : false;
+      if (!already) await navigator.storage.persist();
+    }
+  } catch (e) {
+    // Non-fatal. Most browsers grant silently; a few (Safari) prompt or
+    // ignore. Failure here just means we use the default bucket.
+  }
+}
+
+async function loadCbz(file, batch = false) {
+  if (!batch) showLoading(true);
+  try {
+    const zip = await JSZip.loadAsync(file);
+
+    // Collect, filter, and naturally sort the page image entries.
+    const pages = [];
+    zip.forEach((relPath, entry) => {
+      if (_isCbzPageEntry(relPath, entry)) pages.push(relPath);
+    });
+    if (pages.length === 0) {
+      throw new Error('No page images found in archive');
+    }
+    pages.sort(_naturalCompare);
+
+    // ComicInfo.xml — the de-facto standard sidecar from ComicRack /
+    // Calibre. When present, prefer it over filename heuristics. Fields
+    // we care about: Title, Series, Number, Writer/Penciller, Summary.
+    // Lookup is case-insensitive to handle archives that ship the file
+    // as comicinfo.xml or COMICINFO.XML.
+    let title = file.name.replace(/\.cbz$/i, '');
+    let author = '';
+    // Spec says ComicInfo.xml lives at the archive root, but plenty of
+    // real-world archives nest everything under a "Series Vol01/" folder.
+    // Match either case-insensitively. zip.file(regex) returns an array.
+    const infoEntry = zip.file(/(^|\/)comicinfo\.xml$/i)[0];
+    if (infoEntry) {
+      try {
+        const xml = await infoEntry.async('text');
+        const doc = new DOMParser().parseFromString(xml, 'application/xml');
+        const get = (tag) => {
+          const el = doc.querySelector(tag);
+          return el ? (el.textContent || '').trim() : '';
+        };
+        const ciTitle = get('Title');
+        const ciSeries = get('Series');
+        const ciNumber = get('Number');
+        const ciWriter = get('Writer') || get('Penciller') || get('Artist');
+        if (ciWriter) author = ciWriter;
+        if (ciTitle) {
+          title = ciTitle;
+        } else if (ciSeries) {
+          title = ciNumber ? `${ciSeries} #${ciNumber}` : ciSeries;
+        }
+      } catch (e) {
+        // ComicInfo.xml malformed — fall back to filename. Not fatal.
+      }
+    }
+
+    // Cover = page 1, shrunken with the same path EPUB covers use so
+    // grid thumbnails stay consistent across formats.
+    let cover = null;
+    let spineColor = null;
+    const firstFile = zip.file(pages[0]);
+    if (firstFile) {
+      const rawDataUrl = await blobToDataURL(await firstFile.async('blob'));
+      if (rawDataUrl) {
+        const small = await shrinkCoverDataURL(rawDataUrl);
+        cover = small || rawDataUrl;
+      }
+    }
+    if (cover) spineColor = await extractColor(cover);
+    if (!spineColor) spineColor = strColor(title);
+
+    const id = Date.now().toString() + Math.random().toString(36).slice(2, 6);
+    // cbzBlob and pages are consumed by saveBookAtomic's comic branch
+    // and dropped from the in-memory record after persistence — the
+    // reader re-parses the blob fresh on open.
+    const book = {
+      id, title, author, cover, spineColor,
+      progress: 0, chapterIndex: 0, scrollPos: 0,
+      format: 'cbz',
+      kind: 'comic',
+      pageCount: pages.length,
+      cbzBlob: file,
+      pages,
+      coverV: 3
+    };
+
+    // Dedup against the existing library on (title, author). Same shape
+    // as loadEpub's so importFiles's DUPLICATE handling works unchanged.
+    const titleLc = (book.title || '').toLowerCase().trim();
+    const authorLc = (book.author || '').toLowerCase().trim();
+    if (titleLc && library.some(b =>
+        (b.title || '').toLowerCase().trim() === titleLc &&
+        (b.author || '').toLowerCase().trim() === authorLc)) {
+      const dupErr = new Error('duplicate');
+      dupErr.code = 'DUPLICATE';
+      throw dupErr;
+    }
+
+    if (cover) {
+      try {
+        await dbPut('covers', { id: book.id, dataURL: cover });
+        _coverCache.set(book.id, cover);
+      } catch (err) {
+        console.warn('[tomen] cover persist failed for', book.id, err);
+      }
+    } else {
+      _coverCache.set(book.id, null);
+    }
+    await saveBookAtomic(book);
+    library.push({
+      id: book.id, title: book.title, author: book.author, cover: book.cover,
+      coverV: 3,
+      progress: 0, chapterIndex: 0, scrollPos: 0,
+      chapterCount: pages.length, contentSize: file.size, spineColor,
+      fontFace: null, format: 'cbz', lastReadAt: 0,
+      kind: 'comic', pageCount: pages.length
+    });
+    _bumpLibraryVersion();
+    if (!batch) renderLibrary();
+    // First comic in the library → ask for persistent storage so the
+    // browser doesn't silently evict it under pressure. Cheap and idempotent.
+    _ensurePersistentStorage();
+  } catch (err) {
+    if (err && err.code === 'DUPLICATE') {
+      if (!batch) alert('This book is already in your library.');
+      throw err;
+    }
+    console.error('CBZ parse error:', err);
+    if (!batch) {
+      const quotaMsg = quotaMessageForError(err);
+      alert(quotaMsg || 'Could not open this CBZ. It may be corrupt or not a valid comic archive.');
+    }
+    throw err;
+  } finally {
+    if (!batch) showLoading(false);
+  }
+}
+
 function resolveHref(base, rel) {
   if (rel.startsWith('/') || rel.startsWith('http')) return rel;
   const parts = (base + rel).split('/');
@@ -8686,7 +8944,33 @@ async function openBookById(id) {
   showLoading(true, 'Opening book…');
   try {
     const content = await loadBookContent(meta.id);
-    currentBook = { ...meta, chapters: content.chapters, toc: content.toc };
+    if (content && content.kind === 'comic') {
+      // Comic content store record: { id, kind, blob, pages: [filename...] }.
+      // Parse the blob to a JSZip instance kept in-memory while the book is
+      // open; renderComicPage extracts the current page from it on demand.
+      // Each page is modeled as a single-spread "chapter" so the existing
+      // readerNext/Prev/progress machinery (which walks chapters when the
+      // chapter has only one spread) walks pages without modification.
+      const pages = Array.isArray(content.pages) ? content.pages : [];
+      const cbzZip = await JSZip.loadAsync(content.blob);
+      const synthChapters = pages.map((name, i) => ({
+        title: `Page ${i + 1}`,
+        // html is unused for comics — renderChapter routes to renderComicPage
+        // before touching it. Kept as a sentinel so length math elsewhere
+        // (saveProgress book-wide progress) stays correct.
+        html: ''
+      }));
+      currentBook = {
+        ...meta,
+        kind: 'comic',
+        pages,
+        cbzZip,
+        chapters: synthChapters,
+        toc: [{ title: 'Page 1', index: 0 }]
+      };
+    } else {
+      currentBook = { ...meta, chapters: content.chapters, toc: content.toc };
+    }
     // Marks live in their own store now — load them and use as in-memory
     // cache. Legacy inline `bookmarks` / `marks` fields are migrated on DB
     // upgrade, but fall back here just in case an older record slips through.
@@ -8773,6 +9057,9 @@ function showLibrary() {
   $('screen-reader').classList.remove('active');
   $('screen-lib').classList.add('active');
   document.body.classList.remove('r-ui-visible');
+  // If we were reading a comic, release the JSZip ref + revoke the
+  // current blob URL so the next book opens with a clean image element.
+  _teardownComicMode();
   // Revert to the global default face so library chrome renders consistently
   // regardless of which book was last open. The per-book override will be
   // re-applied the next time that book is opened.
@@ -8801,6 +9088,17 @@ function showLibrary() {
 // Render the current chapter's HTML into the pages container, then measure
 // how many spreads it occupies.
 function renderChapter() {
+  // Comic books take a wholly different render path: a single full-bleed
+  // image per "chapter" (each page is a chapter for routing purposes), no
+  // multi-column pagination, no marks/spread math. Branch out before any
+  // of the text-reader DOM is touched.
+  if (currentBook && currentBook.kind === 'comic') {
+    return renderComicPage();
+  }
+  // Non-comic render: make sure no leftover comic-mode stamp is on the
+  // body. Cheap, idempotent, and protects against any path that opens a
+  // text book without first going through showLibrary.
+  document.body.classList.remove('r-mode-comic');
   const leftInner = $('r-inner');
   const rightInner = $('r-inner-right');
   const html = chapters[currentChapterIndex]?.html || '<p>No content</p>';
@@ -8841,6 +9139,86 @@ function renderChapter() {
   // Measure after layout settles. Pagination is computed from the LEFT slot
   // only — both slots have identical content so their column counts match.
   awaitChapterImagesThenMeasure(leftInner);
+}
+
+// ===== Comic page rendering =====
+// Each "chapter" for a comic is a single page; totalSpreads is pinned to 1
+// so readerNext / readerPrev fall through to the chapter-advance path and
+// walk pages. The image element lives in markup; we just swap its src.
+//
+// Page bytes are decoded on demand from the in-memory JSZip — we never
+// hold more than one decoded page in memory at a time. The previous
+// blob URL is revoked on every swap so the browser can free its backing
+// memory promptly (otherwise a 200-page read leaks ~hundreds of MB).
+let _comicReqId = 0;
+function renderComicPage() {
+  // Reset spread state so the gesture machinery treats this page as one
+  // atomic spread. Without this, an EPUB → comic transition can leave
+  // totalSpreads stale from the previous book's last chapter.
+  totalSpreads = 1;
+  currentSpread = 0;
+
+  document.body.classList.add('r-mode-comic');
+
+  const imgEl = $('r-comic-img');
+  if (!imgEl) return;
+
+  const pages = currentBook?.pages;
+  const zip = currentBook?.cbzZip;
+  const idx = currentChapterIndex;
+  if (!pages || !zip || idx < 0 || idx >= pages.length) {
+    imgEl.removeAttribute('src');
+    updateReaderRefs();
+    updateProgress();
+    return;
+  }
+
+  // Request token: a later page-turn may arrive before the previous
+  // decode resolves. The token check before assigning src ensures only
+  // the most recent request actually paints — otherwise rapid swiping
+  // would briefly show stale pages as out-of-order decodes settle.
+  const myReq = ++_comicReqId;
+  const prevBlobUrl = imgEl.dataset.blobUrl || '';
+
+  const pageName = pages[idx];
+  const entry = zip.file(pageName);
+  if (!entry) {
+    imgEl.removeAttribute('src');
+    updateReaderRefs();
+    updateProgress();
+    return;
+  }
+
+  entry.async('blob').then(blob => {
+    if (myReq !== _comicReqId) return; // a newer turn supersedes us
+    const url = URL.createObjectURL(blob);
+    imgEl.src = url;
+    imgEl.dataset.blobUrl = url;
+    // Revoke the previous page's URL AFTER assigning the new one so
+    // there's no brief window where the <img> renders nothing.
+    if (prevBlobUrl) URL.revokeObjectURL(prevBlobUrl);
+  }).catch(err => {
+    console.warn('[tomen] comic page decode failed:', pageName, err);
+  });
+
+  updateReaderRefs();
+  updateProgress();
+}
+
+// Drop all comic-mode state when leaving the reader. Revokes the
+// last-shown blob URL, releases the in-memory JSZip reference, and
+// unstamps the body class so the next book opens clean.
+function _teardownComicMode() {
+  document.body.classList.remove('r-mode-comic');
+  _comicReqId++; // invalidates any in-flight decode promises
+  const imgEl = $('r-comic-img');
+  if (imgEl) {
+    if (imgEl.dataset.blobUrl) {
+      URL.revokeObjectURL(imgEl.dataset.blobUrl);
+      imgEl.dataset.blobUrl = '';
+    }
+    imgEl.removeAttribute('src');
+  }
 }
 
 // Wait for all images in the chapter to either load (or fail) before
