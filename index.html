@@ -2380,11 +2380,17 @@ body.r-ui-visible .r-footer-ref {
 .r-comic { display: none; }
 body.r-mode-comic .r-spread { display: none; }
 body.r-mode-comic .r-comic {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
+  position: relative;
   width: 100%;
   height: 100%;
+  /* Overflow hidden so a zoomed/panned image can't bleed outside the
+     reader frame onto the toolbars. */
+  overflow: hidden;
+  /* Prevent native browser pinch-zoom + double-tap zoom from intercepting
+     touch events — we handle both ourselves so the gestures act on the
+     comic page, not on the entire viewport. */
+  touch-action: none;
 }
 body.r-mode-comic .r-book {
   /* Drop the reading-width clamp for comics. Text reading benefits from
@@ -2394,19 +2400,32 @@ body.r-mode-comic .r-book {
   height: 100%;
 }
 .r-comic-img {
+  /* Absolute positioning + transform-origin: 0 0 makes the zoom math
+     predictable: the image's natural top-left is at (0,0) within .r-comic,
+     and (translate, scale) places + sizes it. Sizing is no longer done via
+     max-width / object-fit — JS computes the "fit" scale on image load
+     and applies it as the resting transform. */
+  position: absolute;
+  top: 0;
+  left: 0;
   display: block;
-  max-width: 100%;
-  max-height: 100%;
   width: auto;
   height: auto;
-  /* object-fit isn't doing anything here (the element auto-sizes from
-     max-w/max-h), but keep it for the future spread/zoom passes. */
-  object-fit: contain;
+  transform-origin: 0 0;
   user-select: none;
   -webkit-user-drag: none;
+  /* Hint the compositor — scale + translate change on every pinch/pan
+     frame; promoting to its own layer keeps the paint smooth. */
+  will-change: transform;
+  transition: opacity 160ms ease;
+  opacity: 1;
 }
 .r-comic.fade .r-comic-img { opacity: 0; }
-.r-comic-img { transition: opacity 160ms ease; opacity: 1; }
+
+/* When zoomed past fit, hint pan affordance with a grab cursor on the
+   image. Active drag flips to grabbing via the .r-comic-panning class. */
+body.r-comic-zoomed .r-comic-img { cursor: grab; }
+body.r-comic-zoomed.r-comic-panning .r-comic-img { cursor: grabbing; }
 
 /* Typography controls don't apply to comics — hide them in the
    Appearance panel when the current book is a comic. Theme and
@@ -9492,11 +9511,20 @@ function renderComicPage() {
   const imgEl = $('r-comic-img');
   if (!imgEl) return;
 
+  // Reset zoom for each new page. Preserving zoom across page turns would
+  // be confusing — what looked like "the bottom-right panel" on page 5
+  // points at a completely different image on page 6.
+  _resetComicZoomState();
+  // Pre-hide the image until the new src loads + fit is computed, so we
+  // don't briefly flash the previous page's pixels at the wrong transform.
+  imgEl.style.visibility = 'hidden';
+
   const pages = currentBook?.pages;
   const zip = currentBook?.cbzZip;
   const idx = currentChapterIndex;
   if (!pages || !zip || idx < 0 || idx >= pages.length) {
     imgEl.removeAttribute('src');
+    imgEl.style.visibility = '';
     updateReaderRefs();
     updateProgress();
     return;
@@ -9513,6 +9541,7 @@ function renderComicPage() {
   const entry = zip.file(pageName);
   if (!entry) {
     imgEl.removeAttribute('src');
+    imgEl.style.visibility = '';
     updateReaderRefs();
     updateProgress();
     return;
@@ -9521,6 +9550,18 @@ function renderComicPage() {
   entry.async('blob').then(blob => {
     if (myReq !== _comicReqId) return; // a newer turn supersedes us
     const url = URL.createObjectURL(blob);
+    // Re-bind load handler each time — the previous page's handler
+    // already fired and was discarded. addEventListener with { once: true }
+    // would also work but onload is simpler and there's only one in flight.
+    imgEl.onload = () => {
+      if (myReq !== _comicReqId) return;
+      _computeComicFit();
+      imgEl.style.visibility = '';
+    };
+    imgEl.onerror = () => {
+      if (myReq !== _comicReqId) return;
+      imgEl.style.visibility = '';
+    };
     imgEl.src = url;
     imgEl.dataset.blobUrl = url;
     // Revoke the previous page's URL AFTER assigning the new one so
@@ -9528,18 +9569,355 @@ function renderComicPage() {
     if (prevBlobUrl) URL.revokeObjectURL(prevBlobUrl);
   }).catch(err => {
     console.warn('[tomen] comic page decode failed:', pageName, err);
+    imgEl.style.visibility = '';
   });
 
   updateReaderRefs();
   updateProgress();
 }
 
+// ===== Comic zoom & pan =====
+// State: CSS scale + translate on the comic <img>. transform-origin is
+// pinned to (0,0) so the math is simple — image natural pixels sit at
+// (translate, scale * pixel). _comicFitScale is the scale that makes the
+// natural image fit inside the container ("contain" sizing in transform
+// form); we treat that as the resting state and the lower zoom bound.
+let _comicScale = 1;
+let _comicTx = 0;
+let _comicTy = 0;
+let _comicFitScale = 1;
+const _COMIC_MAX_ZOOM = 5;       // hard ceiling multiplier above fit
+const _COMIC_DBL_TAP_ZOOM = 2.5; // double-tap target zoom (× fit)
+
+function _resetComicZoomState() {
+  _comicScale = 1;
+  _comicTx = 0;
+  _comicTy = 0;
+  _comicFitScale = 1;
+  document.body.classList.remove('r-comic-zoomed', 'r-comic-panning');
+}
+
+function _applyComicTransform() {
+  const imgEl = $('r-comic-img');
+  if (!imgEl) return;
+  imgEl.style.transform = `translate(${_comicTx}px, ${_comicTy}px) scale(${_comicScale})`;
+  document.body.classList.toggle('r-comic-zoomed', _comicScale > _comicFitScale + 0.001);
+}
+
+// Compute the fit scale and center the image inside the container. Called
+// on every page load and on viewport resize while reading a comic.
+function _computeComicFit() {
+  const imgEl = $('r-comic-img');
+  const container = $('r-comic');
+  if (!imgEl || !container) return;
+  if (!imgEl.naturalWidth || !imgEl.naturalHeight) return;
+  const containerW = container.clientWidth;
+  const containerH = container.clientHeight;
+  if (containerW <= 0 || containerH <= 0) return;
+  // Clamp fit ≤ 1 so a smaller-than-container image isn't blown up past
+  // its natural pixel resolution. Comics are usually high-res scans so
+  // this rarely fires, but a small reference image shouldn't pixelate.
+  const fitRaw = Math.min(containerW / imgEl.naturalWidth, containerH / imgEl.naturalHeight);
+  const fit = Math.min(1, fitRaw);
+  _comicFitScale = (isFinite(fit) && fit > 0) ? fit : 1;
+  _comicScale = _comicFitScale;
+  _comicTx = (containerW - imgEl.naturalWidth * _comicScale) / 2;
+  _comicTy = (containerH - imgEl.naturalHeight * _comicScale) / 2;
+  _applyComicTransform();
+}
+
+// Clamp the translate so the image stays inside the container when zoomed,
+// or centered when smaller than the container in either axis. Run after
+// every interactive transform change so the edges never drift off-screen.
+function _clampComicPan() {
+  const imgEl = $('r-comic-img');
+  const container = $('r-comic');
+  if (!imgEl || !container) return;
+  const containerW = container.clientWidth;
+  const containerH = container.clientHeight;
+  const scaledW = imgEl.naturalWidth * _comicScale;
+  const scaledH = imgEl.naturalHeight * _comicScale;
+  if (scaledW <= containerW) {
+    _comicTx = (containerW - scaledW) / 2;
+  } else {
+    _comicTx = Math.max(containerW - scaledW, Math.min(0, _comicTx));
+  }
+  if (scaledH <= containerH) {
+    _comicTy = (containerH - scaledH) / 2;
+  } else {
+    _comicTy = Math.max(containerH - scaledH, Math.min(0, _comicTy));
+  }
+}
+
+// Apply a new scale while keeping a viewport point pinned in place. The
+// caller passes the screen coords to pin (pinch midpoint, mouse cursor,
+// or the tap location for dbl-tap zoom). Standard pan-zoom math: convert
+// the viewport point to image-local pixel coords at the OLD scale, then
+// translate so the same local point lands at the same viewport point
+// under the NEW scale.
+function _zoomComicAtPoint(targetScale, viewportX, viewportY) {
+  const clamped = Math.max(_comicFitScale, Math.min(_COMIC_MAX_ZOOM * _comicFitScale, targetScale));
+  if (Math.abs(clamped - _comicScale) < 0.001) return;
+  const localX = (viewportX - _comicTx) / _comicScale;
+  const localY = (viewportY - _comicTy) / _comicScale;
+  _comicTx = viewportX - localX * clamped;
+  _comicTy = viewportY - localY * clamped;
+  _comicScale = clamped;
+  _clampComicPan();
+  _applyComicTransform();
+}
+
+function _toggleComicZoom(viewportX, viewportY) {
+  if (_comicScale > _comicFitScale + 0.001) {
+    // Zoomed → snap back to fit, centered.
+    _computeComicFit();
+  } else {
+    _zoomComicAtPoint(_comicFitScale * _COMIC_DBL_TAP_ZOOM, viewportX, viewportY);
+  }
+}
+
+// Convert reader-relative coords from a touch / mouse / wheel event. The
+// gesture math wants viewport-pixel offsets from the comic container's
+// top-left; passing window coords directly would be off by the container's
+// position when the toolbars or theme-induced layout shifts things.
+function _eventComicXY(clientX, clientY) {
+  const container = $('r-comic');
+  if (!container) return { x: clientX, y: clientY };
+  const r = container.getBoundingClientRect();
+  return { x: clientX - r.left, y: clientY - r.top };
+}
+
+// ===== Comic gesture wiring =====
+// Bound once at startup on #r-comic. Handlers all early-return when not in
+// comic mode (body.r-mode-comic), so EPUB reads pay nothing for these.
+
+// Pinch state
+let _pinchActive = false;
+let _pinchStartDist = 0;
+let _pinchStartScale = 1;
+// Once a second finger has touched down during a comic-mode gesture, the
+// preceding 1-finger touchstart has already bubbled to the parent r-content
+// swipe handler — its `tracking` flag is set. This flag suppresses the
+// matching touchend from reaching the parent so the lift-off delta isn't
+// misinterpreted as a horizontal swipe → page-turn.
+let _comicMultiTouchActive = false;
+
+// Pan state
+let _panActive = false;
+let _panStartX = 0;
+let _panStartY = 0;
+let _panStartTx = 0;
+let _panStartTy = 0;
+
+// Double-tap detection (touch). Desktop uses native dblclick.
+let _lastTapTime = 0;
+let _lastTapX = 0;
+let _lastTapY = 0;
+const _DBL_TAP_MS = 320;
+const _DBL_TAP_DIST = 30;
+
+function _bindComicGestures() {
+  const el = $('r-comic');
+  if (!el || el._comicBound) return;
+  el._comicBound = true;
+
+  // ===== Touch =====
+  el.addEventListener('touchstart', (e) => {
+    if (!document.body.classList.contains('r-mode-comic')) return;
+    if (e.touches.length === 2) {
+      // Pinch start. preventDefault + stopPropagation so the parent
+      // r-content swipe handler doesn't try to interpret this as a
+      // horizontal swipe.
+      e.preventDefault();
+      e.stopPropagation();
+      const t1 = e.touches[0], t2 = e.touches[1];
+      const dx = t1.clientX - t2.clientX;
+      const dy = t1.clientY - t2.clientY;
+      _pinchActive = true;
+      _comicMultiTouchActive = true;
+      _pinchStartDist = Math.hypot(dx, dy) || 1;
+      _pinchStartScale = _comicScale;
+      _panActive = false;
+    } else if (e.touches.length === 1 && _comicScale > _comicFitScale + 0.001) {
+      // Single-finger pan — only when zoomed past fit. At fit, single-touch
+      // bubbles up to the parent so the existing swipe-to-turn keeps working.
+      e.stopPropagation();
+      const t = e.touches[0];
+      _panActive = true;
+      _panStartX = t.clientX;
+      _panStartY = t.clientY;
+      _panStartTx = _comicTx;
+      _panStartTy = _comicTy;
+      document.body.classList.add('r-comic-panning');
+    }
+    // Single-touch at fit-scale: do not stopPropagation — let the parent
+    // r-content handler take it for swipe-to-turn.
+  }, { passive: false });
+
+  el.addEventListener('touchmove', (e) => {
+    if (!document.body.classList.contains('r-mode-comic')) return;
+    if (_pinchActive && e.touches.length >= 2) {
+      e.preventDefault();
+      e.stopPropagation();
+      const t1 = e.touches[0], t2 = e.touches[1];
+      const dx = t1.clientX - t2.clientX;
+      const dy = t1.clientY - t2.clientY;
+      const dist = Math.hypot(dx, dy) || 1;
+      const ratio = dist / _pinchStartDist;
+      const midX = (t1.clientX + t2.clientX) / 2;
+      const midY = (t1.clientY + t2.clientY) / 2;
+      const { x: ax, y: ay } = _eventComicXY(midX, midY);
+      _zoomComicAtPoint(_pinchStartScale * ratio, ax, ay);
+    } else if (_panActive && e.touches.length === 1) {
+      e.preventDefault();
+      e.stopPropagation();
+      const t = e.touches[0];
+      _comicTx = _panStartTx + (t.clientX - _panStartX);
+      _comicTy = _panStartTy + (t.clientY - _panStartY);
+      _clampComicPan();
+      _applyComicTransform();
+    }
+  }, { passive: false });
+
+  el.addEventListener('touchend', (e) => {
+    if (!document.body.classList.contains('r-mode-comic')) return;
+    // Suppress this touchend from reaching the parent swipe handler if
+    // a multi-touch sequence happened on this gesture — the parent's
+    // `tracking` flag was set by the initial 1-finger touchstart that
+    // bubbled before the second finger arrived, and the last delta on
+    // lift-off would otherwise look like a horizontal swipe.
+    if (_comicMultiTouchActive) {
+      e.stopPropagation();
+      if (e.touches.length === 0) _comicMultiTouchActive = false;
+    }
+    if (_pinchActive && e.touches.length < 2) {
+      _pinchActive = false;
+    }
+    if (_panActive && e.touches.length === 0) {
+      _panActive = false;
+      document.body.classList.remove('r-comic-panning');
+    }
+    // Double-tap recognition: only when not pinching/panning and a single
+    // finger was lifted with no others remaining.
+    if (e.changedTouches.length === 1 && e.touches.length === 0 &&
+        !_pinchActive && !_panActive) {
+      const t = e.changedTouches[0];
+      const now = Date.now();
+      const dt = now - _lastTapTime;
+      const dist = Math.hypot(t.clientX - _lastTapX, t.clientY - _lastTapY);
+      if (dt > 0 && dt < _DBL_TAP_MS && dist < _DBL_TAP_DIST) {
+        // Recognized. preventDefault suppresses the synthetic click the
+        // browser would otherwise dispatch (which would toggle the UI).
+        e.preventDefault();
+        const { x, y } = _eventComicXY(t.clientX, t.clientY);
+        _toggleComicZoom(x, y);
+        _lastTapTime = 0; // consume so a triple-tap doesn't double-fire
+      } else {
+        _lastTapTime = now;
+        _lastTapX = t.clientX;
+        _lastTapY = t.clientY;
+      }
+    }
+  }, { passive: false });
+
+  el.addEventListener('touchcancel', () => {
+    _pinchActive = false;
+    _panActive = false;
+    _comicMultiTouchActive = false;
+    document.body.classList.remove('r-comic-panning');
+  });
+
+  // ===== Mouse (desktop) =====
+  // Wheel zoom with ctrl/cmd — matches the browser-standard pinch-zoom
+  // shortcut. Without the modifier, the wheel does nothing (the container
+  // has no vertical scrollbar, so default behavior is a no-op anyway).
+  el.addEventListener('wheel', (e) => {
+    if (!document.body.classList.contains('r-mode-comic')) return;
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    // deltaY: negative = scroll up = zoom in. 1.15 / 0.87 keeps in-out
+    // symmetric (0.87 ≈ 1 / 1.15).
+    const factor = e.deltaY < 0 ? 1.15 : 0.87;
+    const { x, y } = _eventComicXY(e.clientX, e.clientY);
+    _zoomComicAtPoint(_comicScale * factor, x, y);
+  }, { passive: false });
+
+  // Mouse drag to pan when zoomed. Pointer Events would be cleaner but
+  // the rest of the reader uses touch / mouse split, so match.
+  let _mouseDragActive = false;
+  let _mouseDragStartX = 0, _mouseDragStartY = 0;
+  let _mouseDragStartTx = 0, _mouseDragStartTy = 0;
+  el.addEventListener('mousedown', (e) => {
+    if (!document.body.classList.contains('r-mode-comic')) return;
+    if (_comicScale <= _comicFitScale + 0.001) return; // at fit, no pan
+    if (e.button !== 0) return;
+    _mouseDragActive = true;
+    _mouseDragStartX = e.clientX;
+    _mouseDragStartY = e.clientY;
+    _mouseDragStartTx = _comicTx;
+    _mouseDragStartTy = _comicTy;
+    document.body.classList.add('r-comic-panning');
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!_mouseDragActive) return;
+    _comicTx = _mouseDragStartTx + (e.clientX - _mouseDragStartX);
+    _comicTy = _mouseDragStartTy + (e.clientY - _mouseDragStartY);
+    _clampComicPan();
+    _applyComicTransform();
+  });
+  window.addEventListener('mouseup', () => {
+    if (!_mouseDragActive) return;
+    _mouseDragActive = false;
+    document.body.classList.remove('r-comic-panning');
+  });
+
+  el.addEventListener('dblclick', (e) => {
+    if (!document.body.classList.contains('r-mode-comic')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const { x, y } = _eventComicXY(e.clientX, e.clientY);
+    _toggleComicZoom(x, y);
+  });
+
+  // Viewport resize: recompute fit. The image stays at the current scale
+  // ratio relative to fit (so a user reading at "2x fit" stays at 2x of
+  // the new fit), and pan is reclamped. _computeComicFit by itself would
+  // snap back to plain fit, which would be jarring for an active read.
+  window.addEventListener('resize', () => {
+    if (!document.body.classList.contains('r-mode-comic')) return;
+    const imgEl = $('r-comic-img');
+    if (!imgEl || !imgEl.naturalWidth) return;
+    const oldFit = _comicFitScale;
+    const oldRatio = oldFit > 0 ? _comicScale / oldFit : 1;
+    // Recompute fit (writes _comicFitScale + centers); then re-apply the
+    // old ratio so a zoomed-in read isn't punted back to fit on every
+    // window resize / orientation change.
+    _computeComicFit();
+    if (Math.abs(oldRatio - 1) > 0.01) {
+      const container = $('r-comic');
+      if (container) {
+        const cx = container.clientWidth / 2;
+        const cy = container.clientHeight / 2;
+        _zoomComicAtPoint(_comicFitScale * oldRatio, cx, cy);
+      }
+    }
+  });
+}
+
 // Drop all comic-mode state when leaving the reader. Revokes the
 // last-shown blob URL, releases the in-memory JSZip reference, and
 // unstamps the body class so the next book opens clean.
 function _teardownComicMode() {
-  document.body.classList.remove('r-mode-comic');
+  document.body.classList.remove('r-mode-comic', 'r-comic-zoomed', 'r-comic-panning');
   _comicReqId++; // invalidates any in-flight decode promises
+  _resetComicZoomState();
+  // Drop pending tap state too so a tap on the next comic isn't paired
+  // with a stale tap from the previous read.
+  _lastTapTime = 0;
+  _pinchActive = false;
+  _panActive = false;
+  _comicMultiTouchActive = false;
   const imgEl = $('r-comic-img');
   if (imgEl) {
     if (imgEl.dataset.blobUrl) {
@@ -9547,6 +9925,12 @@ function _teardownComicMode() {
       imgEl.dataset.blobUrl = '';
     }
     imgEl.removeAttribute('src');
+    // Clear inline transform/visibility so re-entering comic mode doesn't
+    // briefly paint with a stale transform from the previous book.
+    imgEl.style.transform = '';
+    imgEl.style.visibility = '';
+    imgEl.onload = null;
+    imgEl.onerror = null;
   }
 }
 
@@ -13169,6 +13553,10 @@ function renderGreeting() {
   // restore: clamped to [1, 6], default 3. Sets --lib-cols so the CSS
   // grid is right on first paint regardless of which view is active.
   setLibraryColumns(_currentLibCols());
+
+  // Bind the comic zoom/pan gestures once at startup. Handlers early-return
+  // when not in comic mode, so EPUB reads pay nothing.
+  _bindComicGestures();
 
   // Smooth wheel scrolling for the library — eases mouse-wheel input on
   // both the vertical (columns/table) and horizontal (grid) axes. See
