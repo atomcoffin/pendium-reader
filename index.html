@@ -9889,8 +9889,16 @@ async function renderComicPage() {
     if (prevLeftBlob) URL.revokeObjectURL(prevLeftBlob);
     if (prevRightBlob) URL.revokeObjectURL(prevRightBlob);
 
+    // Equalise heights in spread mode so the two pages share a baseline;
+    // then compute fit using the laid-out stage size so the transform
+    // scale accounts for whatever the equal-height CSS produced.
+    _applyEqualHeights(leftImg, rightImg);
     _computeComicFit();
     stage.style.visibility = '';
+    // Refresh the footer label now that we know whether right is visible
+    // (rightImg.hidden was set before the equal-height pass, but the
+    // updateReaderRefs above ran with stale state).
+    updateReaderRefs();
     // Successful commit — kick the prefetch timer so adjacent pages are
     // decoded in the background while the user reads this one.
     _evictComicCacheFar();
@@ -9934,21 +9942,53 @@ function _resetComicZoomState() {
   document.body.classList.remove('r-comic-zoomed', 'r-comic-panning');
 }
 
-// Combined natural dimensions of the stage's visible page(s). In single
-// mode the stage is exactly the left page; in spread mode it's the two
-// pages laid side-by-side (width = sum, height = max). Returns zeros
-// when nothing has loaded yet so callers can short-circuit.
+// Laid-out dimensions of the stage. offsetWidth/Height reflect the
+// pre-transform layout box: sum of children widths × max height under
+// flex-row, accounting for any inline heights we set in
+// _applyEqualHeights. Transforms don't change these properties, so the
+// fit math can compute "natural" stage size cleanly regardless of the
+// current zoom. Caveat: this must be read AFTER inline image styles
+// have been applied (renderComicPage sequences that correctly).
 function _comicStageNaturalSize() {
-  const left = $('r-comic-page-left');
-  const right = $('r-comic-page-right');
-  if (!left) return { w: 0, h: 0 };
-  let w = left.naturalWidth || 0;
-  let h = left.naturalHeight || 0;
-  if (right && !right.hidden && right.naturalWidth > 0) {
-    w += right.naturalWidth;
-    h = Math.max(h, right.naturalHeight || 0);
+  const stage = $('r-comic-stage');
+  if (!stage) return { w: 0, h: 0 };
+  return { w: stage.offsetWidth, h: stage.offsetHeight };
+}
+
+// In spread mode, scale both pages to the same height by setting inline
+// height in CSS. The browser preserves aspect ratio (width: auto) so the
+// images end up at matching heights with appropriate proportional widths.
+// Target height is the taller of the two natural heights — neither image
+// shrinks below natural, so detail isn't lost.
+//
+// Sanity cap: if equalising would stretch either image more than 1.3× its
+// natural height, fall back to natural sizes. That guards against pairing
+// a wide multi-page scan (much shorter aspect) with a regular portrait
+// page — equalising would blow the wide image up 2× vertically and look
+// terrible. In that case the layout reverts to "different heights side by
+// side"; the user can disable spread mode if the result is ugly.
+function _applyEqualHeights(leftImg, rightImg) {
+  // Always reset width — caller decides whether to set explicit width.
+  leftImg.style.width = '';
+  if (rightImg) rightImg.style.width = '';
+  if (!rightImg || rightImg.hidden ||
+      !leftImg.naturalHeight || !rightImg.naturalHeight) {
+    leftImg.style.height = '';
+    if (rightImg) rightImg.style.height = '';
+    return;
   }
-  return { w, h };
+  const lH = leftImg.naturalHeight;
+  const rH = rightImg.naturalHeight;
+  const targetH = Math.max(lH, rH);
+  const maxStretch = Math.max(targetH / lH, targetH / rH);
+  if (maxStretch > 1.3) {
+    // Heights too dissimilar — let pages render at natural sizes.
+    leftImg.style.height = '';
+    rightImg.style.height = '';
+    return;
+  }
+  leftImg.style.height = targetH + 'px';
+  rightImg.style.height = targetH + 'px';
 }
 
 function _applyComicTransform() {
@@ -11847,15 +11887,24 @@ function updateReaderRefs() {
   if (!currentBook) { el.textContent = ''; return; }
   const bookTitle = currentBook.title || '';
   const isComic = currentBook.kind === 'comic';
-  // For comics, render as "N of M" so it's clear our number is a
-  // position-in-archive, not a printed page number — scans typically
-  // start with cover / front-matter so file index N is not the same as
-  // printed page N. For text, keep the TOC-derived chapter title.
+  // For comics, render as "N of M" (or "N-N+1 of M" when a spread shows
+  // both pages) so it's clear our number is a position-in-archive, not
+  // a printed page number — scans typically start with cover / front-
+  // matter so file index N is not the same as printed page N. For text,
+  // keep the TOC-derived chapter title.
   let chapterTitle;
   if (isComic) {
     const idx = currentChapterIndex + 1;
     const total = (currentBook.pages || chapters || []).length;
-    chapterTitle = total ? `${idx} of ${total}` : `${idx}`;
+    const rightImg = $('r-comic-page-right');
+    const rightShown = rightImg && !rightImg.hidden && rightImg.naturalWidth > 0;
+    if (rightShown) {
+      chapterTitle = total
+        ? `${idx}-${idx + 1} of ${total}`
+        : `${idx}-${idx + 1}`;
+    } else {
+      chapterTitle = total ? `${idx} of ${total}` : `${idx}`;
+    }
   } else {
     const tocItem = toc.find(item => item.index === currentChapterIndex);
     chapterTitle = tocItem?.title || chapters[currentChapterIndex]?.title || '';
