@@ -2399,33 +2399,43 @@ body.r-mode-comic .r-book {
   max-width: 100%;
   height: 100%;
 }
-.r-comic-img {
-  /* Absolute positioning + transform-origin: 0 0 makes the zoom math
-     predictable: the image's natural top-left is at (0,0) within .r-comic,
-     and (translate, scale) places + sizes it. Sizing is no longer done via
-     max-width / object-fit — JS computes the "fit" scale on image load
-     and applies it as the resting transform. */
+.r-comic-stage {
+  /* Stage holds the page image(s). Absolute positioning + transform-origin
+     at (0,0) makes the zoom math predictable: the stage's natural top-left
+     is at (0,0) within .r-comic, and (translate, scale) places + sizes the
+     whole thing. In single-page mode the right slot is hidden; in spread
+     mode both flow side-by-side via flex and the transform acts on both
+     as one canvas — pan/zoom feels like a single object, not two pages
+     drifting independently. */
   position: absolute;
   top: 0;
   left: 0;
-  display: block;
-  width: auto;
-  height: auto;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0;
   transform-origin: 0 0;
-  user-select: none;
-  -webkit-user-drag: none;
-  /* Hint the compositor — scale + translate change on every pinch/pan
-     frame; promoting to its own layer keeps the paint smooth. */
   will-change: transform;
   transition: opacity 160ms ease;
   opacity: 1;
 }
-.r-comic.fade .r-comic-img { opacity: 0; }
+.r-comic-page {
+  /* JS-managed sizing via the stage transform — width/height auto means
+     each <img> renders at its natural pixel size, then the stage scales
+     them collectively. */
+  display: block;
+  width: auto;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.r-comic-page[hidden] { display: none; }
+.r-comic.fade .r-comic-stage { opacity: 0; }
 
 /* When zoomed past fit, hint pan affordance with a grab cursor on the
-   image. Active drag flips to grabbing via the .r-comic-panning class. */
-body.r-comic-zoomed .r-comic-img { cursor: grab; }
-body.r-comic-zoomed.r-comic-panning .r-comic-img { cursor: grabbing; }
+   stage. Active drag flips to grabbing via the .r-comic-panning class. */
+body.r-comic-zoomed .r-comic-stage { cursor: grab; }
+body.r-comic-zoomed.r-comic-panning .r-comic-stage { cursor: grabbing; }
 
 /* Typography controls don't apply to comics — hide them in the
    Appearance panel when the current book is a comic. Theme and
@@ -2435,6 +2445,11 @@ body.r-mode-comic .settings-compact .face-cell,
 body.r-mode-comic .settings-compact .set-paragraph-cluster {
   display: none;
 }
+
+/* Inverse: comic-only sections (e.g. the spread / single page Layout
+   row) hide unless body.r-mode-comic is stamped. */
+.r-comic-only { display: none; }
+body.r-mode-comic .r-comic-only { display: block; }
 
 /* Click zones for pagination. Cursor hides when over the zone so the
    hover-ring stands in for it. */
@@ -4545,13 +4560,17 @@ body.lib-select-mode .col-item {
           <div class="r-slot-inner r-inner" id="r-inner-right" aria-hidden="true"></div>
         </div>
       </div>
-      <!-- Comic (CBZ) page viewer. Sibling of .r-spread; hidden unless
-           body.r-mode-comic is set. A single <img> swapped out per page
-           turn — readerNext/Prev walk currentChapterIndex (one chapter
-           per page for comics) and renderComicPage decodes the page
-           image from the in-memory JSZip to a blob URL. -->
+      <!-- Comic (CBZ/CBR) page viewer. Sibling of .r-spread; hidden unless
+           body.r-mode-comic is set. The .r-comic-stage holds one or two
+           <img> slots (single page or two-page spread); the pan/zoom
+           transform applies to the stage so a spread acts as one visual
+           canvas. renderComicPage decodes pages from the in-memory
+           archive to blob URLs. -->
       <div class="r-comic" id="r-comic">
-        <img class="r-comic-img" id="r-comic-img" alt="" draggable="false">
+        <div class="r-comic-stage" id="r-comic-stage">
+          <img class="r-comic-page" id="r-comic-page-left" alt="" draggable="false">
+          <img class="r-comic-page" id="r-comic-page-right" alt="" draggable="false" hidden>
+        </div>
       </div>
     </div>
     <!-- Book + chapter reminder at bottom. -->
@@ -4661,6 +4680,21 @@ body.lib-select-mode .col-item {
       </div>
     </div>
 
+    <!-- Comic-only Layout row. Lets the user switch a comic between
+         single page and two-page spread. Hidden for non-comic reads via
+         .r-comic-only CSS — the typography rows below are conversely
+         hidden when reading a comic. -->
+    <div class="set-section r-comic-only">
+      <div class="set-caption">Layout</div>
+      <div class="seg-row">
+        <button class="seg-btn comic-layout-btn" data-comic-layout="single" onclick="setComicSpreadEnabled(false)">
+          <i class="ph ph-square" aria-hidden="true" style="margin-right: 6px;"></i>Single page
+        </button>
+        <button class="seg-btn comic-layout-btn" data-comic-layout="spread" onclick="setComicSpreadEnabled(true)">
+          <i class="ph ph-book-open" aria-hidden="true" style="margin-right: 6px;"></i>Two-page spread
+        </button>
+      </div>
+    </div>
     <!-- Row 2: Typeface group — face buttons (rendered as "Aa" in each
          actual face for instant visual preview) + size slider + line
          height slider, all the same height. Slider values sit
@@ -9596,7 +9630,50 @@ let _comicReqId = 0;
 // in-flight decode and the user perceives pages being skipped (state
 // advances but only the most recent decode actually paints).
 let _comicPageInFlight = false;
-function renderComicPage() {
+
+// Spread mode (two pages side-by-side). Off by default. Persisted to
+// localStorage; toggled by the user via the Appearance overlay's Layout
+// row, which only shows for comics. The pairing scheme is "always paired
+// from index 0": pages (0,1), (2,3), (4,5)... — cover paired with page 1
+// rather than alone. Simple and consistent; users who want cover-alone
+// can toggle into single-page for the first read.
+let _comicSpreadEnabled = localStorage.getItem('tomen_comicSpread') === 'on';
+function _isComicSpreadActive() { return _comicSpreadEnabled; }
+
+// Toggle the comic spread mode. Persists to localStorage, updates the
+// settings UI's active state, and (if a comic is open) re-renders so the
+// change takes immediate effect. Toggling on normalizes the current page
+// index to the even number that owns the spread — otherwise toggling
+// while on page 5 in single mode would show the (5,6) pair, but forward
+// navigation would step from 5 → 7 → 9 (odd cadence) instead of 4 → 6 → 8.
+function setComicSpreadEnabled(on) {
+  _comicSpreadEnabled = !!on;
+  if (_comicSpreadEnabled) {
+    localStorage.setItem('tomen_comicSpread', 'on');
+  } else {
+    localStorage.removeItem('tomen_comicSpread');
+  }
+  _refreshComicLayoutButtons();
+  if (currentBook && currentBook.kind === 'comic') {
+    if (_comicSpreadEnabled) {
+      // Round down to even so the spread shows (k, k+1) starting on an
+      // even left page. Without this the (odd, even) pairing drifts away
+      // from the cover-paired-with-page-1 convention.
+      currentChapterIndex = currentChapterIndex - (currentChapterIndex % 2);
+    }
+    renderComicPage();
+    saveProgress();
+  }
+}
+
+function _refreshComicLayoutButtons() {
+  const active = _comicSpreadEnabled ? 'spread' : 'single';
+  document.querySelectorAll('.comic-layout-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.comicLayout === active);
+  });
+}
+
+async function renderComicPage() {
   // Reset spread state so the gesture machinery treats this page as one
   // atomic spread. Without this, an EPUB → comic transition can leave
   // totalSpreads stale from the previous book's last chapter.
@@ -9605,73 +9682,115 @@ function renderComicPage() {
 
   document.body.classList.add('r-mode-comic');
 
-  const imgEl = $('r-comic-img');
-  if (!imgEl) return;
+  const leftImg = $('r-comic-page-left');
+  const rightImg = $('r-comic-page-right');
+  const stage = $('r-comic-stage');
+  if (!leftImg || !rightImg || !stage) return;
 
   // Reset zoom for each new page. Preserving zoom across page turns would
   // be confusing — what looked like "the bottom-right panel" on page 5
   // points at a completely different image on page 6.
   _resetComicZoomState();
-  // Hide upfront so the in-flight decode doesn't show the previous page
-  // at the new natural-size with the old transform when the src flips.
-  // Cleared in onload / onerror / the no-content early return below.
-  imgEl.style.visibility = 'hidden';
+  // Hide the whole stage upfront — both pages disappear together so we
+  // don't paint the new image's natural dimensions through the old
+  // transform when src changes. Cleared once both new pages have loaded.
+  stage.style.visibility = 'hidden';
 
   const pages = currentBook?.pages;
   const archive = currentBook?.comicArchive;
-  const idx = currentChapterIndex;
-  if (!pages || !archive || idx < 0 || idx >= pages.length) {
-    imgEl.removeAttribute('src');
-    imgEl.style.visibility = '';
+  // In spread mode, normalize an odd current index down to the even left
+  // page of the pair. Handles the case where the user opened the book at
+  // a single-mode saved position (any page), then is now in spread mode —
+  // pages 5 in single becomes pair (4,5) in spread, not (5,6).
+  if (_isComicSpreadActive() && currentChapterIndex % 2 !== 0) {
+    currentChapterIndex = currentChapterIndex - 1;
+  }
+  const leftIdx = currentChapterIndex;
+  if (!pages || !archive || leftIdx < 0 || leftIdx >= pages.length) {
+    leftImg.removeAttribute('src');
+    rightImg.removeAttribute('src');
+    rightImg.hidden = true;
+    stage.style.visibility = '';
     _comicPageInFlight = false;
     updateReaderRefs();
     updateProgress();
     return;
   }
 
+  const spreadActive = _isComicSpreadActive();
+  // In spread mode, the right slot shows pages[leftIdx + 1] if it exists.
+  // Single-page mode hides the right slot entirely. A spread that lands
+  // on an odd-tail end (last page with no partner) falls through to
+  // single — the page renders alone rather than blank-right-half.
+  const rightIdx = (spreadActive && leftIdx + 1 < pages.length) ? leftIdx + 1 : -1;
+  rightImg.hidden = rightIdx < 0;
+
   // Take the page-render lock for this turn. readerNext/Prev refuse new
   // turns while this is set so a second tap can't pre-empt the in-flight
   // decode — that was causing rapid taps to skip pages (state advanced
   // twice but only the second decode actually painted).
   _comicPageInFlight = true;
-  // Request token: a later page-turn may arrive before the previous
-  // decode resolves. The token check before assigning src ensures only
-  // the most recent request actually paints — otherwise rapid swiping
-  // would briefly show stale pages as out-of-order decodes settle.
+  // Request token: a later page-turn may arrive before this turn's
+  // decode resolves. Each step below checks myReq vs _comicReqId so a
+  // superseded turn cleanly bails instead of painting stale pages.
   const myReq = ++_comicReqId;
-  const prevBlobUrl = imgEl.dataset.blobUrl || '';
-
-  const pageName = pages[idx];
-  archive.read(pageName).then(blob => {
-    if (myReq !== _comicReqId) return; // a newer turn supersedes us
-    const url = URL.createObjectURL(blob);
-    // Re-bind load handler each time — the previous page's handler
-    // already fired and was discarded. addEventListener with { once: true }
-    // would also work but onload is simpler and there's only one in flight.
-    imgEl.onload = () => {
-      if (myReq !== _comicReqId) return;
-      _computeComicFit();
-      imgEl.style.visibility = '';
-      _comicPageInFlight = false;
-    };
-    imgEl.onerror = () => {
-      if (myReq !== _comicReqId) return;
-      imgEl.style.visibility = '';
-      _comicPageInFlight = false;
-    };
-    imgEl.src = url;
-    imgEl.dataset.blobUrl = url;
-    // Revoke the previous page's URL AFTER assigning the new one so
-    // there's no brief window where the <img> renders nothing.
-    if (prevBlobUrl) URL.revokeObjectURL(prevBlobUrl);
-  }).catch(err => {
-    console.warn('[tomen] comic page decode failed:', pageName, err);
-    imgEl.style.visibility = '';
-    if (myReq === _comicReqId) _comicPageInFlight = false;
-  });
+  const prevLeftBlob = leftImg.dataset.blobUrl || '';
+  const prevRightBlob = rightImg.dataset.blobUrl || '';
 
   updateReaderRefs();
   updateProgress();
+
+  try {
+    // Sequential archive reads — the CBR adapter shares one extractor
+    // with a single file-position pointer, so parallel reads would race
+    // and corrupt each other. CBZ doesn't share state but the sequential
+    // pattern is harmless there.
+    const leftBlob = await archive.read(pages[leftIdx]);
+    if (myReq !== _comicReqId) return;
+    const rightBlob = (rightIdx >= 0) ? await archive.read(pages[rightIdx]) : null;
+    if (myReq !== _comicReqId) return;
+
+    const leftUrl = URL.createObjectURL(leftBlob);
+    const rightUrl = rightBlob ? URL.createObjectURL(rightBlob) : null;
+
+    // Wait for both <img> elements to actually finish decoding in parallel
+    // — natural dimensions aren't valid until then, and _computeComicFit
+    // needs both sides' sizes to position the stage correctly.
+    await Promise.all([
+      _loadComicImg(leftImg, leftUrl),
+      rightUrl ? _loadComicImg(rightImg, rightUrl) : Promise.resolve()
+    ]);
+    if (myReq !== _comicReqId) {
+      URL.revokeObjectURL(leftUrl);
+      if (rightUrl) URL.revokeObjectURL(rightUrl);
+      return;
+    }
+
+    // Stash new blob URLs on the elements; revoke previous now that the
+    // new images are loaded (revoking before could break a same-frame paint).
+    leftImg.dataset.blobUrl = leftUrl;
+    rightImg.dataset.blobUrl = rightUrl || '';
+    if (prevLeftBlob) URL.revokeObjectURL(prevLeftBlob);
+    if (prevRightBlob) URL.revokeObjectURL(prevRightBlob);
+
+    _computeComicFit();
+    stage.style.visibility = '';
+  } catch (err) {
+    console.warn('[tomen] comic page decode failed:', err);
+    stage.style.visibility = '';
+  } finally {
+    if (myReq === _comicReqId) _comicPageInFlight = false;
+  }
+}
+
+// Set img.src and resolve when the load completes. Used by renderComicPage
+// to await both pages in parallel via Promise.all.
+function _loadComicImg(imgEl, url) {
+  return new Promise((resolve, reject) => {
+    imgEl.onload = () => resolve();
+    imgEl.onerror = () => reject(new Error('image load failed'));
+    imgEl.src = url;
+  });
 }
 
 // ===== Comic zoom & pan =====
@@ -9695,46 +9814,65 @@ function _resetComicZoomState() {
   document.body.classList.remove('r-comic-zoomed', 'r-comic-panning');
 }
 
+// Combined natural dimensions of the stage's visible page(s). In single
+// mode the stage is exactly the left page; in spread mode it's the two
+// pages laid side-by-side (width = sum, height = max). Returns zeros
+// when nothing has loaded yet so callers can short-circuit.
+function _comicStageNaturalSize() {
+  const left = $('r-comic-page-left');
+  const right = $('r-comic-page-right');
+  if (!left) return { w: 0, h: 0 };
+  let w = left.naturalWidth || 0;
+  let h = left.naturalHeight || 0;
+  if (right && !right.hidden && right.naturalWidth > 0) {
+    w += right.naturalWidth;
+    h = Math.max(h, right.naturalHeight || 0);
+  }
+  return { w, h };
+}
+
 function _applyComicTransform() {
-  const imgEl = $('r-comic-img');
-  if (!imgEl) return;
-  imgEl.style.transform = `translate(${_comicTx}px, ${_comicTy}px) scale(${_comicScale})`;
+  const stage = $('r-comic-stage');
+  if (!stage) return;
+  stage.style.transform = `translate(${_comicTx}px, ${_comicTy}px) scale(${_comicScale})`;
   document.body.classList.toggle('r-comic-zoomed', _comicScale > _comicFitScale + 0.001);
 }
 
-// Compute the fit scale and center the image inside the container. Called
-// on every page load and on viewport resize while reading a comic.
+// Compute the fit scale and center the stage inside the container. Called
+// after every page load (or pair-of-loads in spread mode) and on viewport
+// resize while reading a comic.
 function _computeComicFit() {
-  const imgEl = $('r-comic-img');
   const container = $('r-comic');
-  if (!imgEl || !container) return;
-  if (!imgEl.naturalWidth || !imgEl.naturalHeight) return;
+  if (!container) return;
+  const { w: stageW, h: stageH } = _comicStageNaturalSize();
+  if (!stageW || !stageH) return;
   const containerW = container.clientWidth;
   const containerH = container.clientHeight;
   if (containerW <= 0 || containerH <= 0) return;
-  // Clamp fit ≤ 1 so a smaller-than-container image isn't blown up past
+  // Clamp fit ≤ 1 so a smaller-than-container stage isn't blown up past
   // its natural pixel resolution. Comics are usually high-res scans so
   // this rarely fires, but a small reference image shouldn't pixelate.
-  const fitRaw = Math.min(containerW / imgEl.naturalWidth, containerH / imgEl.naturalHeight);
+  const fitRaw = Math.min(containerW / stageW, containerH / stageH);
   const fit = Math.min(1, fitRaw);
   _comicFitScale = (isFinite(fit) && fit > 0) ? fit : 1;
   _comicScale = _comicFitScale;
-  _comicTx = (containerW - imgEl.naturalWidth * _comicScale) / 2;
-  _comicTy = (containerH - imgEl.naturalHeight * _comicScale) / 2;
+  _comicTx = (containerW - stageW * _comicScale) / 2;
+  _comicTy = (containerH - stageH * _comicScale) / 2;
   _applyComicTransform();
 }
 
-// Clamp the translate so the image stays inside the container when zoomed,
+// Clamp the translate so the stage stays inside the container when zoomed,
 // or centered when smaller than the container in either axis. Run after
 // every interactive transform change so the edges never drift off-screen.
 function _clampComicPan() {
-  const imgEl = $('r-comic-img');
   const container = $('r-comic');
-  if (!imgEl || !container) return;
+  if (!container) return;
+  const { w: stageW, h: stageH } = _comicStageNaturalSize();
+  if (!stageW || !stageH) return;
   const containerW = container.clientWidth;
   const containerH = container.clientHeight;
-  const scaledW = imgEl.naturalWidth * _comicScale;
-  const scaledH = imgEl.naturalHeight * _comicScale;
+  const scaledW = stageW * _comicScale;
+  const scaledH = stageH * _comicScale;
   if (scaledW <= containerW) {
     _comicTx = (containerW - scaledW) / 2;
   } else {
@@ -9984,8 +10122,8 @@ function _bindComicGestures() {
   // snap back to plain fit, which would be jarring for an active read.
   window.addEventListener('resize', () => {
     if (!document.body.classList.contains('r-mode-comic')) return;
-    const imgEl = $('r-comic-img');
-    if (!imgEl || !imgEl.naturalWidth) return;
+    const { w: stageW } = _comicStageNaturalSize();
+    if (!stageW) return;
     const oldFit = _comicFitScale;
     const oldRatio = oldFit > 0 ? _comicScale / oldFit : 1;
     // Recompute fit (writes _comicFitScale + centers); then re-apply the
@@ -10017,20 +10155,26 @@ function _teardownComicMode() {
   _pinchActive = false;
   _panActive = false;
   _comicMultiTouchActive = false;
-  const imgEl = $('r-comic-img');
-  if (imgEl) {
-    if (imgEl.dataset.blobUrl) {
-      URL.revokeObjectURL(imgEl.dataset.blobUrl);
-      imgEl.dataset.blobUrl = '';
+  // Reset both page slots so the next book opens fresh — revoke any
+  // outstanding blob URLs, clear srcs, drop bound load handlers.
+  for (const id of ['r-comic-page-left', 'r-comic-page-right']) {
+    const img = $(id);
+    if (!img) continue;
+    if (img.dataset.blobUrl) {
+      URL.revokeObjectURL(img.dataset.blobUrl);
+      img.dataset.blobUrl = '';
     }
-    imgEl.removeAttribute('src');
-    // Clear inline transform/visibility so re-entering comic mode doesn't
-    // briefly paint with a stale transform from the previous book.
-    imgEl.style.transform = '';
-    imgEl.style.visibility = '';
-    imgEl.onload = null;
-    imgEl.onerror = null;
+    img.removeAttribute('src');
+    img.onload = null;
+    img.onerror = null;
   }
+  const stage = $('r-comic-stage');
+  if (stage) {
+    stage.style.transform = '';
+    stage.style.visibility = '';
+  }
+  const rightImg = $('r-comic-page-right');
+  if (rightImg) rightImg.hidden = true;
 }
 
 // Wait for all images in the chapter to either load (or fail) before
@@ -10223,15 +10367,20 @@ function readerNext() {
     applySpread(true);
     updateProgress();
     saveProgress();
-  } else if (currentChapterIndex < chapters.length - 1) {
-    // Fade out, advance chapter, fade in
-    fadeSwap(() => {
-      currentChapterIndex++;
-      currentSpread = 0;
-      renderChapter();
-      saveProgress();
-    });
+    return;
   }
+  if (currentChapterIndex >= chapters.length - 1) return;
+  // Comics in spread mode advance by 2 (one spread). Clamp to the last
+  // page so a step-by-2 doesn't overshoot when the page count is even.
+  const isComic = currentBook.kind === 'comic';
+  const step = (isComic && _isComicSpreadActive()) ? 2 : 1;
+  const target = Math.min(currentChapterIndex + step, chapters.length - 1);
+  fadeSwap(() => {
+    currentChapterIndex = target;
+    currentSpread = 0;
+    renderChapter();
+    saveProgress();
+  });
 }
 
 // Navigate one spread backward. Crosses into previous chapter at the start.
@@ -10246,15 +10395,21 @@ function readerPrev() {
     applySpread(true);
     updateProgress();
     saveProgress();
-  } else if (currentChapterIndex > 0) {
-    fadeSwap(() => {
-      currentChapterIndex--;
-      // Jump to last spread of the previous chapter after render measures it
-      currentSpread = Infinity;  // renderChapter clamps to totalSpreads - 1
-      renderChapter();
-      saveProgress();
-    });
+    return;
   }
+  if (currentChapterIndex <= 0) return;
+  const isComic = currentBook.kind === 'comic';
+  const step = (isComic && _isComicSpreadActive()) ? 2 : 1;
+  const target = Math.max(currentChapterIndex - step, 0);
+  fadeSwap(() => {
+    currentChapterIndex = target;
+    // For comics each "chapter" is one page (or pair) — always at spread 0.
+    // For text books, jump to the last spread of the previous chapter so
+    // backwards reading flows naturally; renderChapter clamps Infinity.
+    currentSpread = isComic ? 0 : Infinity;
+    renderChapter();
+    saveProgress();
+  });
 }
 
 // Fade the current pages out, run callback (which re-renders), fade in.
@@ -12020,7 +12175,12 @@ function tryHighlightByText(rootEl, mark) {
 
 // ===== SETTINGS =====
 function toggleSettings() {
-  $('ov-settings').classList.toggle('open');
+  const ov = $('ov-settings');
+  ov.classList.toggle('open');
+  // Sync the comic-only Layout row's active state to the current pref
+  // every time the overlay opens, so the highlight reflects reality even
+  // if the user toggled spread mode and immediately closed/reopened.
+  if (ov.classList.contains('open')) _refreshComicLayoutButtons();
 }
 
 // Bridge from the Appearance panel's "Global →" chip to the global
