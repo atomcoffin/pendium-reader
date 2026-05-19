@@ -3980,6 +3980,58 @@ body.lib-select-mode .col-item {
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading-text { font-size: 13px; color: var(--fog); }
 
+/* ===== Rich import progress =====
+   Shown when .loading.is-importing is set on the loading overlay.
+   Hides the simple spinner/text and renders a progress bar + the
+   current filename + a phase line. Driven by _showImportProgress
+   during a multi-file or folder import. */
+.loading-import {
+  display: none;
+  min-width: 280px;
+  max-width: min(80vw, 420px);
+  text-align: center;
+  font-family: var(--font-ui);
+}
+.loading.is-importing .spinner { display: none; }
+.loading.is-importing .loading-text { display: none; }
+.loading.is-importing .loading-import { display: block; }
+.loading-import-counter {
+  font-size: 11px;
+  color: var(--stone);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+.loading-import-bar {
+  height: 6px;
+  background: var(--linen);
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 12px 0 14px;
+}
+.loading-import-fill {
+  height: 100%;
+  background: var(--brand);
+  width: 0;
+  transition: width 220ms ease;
+}
+.loading-import-file {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Forces ellipsis on long filenames; max-width clamps to the inner
+     column so it doesn't stretch the overlay. */
+  max-width: 100%;
+}
+.loading-import-phase {
+  font-size: 12px;
+  color: var(--stone);
+  margin-top: 4px;
+  min-height: 1.1em;
+}
+
 /* Gesture feedback — brief indicator during swipe-based settings changes */
 .gesture-toast {
   position: fixed;
@@ -4812,6 +4864,15 @@ body.lib-select-mode .col-item {
 <div class="loading" id="loading">
   <div class="spinner"></div>
   <div class="loading-text" id="loading-text">Opening book…</div>
+  <!-- Rich import mode. Shown when .loading.is-importing is set; replaces
+       the spinner/text with a progress bar + current filename + phase
+       line. Single-file book opens still use the plain spinner above. -->
+  <div class="loading-import" id="loading-import" aria-hidden="true">
+    <div class="loading-import-counter" id="loading-import-counter"></div>
+    <div class="loading-import-bar"><div class="loading-import-fill" id="loading-import-fill"></div></div>
+    <div class="loading-import-file" id="loading-import-file"></div>
+    <div class="loading-import-phase" id="loading-import-phase"></div>
+  </div>
 </div>
 
 <!-- Update toast -->
@@ -7824,15 +7885,75 @@ async function collectFilesFromDir(dirHandle, files) {
   }
 }
 
+// Human-readable byte size for the import progress UI. Three steps —
+// raw bytes for tiny files, KB rounded for ~text files, MB to 1 decimal
+// for everything else. GB+ is fine to read as a big MB number; comic
+// volumes rarely exceed a few hundred MB and no individual book file
+// gets near the gigabyte mark in practice.
+function _formatFileSize(bytes) {
+  if (!bytes || bytes <= 0) return '';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// Render the rich import-progress state into the loading overlay. The
+// counter shows files-completed; the bar fills with the same fraction
+// (visually steps after each file). When `file` is null the filename
+// row is cleared — used between files so the user sees the bar advance
+// before the next filename appears.
+function _showImportProgress({ current, total, file, phase }) {
+  const overlay = $('loading');
+  if (!overlay) return;
+  overlay.classList.add('active', 'is-importing');
+  const counter = $('loading-import-counter');
+  const fill = $('loading-import-fill');
+  const fileEl = $('loading-import-file');
+  const phaseEl = $('loading-import-phase');
+  const safeCurrent = Math.max(0, Math.min(current, total));
+  if (counter) counter.textContent = `Importing ${safeCurrent} of ${total}`;
+  if (fill) {
+    const pct = total > 0 ? (safeCurrent / total) * 100 : 0;
+    fill.style.width = pct + '%';
+  }
+  if (fileEl) {
+    if (file) {
+      const sz = _formatFileSize(file.size);
+      fileEl.textContent = sz ? `${file.name} · ${sz}` : file.name;
+      fileEl.title = file.name; // hover-reveal for ellipsized long names
+    } else {
+      fileEl.textContent = '';
+      fileEl.removeAttribute('title');
+    }
+  }
+  if (phaseEl) phaseEl.textContent = phase || '';
+}
+// Strip import-mode state but leave the overlay's .active flag alone —
+// the caller (importFiles) decides whether to dismiss the whole overlay
+// or just leave import mode (e.g., if a subsequent showLoading('Opening
+// book…') needs to take over). Resetting the bar width avoids a flash
+// on the next import that briefly shows the previous run's fraction.
+function _hideImportProgress() {
+  const overlay = $('loading');
+  if (!overlay) return;
+  overlay.classList.remove('is-importing');
+  const fill = $('loading-import-fill');
+  if (fill) fill.style.width = '0';
+}
+
 async function importFiles(files) {
   if (!files || files.length === 0) return;
-  showLoading(true, `Importing 0 / ${files.length}…`);
   // Dedup happens post-parse inside loadEpub/loadTextFile (against title +
   // author). The old pre-parse filter compared filename to title which was
   // structurally broken — two books titled "Volume 1" silently collided.
   let n = 0, skipped = 0, dupes = 0;
 
-  for (const file of files) {
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    // Bar tracks files-processed, not files-imported — dupes and skips
+    // still count as "looked at." Otherwise a folder full of dupes would
+    // show the bar frozen at zero while names cycle past.
+    _showImportProgress({ current: i, total: files.length, file, phase: 'Reading…' });
     // Per-file timeout so one bad file can't hang the whole import
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('timeout after 30s')), 30000)
@@ -7855,12 +7976,21 @@ async function importFiles(files) {
         skipped++;
       }
     }
-    showLoading(true, `Importing ${n} / ${files.length}…`);
+    // Settle the bar at the just-completed count. If there's another
+    // file coming, the next iteration's _showImportProgress flips the
+    // filename + phase before any decode work starts.
+    _showImportProgress({
+      current: i + 1,
+      total: files.length,
+      file: null,
+      phase: ''
+    });
     // Yield to the event loop briefly so UI can update
     await new Promise(r => setTimeout(r, 0));
   }
 
   renderLibrary();
+  _hideImportProgress();
   showLoading(false);
   // Single summary alert combining the three outcomes — keeps the user from
   // playing whack-a-modal on a 50-book folder import.
