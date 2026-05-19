@@ -85,8 +85,24 @@
         wasmBinary
       });
 
+      // node-unrar-js streams the archive bytes through a JS-side DataFile
+      // whose read position advances as the WASM side reads header / file
+      // payloads. The library doesn't auto-seek back to 0 between openArc
+      // calls — if you parse headers via getFileList() and then call
+      // extract(), extract's openArc reads from wherever the position
+      // landed and the RAR signature check fails ("File is not RAR archive").
+      // Reset the position to 0 before each library call.
+      const _archivePath = '_defaultUnrarJS_.rar';
+      function _rewindArchive() {
+        const df = extractor.dataFiles && extractor.dataFiles[_archivePath];
+        if (df && df.file && typeof df.file.seek === 'function') {
+          df.file.seek(0, 'SET');
+        }
+      }
+
       // Snapshot the file list once at open time so list() is cheap.
       // node-unrar-js returns iterators for both getFileList and extract.
+      _rewindArchive();
       const fileNames = [];
       const headerInfo = extractor.getFileList();
       // headerInfo.fileHeaders is an iterable. Cast through Array.from
@@ -100,6 +116,8 @@
       return {
         list: function () { return fileNames.slice(); },
         read: async function (name) {
+          // Rewind before every extract — see _rewindArchive comment above.
+          _rewindArchive();
           // extract({files}) returns an iterable of extracted entries;
           // we asked for one so we expect one back. extraction is a
           // Uint8Array — wrap it in a Blob for the rest of the pipeline.
